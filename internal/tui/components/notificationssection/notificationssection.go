@@ -321,7 +321,7 @@ func (m *Model) Update(msg tea.Msg) (section.Section, tea.Cmd) {
 					break
 				}
 			}
-			// Track as done so it doesn't reappear on refresh (GitHub API still returns it with all=true)
+			// Track as done so it doesn't reappear if a refresh races the API update
 			m.sessionMarkedDone[msg.Id] = true
 			// Also remove from sessionMarkedRead
 			delete(m.sessionMarkedRead, msg.Id)
@@ -620,12 +620,9 @@ func (m *Model) FetchNextPageSectionRows() []tea.Cmd {
 		// Bookmarked and session-marked-read items will be fetched separately by thread ID
 		readState := filters.ReadState
 
-		// Initialize done store for filtering
-		doneStore := data.GetDoneStore()
-
 		// Track accumulated notifications across multiple pages.
 		// We may need to fetch additional pages if many notifications are filtered out
-		// (e.g., marked as done locally). The loop continues until we have enough
+		// locally (e.g., by read state or reason). The loop continues until we have enough
 		// notifications to display or run out of pages from the API.
 		notifications := make([]notificationrow.Data, 0, limit)
 		currentPageInfo := pageInfo
@@ -729,9 +726,9 @@ func (m *Model) FetchNextPageSectionRows() []tea.Cmd {
 
 			// Filter notifications based on bookmark settings and session state
 			for _, n := range res.Notifications {
-				// Skip notifications marked as done (GitHub API still returns them with all=true)
-				// Check both persistent store and session state
-				if doneStore.IsDone(n.Id, n.UpdatedAt) || sessionMarkedDone[n.Id] {
+				// Skip notifications marked as done this session, in case a response
+				// arrives before GitHub reflects the change
+				if sessionMarkedDone[n.Id] {
 					continue
 				}
 
@@ -780,7 +777,7 @@ func (m *Model) FetchNextPageSectionRows() []tea.Cmd {
 
 			// Need more notifications - fetch the next page
 			currentPageInfo = &lastPageInfo
-			log.Debug("Fetching additional page due to done filtering",
+			log.Debug("Fetching additional page due to local filtering",
 				"currentCount", len(notifications),
 				"targetLimit", limit,
 				"nextPage", lastPageInfo.EndCursor)

@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/cli/go-gh/v2/pkg/browser"
@@ -18,10 +17,6 @@ import (
 	"github.com/dlvhdr/gh-dash/v4/internal/tui/context"
 )
 
-// markNotificationDoneFunc is the function used to mark a notification as done
-// via the GitHub API. It is a variable so tests can override it.
-var markNotificationDoneFunc = data.MarkNotificationDone
-
 func (m *Model) markAsDone() tea.Cmd {
 	notification := m.GetCurrNotification()
 	if notification == nil {
@@ -29,7 +24,6 @@ func (m *Model) markAsDone() tea.Cmd {
 	}
 
 	notificationId := notification.GetId()
-	updatedAt := notification.Notification.UpdatedAt
 	taskId := fmt.Sprintf("notification_done_%s", notificationId)
 	task := context.Task{
 		Id:           taskId,
@@ -40,11 +34,7 @@ func (m *Model) markAsDone() tea.Cmd {
 	}
 	startCmd := m.Ctx.StartTask(task)
 	return tea.Batch(startCmd, func() tea.Msg {
-		err := markNotificationDoneFunc(notificationId)
-		if err == nil {
-			// Persist to done store so it stays hidden across sessions
-			data.GetDoneStore().MarkDone(notificationId, updatedAt)
-		}
+		err := data.MarkNotificationDone(notificationId)
 		return constants.TaskFinishedMsg{
 			SectionId:   m.Id,
 			SectionType: SectionType,
@@ -76,26 +66,18 @@ func (m *Model) markAllAsDone() tea.Cmd {
 		Error:        nil,
 	}
 
-	type doneEntry struct {
-		id        string
-		updatedAt time.Time
-	}
-	entries := make([]doneEntry, 0, count)
+	ids := make([]string, 0, count)
 	for _, n := range m.Notifications {
-		entries = append(entries, doneEntry{n.GetId(), n.Notification.UpdatedAt})
+		ids = append(ids, n.GetId())
 	}
 
 	startCmd := m.Ctx.StartTask(task)
 	return tea.Batch(startCmd, func() tea.Msg {
 		// Mark each notification as done (delete it)
-		doneStore := data.GetDoneStore()
 		var lastErr error
-		for _, e := range entries {
-			if err := data.MarkNotificationDone(e.id); err != nil {
+		for _, id := range ids {
+			if err := data.MarkNotificationDone(id); err != nil {
 				lastErr = err
-			} else {
-				// Persist to done store so it stays hidden across sessions
-				doneStore.MarkDone(e.id, e.updatedAt)
 			}
 		}
 

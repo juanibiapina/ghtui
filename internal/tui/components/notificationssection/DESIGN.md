@@ -12,10 +12,7 @@ The notifications feature adds a new view to gh-dash that displays GitHub notifi
 internal/
 ├── data/
 │   ├── notificationapi.go       # GitHub API interactions for notifications
-│   ├── bookmarks.go             # Local bookmark storage (singleton)
-│   ├── donestore.go             # Timestamp-based Done tracking (singleton)
-│   ├── donestore_test.go        # Tests for Done store
-│   └── donestore_testing.go     # Test helpers (create/override DoneStore)
+│   └── bookmarks.go             # Local bookmark storage (singleton)
 ├── tui/
 │   ├── keys/
 │   │   └── notificationKeys.go  # Key bindings specific to notifications
@@ -151,7 +148,7 @@ Title truncation is handled dynamically by the table component based on actual c
 
 #### 8. Bookmark and Done Systems
 
-Both bookmarks and Done status are tracked locally because GitHub’s API doesn’t provide these features.
+Bookmarks are tracked locally because GitHub’s API doesn’t provide them. Done status lives on GitHub.
 
 **Bookmarks** use the generic `NotificationIDStore` type in `data/bookmarks.go`:
 
@@ -169,28 +166,9 @@ type NotificationIDStore struct {
 - Bookmarked notifications are styled as read (faint text) but show a bookmark indicator
 - When user explicitly searches `is:unread`, bookmarked+read items are excluded
 
-**Done tracking** uses its own `DoneStore` type in `data/donestore.go`, separate from the bookmark store. This is necessary because GitHub’s “mark as done” API (`DELETE /notifications/threads/{id}`) doesn’t actually delete notifications — they still appear in API responses with `all=true`. Without local tracking, Done notifications would reappear when filtering to `is:read` or `is:all`.
+**Done status** comes from GitHub. Marking a notification Done calls `DELETE /notifications/threads/{id}`, and every list request sends `is_done=false`, so the API leaves out Done notifications the same way the github.com inbox does. That covers notifications marked Done on github.com or in other clients too. When a Done thread gets new activity, GitHub returns it to the inbox.
 
-The DoneStore records timestamps, not just IDs:
-
-```go
-type DoneStore struct {
-    entries  map[string]time.Time // id -> updatedAt when marked done
-    filePath string
-    // ... mutex
-}
-```
-
-When marking a notification as Done, the store records the notification’s current `updated_at` timestamp. When checking whether a notification is still Done, `IsDone(id, updatedAt)` compares the stored timestamp against the notification’s current `updated_at`: if the notification has been updated since it was Done (new comments, state changes, etc.), it resurfaces automatically. This prevents notifications with new activity from being permanently hidden.
-
-- Stored in `~/.local/state/gh-dash/done.json` as a JSON object mapping IDs to RFC 3339 timestamps: `{"id": "2024-01-15T10:30:00Z", ...}`
-- Accessed via `data.GetDoneStore()` singleton
-- Backward-compatible: loads the legacy format (plain JSON array of IDs) used by older versions; legacy entries are assigned the zero time and pruned on load
-- Persists across sessions and application restarts
-
-**Pruning:** On load, the DoneStore removes stale entries, to prevent the file from growing indefinitely. Entries older than 90 days are pruned — because those are unlikely to still appear in API responses. Zero-time entries (from the legacy format) are also pruned, since removing them from the store has the same effect as keeping them: `IsDone` returns false either way, so active notifications still resurface.
-
-**Pagination with local filtering:** Because Done notifications are filtered out locally after fetching from the API, a single page of results may yield very few visible notifications. To handle this, the fetch logic automatically requests additional pages from the API until the requested limit is reached or all pages are exhausted. This ensures users see a full page of results even when many notifications have been marked as Done.
+**Pagination with local filtering:** Read state and reason filters drop notifications locally after fetching from the API, so a single page of results may yield very few visible notifications. To handle this, the fetch logic automatically requests additional pages from the API until the requested limit is reached or all pages are exhausted.
 
 #### 9. Unsubscribe
 
@@ -213,15 +191,15 @@ The `UpdateNotificationMsg` and `UpdateNotificationReadStateMsg` types propagate
 - The user quits and restarts the application
 - The notification is explicitly marked as Done
 
-**Session persistence for Done notifications:** When a notification is marked as Done, its ID is tracked in `sessionMarkedDone` in addition to being persisted to the DoneStore. The session map provides immediate filtering without waiting for the async DoneStore save to complete. Like `sessionMarkedRead`, it is cleared on manual refresh.
+**Session persistence for Done notifications:** When a notification is marked as Done, its ID is tracked in `sessionMarkedDone`. This hides it even if a refresh returns before GitHub reflects the change, and it hides session-read notifications that are fetched by thread ID. Like `sessionMarkedRead`, it is cleared on manual refresh.
 
 #### 12. Command Architecture
 
 Notification commands are organized in `commands.go`, following the pattern established by `prssection` (which has `checkout.go`, `diff.go`). Commands fall into two categories:
 
 **Section methods** — Commands that operate on section state and are invoked via key handling in the section's `Update` method:
-- `markAsDone()` — Marks the current notification as Done (persists ID + `updated_at` timestamp to DoneStore). Important: This captures `updatedAt` _by value before_ the closure — because `GetCurrNotification()` returns a pointer into the `Notifications` slice, which may shift when other notifications are removed concurrently.
-- `markAllAsDone()` — Marks all visible notifications as Done (persists each ID + `updated_at` to DoneStore)
+- `markAsDone()` — Marks the current notification as Done. Important: This captures the notification ID _by value before_ the closure — because `GetCurrNotification()` returns a pointer into the `Notifications` slice, which may shift when other notifications are removed concurrently.
+- `markAllAsDone()` — Marks all visible notifications as Done
 - `markAsRead()` — Marks the current notification as read
 - `markAllAsRead()` — Marks all notifications as read
 - `unsubscribe()` — Unsubscribes from the current thread
@@ -450,6 +428,5 @@ This async resolution uses the existing `UpdateNotificationUrlMsg` message type,
 
 - **Mark as Unread**: GitHub's REST API does not support marking notifications as unread, so this feature is not available. Bookmarks provide a workaround by keeping items visible in the inbox.
 - **Discussion/Release Content**: Only PR and Issue notifications can display detailed content in the sidebar; other types open directly in the browser.
-- **Local State Persistence**: Bookmarks and Done status are stored locally (`~/.local/state/gh-dash/`) and are not synced across machines or with GitHub.
-- **Done Notifications in API**: GitHub’s “mark as Done” doesn’t delete notifications — they still appear in API responses with `all=true`. We track Done IDs with timestamps locally to filter them out and detect new activity. Entries older than 90 days are pruned on startup.
+- **Local State Persistence**: Bookmarks are stored locally (`~/.local/state/gh-dash/`) and are not synced across machines or with GitHub.
 - **Server-Side Reason Filtering**: GitHub's notification API does not support filtering by reason on the server side. Reason filters are applied client-side after fetching notifications, which means all notifications are fetched before filtering.

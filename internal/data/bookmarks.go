@@ -15,7 +15,7 @@ const (
 )
 
 // NotificationIDStore is a generic store for persisting sets of notification IDs.
-// Used for bookmarks, done notifications, and similar features.
+// Used for bookmarks and similar features.
 type NotificationIDStore struct {
 	mu       sync.RWMutex
 	ids      map[string]bool
