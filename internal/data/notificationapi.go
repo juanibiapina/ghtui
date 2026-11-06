@@ -132,11 +132,12 @@ func FetchNotifications(
 	var allNotifications []NotificationData
 
 	// Build query params
-	// all=true returns both read and unread notifications
+	// all=true returns both read and unread notifications; is_done=false
+	// leaves out the ones marked done, as GitHub's inbox does
 	includeAll := readState == NotificationStateRead || readState == NotificationStateAll
 	allParam := ""
 	if includeAll {
-		allParam = "&all=true"
+		allParam = "&all=true&is_done=false"
 	}
 
 	// Determine page number from PageInfo (EndCursor stores the current page as string)
