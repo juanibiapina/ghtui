@@ -1,21 +1,15 @@
 <br />
 <p align="center">
-  <a  class="underline: none;" href="https://gh-dash.dev">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="./docs/public/logo.png">
-      <img alt="Text changing depending on mode. Light: 'So light!' Dark: 'So dark!'" width="600" src="./docs/public/logo-light.png">
-    </picture>
-  </a>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/public/logo.png">
+    <img alt="DASH logo" width="600" src="./docs/public/logo-light.png">
+  </picture>
 </p>
 
-<p align="center">
-    <a href="https://gh-dash.dev" target="_blank">→ https://gh-dash.dev ←</a>
-</p>
 <p align="center">
   A rich terminal UI for GitHub that doesn't break your flow.
   <br />
   <br />
-  <a href="https://github.com/dlvhdr/gh-dash/releases"><img src="https://img.shields.io/github/release/dlvhdr/gh-dash.svg" alt="Latest Release"></a>
   <a href="https://www.jetify.com/docs/devbox" alt="Built with Devbox"><img src="https://www.jetify.com/img/devbox/shield_moon.svg" /></a>
 </p>
 
@@ -33,9 +27,20 @@
 
 If you like quickly navigating with your keyboard, seeing the PRs and issues you need and you <strong>love the terminal</strong> - <code>DASH</code> is for you! 🫵🏽
 
+## 📦 Install
+
+```sh
+git clone https://github.com/juanibiapina/gh-dash
+cd gh-dash
+go build -o gh-dash .
+gh extension install .
+```
+
+To update, run `git pull` and `go build -o gh-dash .` again.
+
 ## 📃 Docs
 
-`DASH` has an extensive docs site at [gh-dash.dev/getting-started](https://gh-dash.dev/getting-started).
+The docs live in [docs/src/content/docs](./docs/src/content/docs).
 
 ## 🙏 Contributing
 
@@ -53,6 +58,6 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md).
 - [gh](https://github.com/cli/cli) for the GitHub functionality
 - [delta](https://github.com/dandavison/delta) for viewing PR diffs
 
-## Authors
+## Credits
 
-Dolev Hadar ([@dlvhdr](https://github.com/dlvhdr)) and the [community](https://github.com/dlvhdr/gh-dash/graphs/contributors).
+Forked from [dlvhdr/gh-dash](https://github.com/dlvhdr/gh-dash) by Dolev Hadar, MIT licensed.
