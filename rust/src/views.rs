@@ -104,10 +104,24 @@ pub fn pill(text: &str, bg: Color, fg: Color, cap_bg: Option<Color>) -> Vec<Span
     ]
 }
 
+/// common.renderLabelName: GitHub emoji shortcodes become their emoji.
+fn label_name(name: &str) -> String {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r":[[:alnum:]_+-]+:").unwrap());
+    re.replace_all(name, |c: &regex::Captures| {
+        let token = &c[0];
+        match emojis::get_by_shortcode(&token[1..token.len() - 1]) {
+            Some(e) => e.as_str().to_string(),
+            None => token.to_string(),
+        }
+    })
+    .to_string()
+}
+
 fn label_pill(l: &Label) -> Vec<Span<'static>> {
-    let base = parse_color(&format!("#{}", l.color)).unwrap_or(Color::Rgb(128, 128, 128));
+    let base = parse_color(&format!("#{}", l.color)).unwrap_or(Color::Rgb(0, 0, 0));
     let c = darken(base, 0.3);
-    pill(&l.name, c, lighten(c, 0.5), None)
+    pill(&label_name(&l.name), c, lighten(c, 0.5), None)
 }
 
 /// common.RenderLabels. `max_rows == 0` wraps freely; otherwise overflow becomes a "+N" pill.

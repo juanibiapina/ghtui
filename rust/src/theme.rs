@@ -42,7 +42,7 @@ pub const CLOSED_PR: Color = Color::Rgb(0x65, 0x6C, 0x76);
 pub const MERGED_PR: Color = Color::Rgb(0xA3, 0x71, 0xF7);
 pub const LOGO: Color = Color::Rgb(0x00, 0xF9, 0xFB);
 /// lipgloss.Darken(LogoColor, 0.7)
-pub const LOGO_BG: Color = Color::Rgb(0x00, 0x4B, 0x4B);
+pub const LOGO_BG: Color = Color::Rgb(0, 74, 75);
 pub const GOLD: Color = Color::Rgb(0xFF, 0xD7, 0x00);
 
 impl Default for Theme {
@@ -96,25 +96,24 @@ pub fn parse_color(s: &str) -> Option<Color> {
     s.parse::<u8>().ok().map(Color::Indexed)
 }
 
-/// Approximates lipgloss.Darken/Lighten on RGB colors for label pills.
+/// lipgloss.Darken: scales each channel down, truncating.
 pub fn darken(c: Color, pct: f64) -> Color {
+    let mult = 1.0 - pct.clamp(0.0, 1.0);
     match c {
         Color::Rgb(r, g, b) => {
-            let f = |v: u8| ((v as f64) * (1.0 - pct)).round().clamp(0.0, 255.0) as u8;
+            let f = |v: u8| (v as f64 * mult) as u8;
             Color::Rgb(f(r), f(g), f(b))
         }
         other => other,
     }
 }
 
+/// lipgloss.Lighten: adds 255 * pct to each channel, capped at 255.
 pub fn lighten(c: Color, pct: f64) -> Color {
+    let add = 255.0 * pct.clamp(0.0, 1.0);
     match c {
         Color::Rgb(r, g, b) => {
-            let f = |v: u8| {
-                ((v as f64) + (255.0 - v as f64) * pct)
-                    .round()
-                    .clamp(0.0, 255.0) as u8
-            };
+            let f = |v: u8| (v as f64 + add).min(255.0) as u8;
             Color::Rgb(f(r), f(g), f(b))
         }
         other => other,

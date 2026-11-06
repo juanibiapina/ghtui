@@ -114,6 +114,7 @@ pub enum Msg {
         notif_id: String,
     },
     User(String),
+    LatestVersion(String),
     Error(String),
 }
 

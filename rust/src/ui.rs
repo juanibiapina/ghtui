@@ -156,8 +156,12 @@ fn tabs_line(app: &App) -> Line<'static> {
         ),
         raw(" "),
         span(app.version.clone(), t.secondary()),
-        raw(" "),
     ]);
+    let mut logo = logo;
+    if !app.latest_version.is_empty() && app.version != "dev" && app.version != app.latest_version {
+        logo.spans.push(span(format!(" {} Update available!", icons::UPDATE_AVAILABLE), Style::default().fg(theme::SUCCESS_GREEN)));
+    }
+    logo.spans.push(raw(" "));
     let button = Line::from(vec![
         raw(" "),
         span(

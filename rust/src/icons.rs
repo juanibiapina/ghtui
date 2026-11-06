@@ -72,6 +72,7 @@ pub const FILE_COPIED: &str = "\u{f0c5}";
 pub const FILE_MODIFIED: &str = "\u{f459}";
 pub const LINK: &str = "\u{f465}";
 pub const IMAGE: &str = "\u{f40f}";
+pub const UPDATE_AVAILABLE: &str = "\u{ea74}";
 pub const TASKS_RUNNING: &str = "\u{e388}";
 pub const ARROW_RIGHT: &str = "\u{f0054}";
 pub const ARROW_LEFT: &str = "\u{f004d}";

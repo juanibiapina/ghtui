@@ -107,6 +107,7 @@ pub struct App {
     pub timers: Vec<(Instant, Msg)>,
     pub last_refresh: Instant,
     pub version: String,
+    pub latest_version: String,
 }
 
 fn task_id(prefix: &str) -> String {
@@ -167,6 +168,7 @@ impl App {
             timers: vec![],
             last_refresh: Instant::now(),
             version: option_env!("GH_DASH_VERSION").unwrap_or("dev").to_string(),
+            latest_version: String::new(),
             cfg,
         };
         app.init_sections();
@@ -238,6 +240,8 @@ impl App {
                 Err(e) => Msg::Error(e.to_string()),
             })
         });
+        // tabs.Init: check for a newer release.
+        self.pool.spawn(|| github::latest_version().ok().map(Msg::LatestVersion));
         self.on_viewed_row_changed();
     }
 
@@ -393,6 +397,7 @@ impl App {
     // ---------------- tasks / footer ----------------
 
     pub fn start_task(&mut self, id: &str, start: &str, finished: &str) {
+        crate::info!("Starting task id={id}");
         self.tasks.insert(
             id.to_string(),
             Task {
@@ -407,6 +412,10 @@ impl App {
     }
 
     fn finish_task(&mut self, id: &str, err: Option<String>) {
+        match &err {
+            Some(e) => crate::error!("Task finished with error id={id} err={e}"),
+            None => crate::info!("Task finished id={id}"),
+        }
         if let Some(t) = self.tasks.get_mut(id) {
             t.state = if err.is_some() {
                 TaskState::Failed
@@ -1016,7 +1025,11 @@ impl App {
                 }
             }
             Msg::User(u) => self.user = u,
-            Msg::Error(e) => self.error = Some(e),
+            Msg::LatestVersion(v) => self.latest_version = v,
+            Msg::Error(e) => {
+                crate::error!("{e}");
+                self.error = Some(e)
+            }
         }
     }
 
@@ -1184,6 +1197,7 @@ impl App {
         if key.is_empty() {
             return;
         }
+        crate::info!("Key pressed key={key}");
         self.error = None;
         self.invalidate_sidebar();
 
@@ -2190,7 +2204,7 @@ impl App {
             &format!("Marking {count} notifications as done"),
             &format!("{count} notifications marked as done"),
         );
-        self.pool.spawn(move || {
+        self.pool.spawn_detached(move || {
             let mut last_err = None;
             for id in &ids {
                 match github::mark_notification_done(id) {
@@ -2457,7 +2471,7 @@ impl App {
         let id = task_id("open_browser");
         self.start_task(&id, "Opening in browser", "Opened in browser");
         let url = self.current_row().map(|r| r.url());
-        self.pool.spawn(move || {
+        self.pool.spawn_detached(move || {
             let err = match url {
                 None => Some("current selection doesn't have a URL".to_string()),
                 Some(u) => util::open_browser(&u).err().map(|e| e.to_string()),
@@ -2502,7 +2516,7 @@ impl App {
             &format!("Checking out PR #{number}"),
             &format!("PR #{number} has been checked out at {path}"),
         );
-        self.pool.spawn(move || {
+        self.pool.spawn_detached(move || {
             let err = tasks::run_gh(&["pr", "checkout", &number.to_string()], Some(&path)).err();
             Some(Msg::TaskFinished {
                 task_id: tid,
@@ -2529,7 +2543,7 @@ impl App {
             &format!("Branch for issue #{number} has been checked out at {path}"),
         );
         let repo = repo.to_string();
-        self.pool.spawn(move || {
+        self.pool.spawn_detached(move || {
             let err = tasks::run_gh(
                 &[
                     "issue",

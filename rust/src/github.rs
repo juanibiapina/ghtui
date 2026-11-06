@@ -70,6 +70,16 @@ fn resolve_token(host: &str) -> Result<String> {
 pub fn client() -> Result<&'static Client> {
     CLIENT
         .get_or_init(|| {
+            // FF_MOCK_DATA talks to the local mock server (see requests.http) with a fake token.
+            if crate::config::feature_enabled("FF_MOCK_DATA") {
+                crate::info!("using mock data server=https://localhost:3000");
+                let agent: ureq::Agent = ureq::Agent::config_builder()
+                    .http_status_as_error(false)
+                    .tls_config(ureq::tls::TlsConfig::builder().disable_verification(true).build())
+                    .build()
+                    .into();
+                return Ok(Client { host: "localhost:3000".into(), token: "fake-token".into(), agent });
+            }
             let host = host();
             let token = resolve_token(&host).map_err(|e| e.to_string())?;
             let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -359,6 +369,29 @@ pub fn fetch_issue(url: &str) -> Result<Issue> {
         .ok_or_else(|| anyhow!("issue not found: {url}"))?;
     cache.lock().unwrap().insert(url.to_string(), issue.clone());
     Ok(issue)
+}
+
+/// data.FetchLatestVersion
+pub fn latest_version() -> Result<String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Release {
+        tag_name: String,
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Repo {
+        latest_release: Option<Release>,
+    }
+    #[derive(Deserialize)]
+    struct Data {
+        repository: Option<Repo>,
+    }
+    let d: Data = client()?.graphql(
+        "query LatestVersion($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { latestRelease { tagName } } }",
+        json!({ "owner": "juanibiapina", "name": "gh-dash" }),
+    )?;
+    Ok(d.repository.and_then(|r| r.latest_release).map(|r| r.tag_name).unwrap_or_default())
 }
 
 pub fn current_login() -> Result<String> {

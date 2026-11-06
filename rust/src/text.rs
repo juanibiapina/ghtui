@@ -135,108 +135,155 @@ pub fn concat(lines: Vec<Line<'static>>) -> Line<'static> {
     Line::from(spans)
 }
 
-/// Word-wraps styled spans to `width`, breaking on spaces and hard-splitting long words.
-pub fn wrap_spans(spans: &[Span<'static>], width: usize) -> Block {
-    let width = width.max(1);
-    let mut lines: Block = vec![];
-    let mut cur: Vec<Span<'static>> = vec![];
+/// Port of charmbracelet/x/ansi `wrap` (what lipgloss.Wrap and Style.Width use):
+/// breaks on spaces and hyphens, hard-wraps words longer than the limit, and
+/// keeps a line's trailing spaces unless they overflow.
+pub fn ansi_wrap(cells: &[(char, Style)], limit: usize) -> Vec<Vec<(char, Style)>> {
+    ansi_wrap_with(cells, limit, "")
+}
+
+/// `ansi_wrap` with extra ASCII breakpoint characters (glamour uses " ,.;-+|").
+pub fn ansi_wrap_with(cells: &[(char, Style)], limit: usize, breakpoints: &str) -> Vec<Vec<(char, Style)>> {
+    if limit < 1 {
+        return vec![cells.to_vec()];
+    }
+    let cw = |c: char| UnicodeWidthChar::width(c).unwrap_or(0);
+    let mut lines: Vec<Vec<(char, Style)>> = vec![vec![]];
+    let mut word: Vec<(char, Style)> = vec![];
+    let mut space: Vec<(char, Style)> = vec![];
+    let mut space_w = 0usize;
     let mut cur_w = 0usize;
+    let mut word_len = 0usize;
 
-    // Tokenize into (text, style, is_space)
-    let mut tokens: Vec<(String, Style, bool)> = vec![];
-    for s in spans {
-        let mut word = String::new();
-        let mut in_space: Option<bool> = None;
-        for ch in s.content.chars() {
-            if ch == '\n' {
-                if !word.is_empty() {
-                    tokens.push((
-                        std::mem::take(&mut word),
-                        s.style,
-                        in_space.unwrap_or(false),
-                    ));
-                }
-                tokens.push(("\n".into(), s.style, false));
-                in_space = None;
-                continue;
+    macro_rules! add_space {
+        () => {{
+            if space_w != 0 || !space.is_empty() {
+                cur_w += space_w;
+                lines.last_mut().unwrap().append(&mut space);
+                space_w = 0;
             }
-            let sp = ch == ' ';
-            if in_space.is_some() && in_space != Some(sp) && !word.is_empty() {
-                tokens.push((std::mem::take(&mut word), s.style, in_space.unwrap()));
+        }};
+    }
+    macro_rules! add_word {
+        () => {{
+            if !word.is_empty() {
+                add_space!();
+                cur_w += word_len;
+                lines.last_mut().unwrap().append(&mut word);
+                word_len = 0;
             }
-            in_space = Some(sp);
-            word.push(ch);
-            // Like lipgloss word-wrap, allow a break right after a hyphen.
-            if ch == '-' {
-                tokens.push((std::mem::take(&mut word), s.style, false));
-                in_space = None;
-            }
-        }
-        if !word.is_empty() {
-            tokens.push((word, s.style, in_space.unwrap_or(false)));
-        }
+        }};
+    }
+    macro_rules! add_newline {
+        () => {{
+            lines.push(vec![]);
+            cur_w = 0;
+            space.clear();
+            space_w = 0;
+        }};
     }
 
-    let flush = |lines: &mut Block, cur: &mut Vec<Span<'static>>, cur_w: &mut usize| {
-        // trim trailing spaces
-        while let Some(last) = cur.last() {
-            if last.content.trim().is_empty() {
-                cur.pop();
+    for &(c, st) in cells {
+        if !c.is_ascii() {
+            let w = cw(c);
+            if c.is_whitespace() && c != '\u{a0}' {
+                add_word!();
+                space.push((c, st));
+                space_w += w;
             } else {
-                break;
-            }
-        }
-        lines.push(Line::from(std::mem::take(cur)));
-        *cur_w = 0;
-    };
-
-    for (text, style, is_space) in tokens {
-        if text == "\n" {
-            flush(&mut lines, &mut cur, &mut cur_w);
-            continue;
-        }
-        let w = str_width(&text);
-        if is_space {
-            if cur_w == 0 && !lines.is_empty() {
-                continue;
-            }
-            if cur_w + w > width {
-                flush(&mut lines, &mut cur, &mut cur_w);
-                continue;
-            }
-            cur.push(Span::styled(text, style));
-            cur_w += w;
-            continue;
-        }
-        if cur_w + w > width && cur_w > 0 {
-            flush(&mut lines, &mut cur, &mut cur_w);
-        }
-        if w > width {
-            let mut chunk = String::new();
-            let mut cw = 0;
-            for ch in text.chars() {
-                let chw = UnicodeWidthChar::width(ch).unwrap_or(0);
-                if cur_w + cw + chw > width {
-                    cur.push(Span::styled(std::mem::take(&mut chunk), style));
-                    flush(&mut lines, &mut cur, &mut cur_w);
-                    cw = 0;
+                if word_len + w > limit {
+                    add_word!();
                 }
-                chunk.push(ch);
-                cw += chw;
-            }
-            if !chunk.is_empty() {
-                cur.push(Span::styled(chunk, style));
-                cur_w += cw;
+                word.push((c, st));
+                word_len += w;
+                if cur_w + word_len + space_w > limit {
+                    add_newline!();
+                }
+                if word_len == limit {
+                    add_word!();
+                }
             }
             continue;
         }
-        cur.push(Span::styled(text, style));
-        cur_w += w;
+        match c {
+            '\n' => {
+                if word_len == 0 {
+                    if cur_w + space_w <= limit {
+                        lines.last_mut().unwrap().append(&mut space);
+                    }
+                    space.clear();
+                    space_w = 0;
+                }
+                add_word!();
+                add_newline!();
+            }
+            c if c.is_ascii_whitespace() => {
+                add_word!();
+                space.push((c, st));
+                space_w += 1;
+            }
+            c if c == '-' || breakpoints.contains(c) => {
+                add_space!();
+                if cur_w + word_len >= limit {
+                    word.push((c, st));
+                    word_len += 1;
+                } else {
+                    add_word!();
+                    lines.last_mut().unwrap().push((c, st));
+                    cur_w += 1;
+                }
+            }
+            c if c.is_ascii_control() => {}
+            _ => {
+                if cur_w == limit {
+                    add_newline!();
+                }
+                word.push((c, st));
+                word_len += 1;
+                if word_len == limit {
+                    add_word!();
+                }
+                if cur_w + word_len + space_w > limit {
+                    add_newline!();
+                }
+            }
+        }
     }
-    if !cur.is_empty() || lines.is_empty() {
-        flush(&mut lines, &mut cur, &mut cur_w);
+    if word_len == 0 {
+        if cur_w + space_w <= limit {
+            lines.last_mut().unwrap().append(&mut space);
+        }
+        space.clear();
     }
+    add_word!();
+    let _ = (space_w, cur_w);
     lines
+}
+
+pub fn spans_to_cells(spans: &[Span<'static>]) -> Vec<(char, Style)> {
+    spans.iter().flat_map(|s| s.content.chars().map(move |c| (c, s.style))).collect()
+}
+
+pub fn cells_to_line(cells: &[(char, Style)]) -> Line<'static> {
+    let mut spans: Vec<Span<'static>> = vec![];
+    let mut cur = String::new();
+    let mut cur_style: Option<Style> = None;
+    for &(c, st) in cells {
+        if cur_style != Some(st) && !cur.is_empty() {
+            spans.push(Span::styled(std::mem::take(&mut cur), cur_style.unwrap()));
+        }
+        cur_style = Some(st);
+        cur.push(c);
+    }
+    if !cur.is_empty() {
+        spans.push(Span::styled(cur, cur_style.unwrap_or_default()));
+    }
+    Line::from(spans)
+}
+
+/// Word-wraps styled spans to `width` with `ansi_wrap`.
+pub fn wrap_spans(spans: &[Span<'static>], width: usize) -> Block {
+    ansi_wrap(&spans_to_cells(spans), width.max(1)).iter().map(|l| cells_to_line(l)).collect()
 }
 
 pub fn wrap_str(text: &str, width: usize, style: Style) -> Block {

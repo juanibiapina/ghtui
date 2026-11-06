@@ -3,12 +3,16 @@
 
 mod app;
 mod bookmarks;
+mod chroma;
 mod complete;
 mod config;
 mod github;
+mod glamour;
+mod highlight;
 mod icons;
 mod input;
 mod keys;
+mod log;
 mod markdown;
 mod model;
 mod msg;
@@ -27,7 +31,10 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
-use ratatui::crossterm::event::{self, Event, KeyEventKind};
+use ratatui::crossterm::event::{
+    self, DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture, Event, KeyEventKind,
+};
+use ratatui::crossterm::execute;
 
 use crate::app::App;
 use crate::config::Location;
@@ -79,6 +86,7 @@ const HELP: &str = "
 
 struct Args {
     config: Option<String>,
+    debug: bool,
 }
 
 fn version_text() -> String {
@@ -96,7 +104,7 @@ fn version_text() -> String {
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut args = Args { config: None };
+    let mut args = Args { config: None, debug: false };
     let mut it = std::env::args().skip(1);
     let mut positional = 0;
     while let Some(a) = it.next() {
@@ -112,7 +120,7 @@ fn parse_args() -> Result<Args, String> {
             "-c" | "--config" => {
                 args.config = Some(it.next().ok_or("flag needs an argument: --config")?)
             }
-            "--debug" => {}
+            "--debug" => args.debug = true,
             "--cpuprofile" => {
                 it.next();
             }
@@ -182,6 +190,7 @@ fn current_gh_repo() -> Option<(String, String)> {
 }
 
 fn fatal(prefix: &str, err: impl std::fmt::Display) -> ! {
+    crate::error!("{prefix}: failed parsing config file err={err}");
     eprintln!(
         "{} FATA {prefix} failed parsing config file err={err}",
         chrono::Local::now().to_rfc3339()
@@ -197,8 +206,18 @@ fn main() {
             std::process::exit(1);
         }
     };
+    log::init(args.debug);
+    crate::info!("Logging to debug.log");
     let repo_path: Option<PathBuf> = std::env::current_dir().ok();
     let gh_repo = current_gh_repo();
+    match &repo_path {
+        Some(p) => crate::info!("found git repo at path path={}", p.display()),
+        None => crate::warn!("did not find git repo at current path"),
+    }
+    match &gh_repo {
+        Some((o, n)) => crate::info!("found github repo at current path owner={o} name={n}"),
+        None => crate::warn!("did not find github repo at current path"),
+    }
     let cfg = match config::parse_config(&Location {
         repo_path: repo_path.clone(),
         config_flag: args.config.clone(),
@@ -213,6 +232,8 @@ fn main() {
 
     let (pool, rx) = msg::Pool::new(12);
     let mut terminal = ratatui::init();
+    // Like the Go version: report focus (refetch on return) and capture the mouse.
+    let _ = execute!(std::io::stdout(), EnableFocusChange, EnableMouseCapture);
     let size = terminal.size().unwrap_or_default();
     let mut app = App::new(
         cfg,
@@ -238,6 +259,10 @@ fn main() {
                     app.handle_key(&keys::key_string(&k));
                     dirty = true;
                 }
+                Ok(Event::FocusGained) => {
+                    app.after_exec();
+                    dirty = true;
+                }
                 Ok(Event::Resize(w, h)) => {
                     app.on_resize(w as usize, h as usize);
                     dirty = true;
@@ -253,10 +278,12 @@ fn main() {
             dirty = true;
         }
         if let Some(mut req) = app.exec.take() {
+            let _ = execute!(std::io::stdout(), DisableFocusChange, DisableMouseCapture);
             ratatui::restore();
             let _ = std::io::stdout().flush();
             let res = req.cmd.status();
             terminal = ratatui::init();
+            let _ = execute!(std::io::stdout(), EnableFocusChange, EnableMouseCapture);
             let _ = terminal.clear();
             for m in (req.on_done)(res) {
                 app.handle_msg(m);
@@ -268,5 +295,6 @@ fn main() {
             break;
         }
     }
+    let _ = execute!(std::io::stdout(), DisableFocusChange, DisableMouseCapture);
     ratatui::restore();
 }
