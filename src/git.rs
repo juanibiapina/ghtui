@@ -58,8 +58,16 @@ pub fn origin_url(dir: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("no origin remote found"))
 }
 
+/// `owner/name` from an HTTPS or SSH remote URL.
 pub fn repo_short_name(url: &str) -> String {
-    let r = url.strip_prefix("https://github.com/").unwrap_or(url);
+    let r = [
+        "https://github.com/",
+        "git@github.com:",
+        "ssh://git@github.com/",
+    ]
+    .iter()
+    .find_map(|p| url.strip_prefix(p))
+    .unwrap_or(url);
     r.strip_suffix(".git").unwrap_or(r).to_string()
 }
 
@@ -193,5 +201,21 @@ pub fn fast_forward(dir: &str, branch: &str, checked_out: bool) -> Result<()> {
             ],
         )
         .map(|_| ())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::repo_short_name;
+
+    #[test]
+    fn short_name_from_remote_urls() {
+        for url in [
+            "https://github.com/juanibiapina/ghtui.git",
+            "git@github.com:juanibiapina/ghtui.git",
+            "ssh://git@github.com/juanibiapina/ghtui",
+        ] {
+            assert_eq!(repo_short_name(url), "juanibiapina/ghtui", "{url}");
+        }
     }
 }

@@ -1,6 +1,7 @@
 //! Messages delivered to the app loop from background work, and the worker
 //! pool that runs that work (the equivalent of bubbletea commands).
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 
@@ -140,6 +141,7 @@ pub type Job = Box<dyn FnOnce() -> Option<Msg> + Send>;
 pub struct Pool {
     jobs: Sender<Job>,
     pub msgs: Sender<Msg>,
+    pending: Arc<AtomicUsize>,
 }
 
 impl Pool {
@@ -147,24 +149,22 @@ impl Pool {
         let (jtx, jrx) = channel::<Job>();
         let (mtx, mrx) = channel::<Msg>();
         let jrx = Arc::new(Mutex::new(jrx));
+        let pending = Arc::new(AtomicUsize::new(0));
         for _ in 0..workers {
             let jrx = jrx.clone();
             let mtx = mtx.clone();
+            let pending = pending.clone();
             std::thread::spawn(move || {
                 loop {
                     let job = {
                         let rx = jrx.lock().unwrap();
                         rx.recv()
                     };
-                    match job {
-                        Ok(job) => {
-                            if let Some(m) = job()
-                                && mtx.send(m).is_err()
-                            {
-                                return;
-                            }
-                        }
-                        Err(_) => return,
+                    let Ok(job) = job else { return };
+                    let sent = job().is_none_or(|m| mtx.send(m).is_ok());
+                    pending.fetch_sub(1, Ordering::SeqCst);
+                    if !sent {
+                        return;
                     }
                 }
             });
@@ -173,13 +173,22 @@ impl Pool {
             Pool {
                 jobs: jtx,
                 msgs: mtx,
+                pending,
             },
             mrx,
         )
     }
 
     pub fn spawn(&self, job: impl FnOnce() -> Option<Msg> + Send + 'static) {
-        let _ = self.jobs.send(Box::new(job));
+        self.pending.fetch_add(1, Ordering::SeqCst);
+        if self.jobs.send(Box::new(job)).is_err() {
+            self.pending.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+
+    /// True while queued or running jobs may still deliver a message.
+    pub fn busy(&self) -> bool {
+        self.pending.load(Ordering::SeqCst) > 0
     }
 
     /// Runs on its own thread, for long-lived work like `gh pr checks --watch`.

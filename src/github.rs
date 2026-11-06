@@ -72,24 +72,6 @@ fn resolve_token(host: &str) -> Result<String> {
 pub fn client() -> Result<&'static Client> {
     CLIENT
         .get_or_init(|| {
-            // FF_MOCK_DATA talks to the local mock server (see requests.http) with a fake token.
-            if crate::config::feature_enabled("FF_MOCK_DATA") {
-                crate::info!("using mock data server=https://localhost:3000");
-                let agent: ureq::Agent = ureq::Agent::config_builder()
-                    .http_status_as_error(false)
-                    .tls_config(
-                        ureq::tls::TlsConfig::builder()
-                            .disable_verification(true)
-                            .build(),
-                    )
-                    .build()
-                    .into();
-                return Ok(Client {
-                    host: "localhost:3000".into(),
-                    token: "fake-token".into(),
-                    agent,
-                });
-            }
             let host = host();
             let token = resolve_token(&host).map_err(|e| e.to_string())?;
             let agent: ureq::Agent = ureq::Agent::config_builder()

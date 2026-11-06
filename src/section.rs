@@ -770,14 +770,9 @@ impl Section {
                 span(format!("{bl}{}{br}", "─".repeat(inner)), border),
             ]),
         ];
-        // The branches table gets the full content height, so it runs two rows past the section.
-        let table_h = rc.height.saturating_sub(3) + if self.kind == Kind::Branch { 2 } else { 0 };
+        let table_h = rc.height.saturating_sub(3);
         let table = self.table_view(rc, rc.width.saturating_sub(2), table_h);
         out.extend(indent(table, 1));
-        if self.kind == Kind::Branch {
-            // The table keeps its height when few branches match.
-            out.resize(3 + table_h, Line::default());
-        }
         out
     }
 

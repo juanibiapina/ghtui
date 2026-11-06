@@ -6,7 +6,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthChar;
 
-use crate::app::{App, Position, TABS_HEIGHT, TaskState};
+use crate::app::{App, Position, TaskState};
 use crate::config::ViewType;
 use crate::icons;
 use crate::section::{RenderCtx, SPINNER};
@@ -457,7 +457,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
 
     let l = app.layout();
-    let top = if repo_view { 1 } else { TABS_HEIGHT as u16 };
+    let top = app.tabs_height() as u16;
     // lipgloss never shrinks the search box and table header, so a tall help
     // footer pushes everything down and gets cut at the bottom of the screen.
     let mut sec_h = l.main_h;
@@ -581,10 +581,9 @@ pub fn draw(f: &mut Frame, app: &App) {
         let popup = c.view(t, l.main_w.saturating_sub(4), app.spinner, false);
         draw_block(
             buf,
-            // The popup sits at a fixed row, one row low in the repo view.
             Rect::new(
                 1,
-                TABS_HEIGHT as u16 + 3,
+                top + 3,
                 l.main_w.saturating_sub(2) as u16,
                 popup.len() as u16,
             ),

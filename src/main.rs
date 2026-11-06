@@ -32,10 +32,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use clap::Parser;
-use ratatui::crossterm::event::{
-    self, DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture, Event,
-    KeyEventKind,
-};
+use ratatui::crossterm::event::{self, DisableFocusChange, EnableFocusChange, Event, KeyEventKind};
 use ratatui::crossterm::execute;
 
 use crate::app::App;
@@ -161,8 +158,8 @@ fn main() {
 
     let (pool, rx) = msg::Pool::new(12);
     let mut terminal = ratatui::init();
-    // Report focus (refetch on return) and capture the mouse.
-    let _ = execute!(std::io::stdout(), EnableFocusChange, EnableMouseCapture);
+    // Report focus to refetch on return.
+    let _ = execute!(std::io::stdout(), EnableFocusChange);
     let size = terminal.size().unwrap_or_default();
     let mut app = App::new(
         cfg,
@@ -183,7 +180,9 @@ fn main() {
             let _ = terminal.draw(|f| ui::draw(f, &app));
             dirty = false;
         }
-        if event::poll(Duration::from_millis(100)).unwrap_or(false) {
+        // Poll briefly while background jobs run so their results show without delay.
+        let wait = if app.pool.busy() { 10 } else { 100 };
+        if event::poll(Duration::from_millis(wait)).unwrap_or(false) {
             match event::read() {
                 Ok(Event::Key(k)) if k.kind == KeyEventKind::Press => {
                     app.handle_key(&keys::key_string(&k));
@@ -208,12 +207,12 @@ fn main() {
             dirty = true;
         }
         if let Some(mut req) = app.exec.take() {
-            let _ = execute!(std::io::stdout(), DisableFocusChange, DisableMouseCapture);
+            let _ = execute!(std::io::stdout(), DisableFocusChange);
             ratatui::restore();
             let _ = std::io::stdout().flush();
             let res = req.cmd.status();
             terminal = ratatui::init();
-            let _ = execute!(std::io::stdout(), EnableFocusChange, EnableMouseCapture);
+            let _ = execute!(std::io::stdout(), EnableFocusChange);
             let _ = terminal.clear();
             for m in (req.on_done)(res) {
                 app.handle_msg(m);
@@ -225,6 +224,6 @@ fn main() {
             break;
         }
     }
-    let _ = execute!(std::io::stdout(), DisableFocusChange, DisableMouseCapture);
+    let _ = execute!(std::io::stdout(), DisableFocusChange);
     ratatui::restore();
 }

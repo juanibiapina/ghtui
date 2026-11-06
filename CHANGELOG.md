@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Show fetched PRs, issues and notifications up to 100 ms sooner.
+- Stop capturing the mouse, so you can select and copy text in the terminal again.
+
+### Fixed
+
+- Fix the branches view running two rows past the bottom of its area.
+- Fix the search popup in the branches view sitting one row too low.
+- Fix the branches view never refreshing PRs, and finding no PRs for repositories cloned over SSH.
+
 ## [0.1.0] - 2026-11-06
 
 ### Added

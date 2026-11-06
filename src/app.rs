@@ -10,9 +10,7 @@ use chrono::Local;
 
 use crate::bookmarks;
 use crate::complete::{Completer, FetchState, SourceKind};
-use crate::config::{
-    Config, IssuesSectionConfig, NotificationsSectionConfig, PrsSectionConfig, ViewType,
-};
+use crate::config::{Config, IssuesSectionConfig, PrsSectionConfig, ViewType};
 use crate::github::{self, ReadState};
 use crate::input::{TextArea, TextInput};
 use crate::keys::{Keys, NotificationSubject};
@@ -31,6 +29,7 @@ use crate::views::{self, Editor, EditorMode};
 pub const TABS_HEIGHT: usize = 2;
 pub const FOOTER_HEIGHT: usize = 1;
 const MIN_TABLE_WIDTH_FOR_RIGHT_PREVIEW: usize = 80;
+const SPINNER_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TaskState {
@@ -94,6 +93,7 @@ pub struct App {
     pub error: Option<String>,
     pub tasks: HashMap<String, Task>,
     pub spinner: usize,
+    spinner_at: Instant,
     pub user: String,
     pub gh_repo: Option<(String, String)>,
     pub repo_path: Option<PathBuf>,
@@ -160,6 +160,7 @@ impl App {
             error: None,
             tasks: HashMap::new(),
             spinner: 0,
+            spinner_at: Instant::now(),
             user: String::new(),
             gh_repo,
             repo_path,
@@ -334,7 +335,7 @@ impl App {
 
     pub fn layout(&self) -> Layout {
         let footer_h = FOOTER_HEIGHT + self.help_height();
-        let base = self.height.saturating_sub(TABS_HEIGHT + footer_h);
+        let base = self.height.saturating_sub(self.tabs_height() + footer_h);
         let preview = &self.cfg.defaults.preview;
         let position = self
             .position_override
@@ -413,9 +414,16 @@ impl App {
     }
 
     fn body_height(&self) -> usize {
-        // The branches table is two rows taller than the others.
-        let extra = if self.view == ViewType::Repo { 2 } else { 0 };
-        (self.layout().main_h + extra).saturating_sub(5)
+        self.layout().main_h.saturating_sub(5)
+    }
+
+    /// Rows above the sections: the tabs, or one empty row in the repo view, which has none.
+    pub fn tabs_height(&self) -> usize {
+        if self.view == ViewType::Repo {
+            1
+        } else {
+            TABS_HEIGHT
+        }
     }
 
     // ---------------- tasks / footer ----------------
@@ -478,8 +486,9 @@ impl App {
     /// Housekeeping run on every tick: spinner, clearing tasks, timers, refetch interval.
     pub fn tick(&mut self) -> bool {
         let mut changed = false;
-        if self.is_animating() {
+        if self.is_animating() && self.spinner_at.elapsed() >= SPINNER_INTERVAL {
             self.spinner = self.spinner.wrapping_add(1);
+            self.spinner_at = Instant::now();
             changed = true;
         }
         let before = self.tasks.len();
@@ -1064,9 +1073,8 @@ impl App {
                     } else {
                         cfg.branches_refetch_interval_seconds
                     };
-                    // The PR timer runs `git fetch`; PRs refresh with the branches.
                     if prs {
-                        self.git_fetch();
+                        self.fetch_branch_prs();
                     } else {
                         self.read_repo(false);
                     }
@@ -2400,21 +2408,18 @@ impl App {
                 &cfg,
                 gh.as_ref(),
             ),
-            ViewType::Notifications => {
-                let _ = NotificationsSectionConfig::default();
-                Section::new(
-                    id,
-                    Kind::Notification,
-                    SectionSpec {
-                        title: "Scratch",
-                        filters: "archived:false",
-                        limit: None,
-                    },
-                    notification_columns(),
-                    &cfg,
-                    gh.as_ref(),
-                )
-            }
+            ViewType::Notifications => Section::new(
+                id,
+                Kind::Notification,
+                SectionSpec {
+                    title: "Scratch",
+                    filters: "archived:false",
+                    limit: None,
+                },
+                notification_columns(),
+                &cfg,
+                gh.as_ref(),
+            ),
             _ => Section::new(
                 id,
                 Kind::Pr,
