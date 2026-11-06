@@ -1,30 +1,5 @@
 # Contributing To `gh-dash`
 
-Thank you for investing your time in contributing to our project!
-
-In this guide you will get an overview of the contribution workflow from opening an issue, creating a PR, reviewing, and merging the PR.
-
-## The Critical Rule
-
-- The most important rule: you must understand your code. If you can't explain what your changes do and how they interact with the greater system, do not contribute to this project.
-- The second most important rule: when you submit a PR you must be willing to address comments and maintain this code. Dot not submit drive-by PRs that solve your own issue without the willingness to iterate on it. Keep these in your own fork.
-
-## Quick Guide
-
-### I Have an Idea for a Feature
-
-Like bug reports, first search through both issues and discussions and try to find if your feature has already been requested. Otherwise, open a discussion in the ["Feature Requests, Ideas"](https://github.com/dlvhdr/gh-dash/issues/new?template=feature_request.md) category.
-
-### I've Implemented a Feature
-
-- If there is an issue for the feature, open a pull request straight away.
-- If there is no issue, open a discussion and link to your branch.
-- If you want to live dangerously, open a pull request and hope for the best.
-
-### I Have a Question Which Is Neither a Bug Report nor a Feature Request
-
-Open a [Q&A discussion](https://github.com/dlvhdr/gh-dash/discussions/categories/q-a), or join our [Discord Server](https://discord.gg/SXNXp9NctV) and ask away in the #help forum channel.
-
 ## Working on the Code
 
 ### Installing Required Tooling
@@ -36,7 +11,7 @@ Using Devbox will get your dev environment up and running easily and make sure w
 - Clone this repo
 
 ```sh
-git clone git@github.com:dlvhdr/gh-dash.git && cd gh-dash
+git clone git@github.com:juanibiapina/gh-dash.git && cd gh-dash
 ```
 
 - Install `devbox`

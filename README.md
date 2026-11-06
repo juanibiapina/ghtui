@@ -39,7 +39,7 @@ If you like quickly navigating with your keyboard, seeing the PRs and issues you
 
 ## 🙏 Contributing
 
-See the contribution guide at [https://www.gh-dash.dev/contributing](https://www.gh-dash.dev/contributing/).
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## 🛞 Under the hood
 

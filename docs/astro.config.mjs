@@ -109,7 +109,6 @@ export default defineConfig({
           label: "Insiders 🌟",
           items: ["insiders"],
         },
-        { slug: "contributing" },
         { slug: "donating" },
       ],
     }),
