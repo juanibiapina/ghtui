@@ -118,6 +118,19 @@ pub struct NotificationKeys {
     pub toggle_smart_filtering: Binding,
 }
 
+#[derive(Clone, Debug)]
+pub struct BranchKeys {
+    pub checkout: Binding,
+    pub new: Binding,
+    pub create_pr: Binding,
+    pub fast_forward: Binding,
+    pub push: Binding,
+    pub force_push: Binding,
+    pub delete: Binding,
+    pub update_pr: Binding,
+    pub view_prs: Binding,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum NotificationSubject {
     #[default]
@@ -132,6 +145,7 @@ pub struct Keys {
     pub pr: PrKeys,
     pub issue: IssueKeys,
     pub notif: NotificationKeys,
+    pub branch: BranchKeys,
     pub custom_universal: Vec<Binding>,
     pub custom_pr: Vec<Binding>,
     pub custom_issue: Vec<Binding>,
@@ -220,6 +234,17 @@ impl Default for Keys {
                 sort_by_repo: b(&["S"], "S", "sort by repo"),
                 switch_to_prs: b(&["s"], "s", "switch to PRs"),
                 toggle_smart_filtering: b(&["t"], "t", "toggle smart filtering"),
+            },
+            branch: BranchKeys {
+                checkout: b(&["C", "space"], "C/space", "checkout"),
+                new: b(&["n"], "n", "new"),
+                create_pr: b(&["O"], "O", "create PR"),
+                fast_forward: b(&["f"], "f", "fast-forward"),
+                push: b(&["P"], "P", "push"),
+                force_push: b(&["F"], "F", "force-push"),
+                delete: b(&["d", "backspace"], "d/backspace", "delete"),
+                update_pr: b(&["u"], "u", "update PR"),
+                view_prs: b(&["s"], "s", "Switch to PRs"),
             },
             custom_universal: vec![],
             custom_pr: vec![],
@@ -311,9 +336,26 @@ impl Keys {
             target.rebind(kb, false);
         }
         for kb in &kbs.branches {
-            if kb.builtin.is_empty() && !kb.command.is_empty() {
-                self.custom_branch.push(custom_binding(kb));
+            if kb.builtin.is_empty() {
+                if !kb.command.is_empty() {
+                    self.custom_branch.push(custom_binding(kb));
+                }
+                continue;
             }
+            let br = &mut self.branch;
+            let target = match kb.builtin.as_str() {
+                "new" => &mut br.new,
+                "createPr" => &mut br.create_pr,
+                "delete" => &mut br.delete,
+                "push" => &mut br.push,
+                "forcePush" => &mut br.force_push,
+                "fastForward" => &mut br.fast_forward,
+                "checkout" => &mut br.checkout,
+                "viewPRs" => &mut br.view_prs,
+                "updatePr" => &mut br.update_pr,
+                other => bail!("unknown built-in branch key: '{other}'"),
+            };
+            target.rebind(kb, false);
         }
         for kb in &kbs.issues {
             if kb.builtin.is_empty() {
@@ -431,7 +473,18 @@ impl Keys {
             }
             ViewType::Repo => {
                 custom.extend(self.custom_branch.clone());
-                vec![]
+                let br = &self.branch;
+                vec![
+                    br.checkout.clone(),
+                    br.fast_forward.clone(),
+                    br.push.clone(),
+                    br.force_push.clone(),
+                    br.new.clone(),
+                    br.create_pr.clone(),
+                    br.delete.clone(),
+                    br.update_pr.clone(),
+                    br.view_prs.clone(),
+                ]
             }
             ViewType::Notifications => {
                 custom.extend(self.custom_notification.clone());

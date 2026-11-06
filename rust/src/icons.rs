@@ -77,3 +77,4 @@ pub const TASKS_RUNNING: &str = "\u{e388}";
 pub const ARROW_RIGHT: &str = "\u{f0054}";
 pub const ARROW_LEFT: &str = "\u{f004d}";
 pub const PENDING_CHECKS: &str = "\u{f43a}";
+pub const NO_DATA: &str = "\u{f071b}";

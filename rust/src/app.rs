@@ -77,6 +77,12 @@ pub struct App {
     pub prs: Vec<Section>,
     pub issues: Vec<Section>,
     pub notifs: Vec<Section>,
+    /// The repo view's single "Local Branches" section (FF_REPO_VIEW).
+    pub repo: Vec<Section>,
+    pub repo_url: String,
+    pub repo_head: String,
+    pub branch_status: Option<crate::git::NameStatus>,
+    pub repo_refresh_id: u64,
     pub curr: usize,
     pub sidebar_open: bool,
     pub sidebar_scroll: usize,
@@ -138,6 +144,11 @@ impl App {
             prs: vec![],
             issues: vec![],
             notifs: vec![],
+            repo: vec![],
+            repo_url: String::new(),
+            repo_head: String::new(),
+            branch_status: None,
+            repo_refresh_id: 0,
             curr: 0,
             sidebar_open,
             sidebar_scroll: 0,
@@ -250,7 +261,8 @@ impl App {
     pub fn sections(&self) -> &Vec<Section> {
         match self.view {
             ViewType::Notifications => &self.notifs,
-            ViewType::Prs | ViewType::Repo => &self.prs,
+            ViewType::Prs => &self.prs,
+            ViewType::Repo => &self.repo,
             ViewType::Issues => &self.issues,
         }
     }
@@ -258,7 +270,8 @@ impl App {
     fn sections_mut(&mut self) -> &mut Vec<Section> {
         match self.view {
             ViewType::Notifications => &mut self.notifs,
-            ViewType::Prs | ViewType::Repo => &mut self.prs,
+            ViewType::Prs => &mut self.prs,
+            ViewType::Repo => &mut self.repo,
             ViewType::Issues => &mut self.issues,
         }
     }
@@ -266,7 +279,8 @@ impl App {
     fn sections_for(&mut self, view: ViewType) -> &mut Vec<Section> {
         match view {
             ViewType::Notifications => &mut self.notifs,
-            ViewType::Prs | ViewType::Repo => &mut self.prs,
+            ViewType::Prs => &mut self.prs,
+            ViewType::Repo => &mut self.repo,
             ViewType::Issues => &mut self.issues,
         }
     }
@@ -391,7 +405,9 @@ impl App {
     }
 
     fn body_height(&self) -> usize {
-        self.layout().main_h.saturating_sub(5)
+        // The branches table is two rows taller than the others.
+        let extra = if self.view == ViewType::Repo { 2 } else { 0 };
+        (self.layout().main_h + extra).saturating_sub(5)
     }
 
     // ---------------- tasks / footer ----------------
@@ -486,6 +502,10 @@ impl App {
 
     fn fetch_all_view_sections(&mut self) {
         self.last_refresh = Instant::now();
+        if self.view == ViewType::Repo {
+            self.fetch_all_branches();
+            return;
+        }
         let view = self.view;
         let n = self.sections_for(view).len();
         for i in 0..n {
@@ -741,6 +761,9 @@ impl App {
         self.invalidate_sidebar();
         self.enrich_current_row();
         self.schedule_notification_preview();
+        if self.view == ViewType::Repo {
+            self.refresh_branch_status();
+        }
     }
 
     fn enrich_current_row(&mut self) {
@@ -1025,6 +1048,21 @@ impl App {
                 }
             }
             Msg::User(u) => self.user = u,
+            Msg::RepoTick { id, prs } => {
+                if id == self.repo_refresh_id {
+                    let cfg = &self.cfg.repo;
+                    let secs = if prs { cfg.prs_refetch_interval_seconds } else { cfg.branches_refetch_interval_seconds };
+                    // onRefreshPrsMsg runs `git fetch` (not a PR fetch) in the Go version.
+                    if prs {
+                        self.git_fetch();
+                    } else {
+                        self.read_repo(false);
+                    }
+                    self.timers.push((Instant::now() + Duration::from_secs(secs), Msg::RepoTick { id, prs }));
+                }
+            }
+            Msg::BranchStatus(st) => self.branch_status = Some(st),
+            Msg::FetchBranchPr { branch, short, key } => self.fetch_branch_pr(branch, short, key),
             Msg::LatestVersion(v) => self.latest_version = v,
             Msg::Error(e) => {
                 crate::error!("{e}");
@@ -1048,6 +1086,7 @@ impl App {
         let mut new_notifs: Vec<NotifRow> = vec![];
         let mut row_changed = false;
         let mut refetch = false;
+        let mut repo_head: Option<String> = None;
         {
             let Some(s) = self.sections_for(key.view).get_mut(key.id) else {
                 return;
@@ -1172,6 +1211,29 @@ impl App {
                     refetch = true;
                     row_changed = true;
                 }
+                Payload::Repo { repo, reset } => {
+                    s.branches = repo
+                        .branches
+                        .iter()
+                        .map(|b| section::BranchRow { b: b.clone(), pr: None })
+                        .collect();
+                    s.repo_status = repo.status.clone();
+                    s.is_loading = false;
+                    s.last_updated = Local::now();
+                    if reset {
+                        s.cursor = 0;
+                        s.top = 0;
+                    }
+                    s.clamp_cursor();
+                    row_changed = true;
+                    repo_head = Some(repo.head_branch_name.clone());
+                }
+                Payload::BranchPrs(prs) => {
+                    s.prs = prs.into_iter().map(|p| PrRow { primary: p, enriched: None }).collect();
+                }
+                Payload::BranchPr(pr) => {
+                    s.prs.push(PrRow { primary: pr, enriched: None });
+                }
                 Payload::MarkAllRead => {
                     for n in s.notifs.iter_mut() {
                         n.n.unread = false;
@@ -1185,6 +1247,12 @@ impl App {
         }
         if refetch {
             self.fetch_next_page(key.view, key.id);
+        }
+        if key.view == ViewType::Repo {
+            if let Some(h) = repo_head {
+                self.repo_head = h;
+            }
+            self.relink_branch_prs();
         }
         if is_current && row_changed {
             self.on_viewed_row_changed();
@@ -1270,7 +1338,7 @@ impl App {
             if let Some(s) = self.section_mut() {
                 let prev = s.cursor;
                 s.next_row(&cfg, body_h);
-                let fetch_more = prev != s.cursor && s.cursor + 1 == s.num_rows();
+                let fetch_more = prev != s.cursor && s.cursor + 1 == s.num_rows() && s.kind != Kind::Branch;
                 let (view, id) = (self.view, self.curr);
                 if fetch_more {
                     self.fetch_next_page(view, id);
@@ -1308,6 +1376,16 @@ impl App {
                     Position::Right
                 });
             }
+        } else if u.refresh.matches(key) && self.view == ViewType::Repo {
+            github::clear_enrichment_cache();
+            if let Some(s) = self.section_mut() {
+                s.prs.clear();
+                s.is_loading = true;
+            }
+            self.relink_branch_prs();
+            self.read_repo(false);
+            self.git_fetch();
+            self.fetch_branch_prs();
         } else if u.refresh.matches(key) {
             github::clear_enrichment_cache();
             let gh = self.gh_repo.clone();
@@ -1361,7 +1439,8 @@ impl App {
             self.confirm_quit_shown = true;
         } else {
             let handled = match self.view {
-                ViewType::Prs | ViewType::Repo => self.handle_pr_view_key(key),
+                ViewType::Prs => self.handle_pr_view_key(key),
+                ViewType::Repo => self.handle_repo_view_key(key),
                 ViewType::Issues => self.handle_issue_view_key(key),
                 ViewType::Notifications => self.handle_notification_view_key(key),
             };
@@ -1404,6 +1483,7 @@ impl App {
             Kind::Pr => k.pr.toggle_smart_filtering.matches(key),
             Kind::Issue => k.issue.toggle_smart_filtering.matches(key),
             Kind::Notification => k.notif.toggle_smart_filtering.matches(key),
+            Kind::Branch => false,
         };
         if smart {
             let s = self.section_mut().unwrap();
@@ -1438,6 +1518,7 @@ impl App {
             }
             Kind::Issue => {}
             Kind::Notification => self.notification_section_key(key),
+            Kind::Branch => self.branch_section_key(key),
         }
     }
 
@@ -1558,6 +1639,16 @@ impl App {
                 s.search = None;
                 s.search_cmp = None;
             }
+            "enter" if s.kind == Kind::Branch => {
+                // reposection: the branch search filters locally.
+                s.search_cmp = None;
+                let v = s.search.take().map(|i| i.value()).unwrap_or_default();
+                s.search_value = v.clone();
+                s.search_bar.set_value(&v);
+                s.cursor = 0;
+                s.top = 0;
+                self.on_viewed_row_changed();
+            }
             "enter" => {
                 s.search_cmp = None;
                 let v = s.search.take().map(|i| i.value()).unwrap_or_default();
@@ -1672,6 +1763,16 @@ impl App {
         let s = self.section_mut().unwrap();
         match key {
             "ctrl+c" | "esc" => s.prompt = None,
+            "enter" if s.kind == Kind::Branch => {
+                let (action, input) = s.prompt.take().unwrap();
+                let v = input.value();
+                match action.as_str() {
+                    "new" => self.new_branch(&v),
+                    "create_pr" => self.create_branch_pr(&v),
+                    "delete" if v == "y" || v == "Y" => self.delete_branch(),
+                    _ => {}
+                }
+            }
             "enter" => {
                 let (action, input) = s.prompt.take().unwrap();
                 let v = input.value();
@@ -1787,7 +1888,7 @@ impl App {
                 i.repository.name_with_owner.clone(),
                 i.labels.nodes.clone(),
             ),
-            RowRef::Notification(_) => return,
+            RowRef::Notification(_) | RowRef::Branch(_) => return,
         };
         let noun = if is_pr { "pr" } else { "issue" };
         let words: Vec<String> = value.split_whitespace().map(String::from).collect();
@@ -2234,13 +2335,19 @@ impl App {
             self.subject_issue = None;
             self.subject_id.clear();
         }
+        // With FF_REPO_VIEW the cycle passes through the branches view.
+        let repo_ff = crate::config::feature_enabled("FF_REPO_VIEW");
         self.view = match self.view {
             ViewType::Notifications => ViewType::Prs,
             ViewType::Prs => ViewType::Issues,
+            ViewType::Issues if repo_ff => ViewType::Repo,
             _ => ViewType::Notifications,
         };
         self.curr = 0;
-        if self.is_view_stale() {
+        // The Go version never loads branches when switching into the repo view and
+        // shows "No sections defined"; load them on first entry instead.
+        let repo_unloaded = self.view == ViewType::Repo && self.repo.is_empty();
+        if repo_unloaded || self.is_view_stale() {
             self.fetch_all_view_sections();
         }
         self.on_viewed_row_changed();
@@ -2379,6 +2486,21 @@ impl App {
                         (s("Author"), p.primary.author.login.clone()),
                     ]);
                     self.run_custom_command(&b.command, vars);
+                }
+            }
+            (ViewType::Repo, Some(RowRef::Branch(b))) => {
+                if let Some(binding) = find(&kb.branches) {
+                    let mut vars = HashMap::from([(s("HeadRefName"), b.b.name.clone())]);
+                    if let Some(p) = &self.repo_path {
+                        vars.insert(s("RepoPath"), p.display().to_string());
+                    }
+                    if let Some(pr) = &b.pr {
+                        vars.insert(s("RepoName"), pr.repository.name_with_owner.clone());
+                        vars.insert(s("PrNumber"), pr.number.to_string());
+                        vars.insert(s("BaseRefName"), pr.base_ref_name.clone());
+                        vars.insert(s("Author"), pr.author.login.clone());
+                    }
+                    self.run_custom_command(&binding.command, vars);
                 }
             }
             (ViewType::Notifications, Some(RowRef::Notification(n))) => {
@@ -2649,6 +2771,10 @@ impl App {
                     views::notification_prompt(t, &n)
                 }
             }
+            RowRef::Branch(b) => {
+                let rule_w = self.layout().preview_w.saturating_sub(5);
+                views::branch_view(t, &b, self.branch_status.as_ref(), rule_w)
+            }
         }
     }
 
@@ -2678,6 +2804,260 @@ impl App {
     pub fn after_exec(&mut self) {
         let (view, id) = (self.view, self.curr);
         self.fetch_next_page(view, id);
+    }
+}
+
+// ---------------- repo view (reposection) ----------------
+
+impl App {
+    fn repo_dir(&self) -> Option<String> {
+        self.repo_path.as_ref().map(|p| p.display().to_string())
+    }
+
+    /// reposection.FetchAllBranches: a fresh section, read + fetch + PRs, and refresh ticks.
+    fn fetch_all_branches(&mut self) {
+        let cfg = self.cfg.clone();
+        let mut s = Section::new(0, Kind::Branch, "Local Branches", "", None, section::branch_columns(&cfg), &cfg, None);
+        s.search_value.clear();
+        s.search_bar.set_value("");
+        self.repo = vec![s];
+        self.curr = 0;
+        if self.repo_path.is_none() {
+            return;
+        }
+        self.read_repo(false);
+        self.git_fetch();
+        self.fetch_branch_prs();
+        self.repo_refresh_id += 1;
+        let id = self.repo_refresh_id;
+        let now = Instant::now();
+        self.timers.push((now + Duration::from_secs(cfg.repo.branches_refetch_interval_seconds), Msg::RepoTick { id, prs: false }));
+        self.timers.push((now + Duration::from_secs(cfg.repo.prs_refetch_interval_seconds), Msg::RepoTick { id, prs: true }));
+    }
+
+    fn repo_task(&mut self, tid: String, start: &str, done: &str, reset: bool, work: impl FnOnce(&str) -> anyhow::Result<crate::git::Repo> + Send + 'static) {
+        let Some(dir) = self.repo_dir() else { return };
+        self.start_task(&tid, start, done);
+        let key = SectionKey { view: ViewType::Repo, id: 0 };
+        self.pool.spawn(move || {
+            Some(match work(&dir) {
+                Ok(repo) => Msg::TaskFinished { task_id: tid, section: Some(key), err: None, payload: Payload::Repo { repo, reset } },
+                Err(e) => Msg::TaskFinished { task_id: tid, section: None, err: Some(e.to_string()), payload: Payload::None },
+            })
+        });
+    }
+
+    fn read_repo(&mut self, reset: bool) {
+        let tid = task_id("fetching_branches");
+        self.repo_task(tid, "Reading local branches", "Branches read", reset, |d| crate::git::get_repo(d));
+    }
+
+    fn git_fetch(&mut self) {
+        let tid = task_id("git_fetch_repo");
+        self.repo_task(tid, "Fetching branches from origin", "Fetched origin branches", false, |d| crate::git::fetch_repo(d));
+    }
+
+    fn fetch_branch_prs(&mut self) {
+        let tid = task_id("fetching_pr_branches");
+        self.start_task(&tid, "Fetching PRs", "PRs fetched");
+        let query = format!("author:@me repo:{}", crate::git::repo_short_name(&self.repo_url));
+        let limit = self.cfg.defaults.prs_limit;
+        let key = SectionKey { view: ViewType::Repo, id: 0 };
+        self.pool.spawn(move || {
+            Some(match github::fetch_pull_requests(&query, limit, None) {
+                Ok(p) => Msg::TaskFinished { task_id: tid, section: Some(key), err: None, payload: Payload::BranchPrs(p.items) },
+                Err(e) => Msg::TaskFinished { task_id: tid, section: Some(key), err: Some(e.to_string()), payload: Payload::None },
+            })
+        });
+    }
+
+    /// updateBranchesWithPrs: attach each branch's PR, checked-out branch first, then newest.
+    fn relink_branch_prs(&mut self) {
+        let Some(s) = self.repo.first_mut() else { return };
+        let prs: Vec<PullRequest> = s.prs.iter().map(|p| p.primary.clone()).collect();
+        for b in s.branches.iter_mut() {
+            b.pr = prs.iter().find(|p| p.head_ref_name == b.b.name).cloned();
+        }
+        s.branches.sort_by(|a, b| {
+            use std::cmp::Ordering;
+            if a.b.is_checked_out != b.b.is_checked_out {
+                return if a.b.is_checked_out { Ordering::Less } else { Ordering::Greater };
+            }
+            match (a.b.last_updated_at, b.b.last_updated_at) {
+                (Some(x), Some(y)) => y.cmp(&x),
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (None, None) => a.b.name.cmp(&b.b.name),
+            }
+        });
+        s.clamp_cursor();
+    }
+
+    fn refresh_branch_status(&mut self) {
+        let Some(dir) = self.repo_dir() else { return };
+        self.pool.spawn(move || crate::git::status(&dir).ok().map(Msg::BranchStatus));
+    }
+
+    fn current_branch(&self) -> Option<section::BranchRow> {
+        match self.current_row() {
+            Some(RowRef::Branch(b)) => Some(b),
+            _ => None,
+        }
+    }
+
+    fn handle_repo_view_key(&mut self, key: &str) -> bool {
+        let br = self.keys.branch.clone();
+        if self.keys.u.open_github.matches(key) {
+            if let Some(b) = self.current_branch() {
+                let name = b.b.name.clone();
+                let tid = format!("branch_open_{name}");
+                self.start_task(&tid, &format!("Opening PR for branch {name}"), &format!("PR for branch {name} has been opened"));
+                let repo = self.repo_url.clone();
+                self.pool.spawn(move || {
+                    let err = tasks::run_gh(&["pr", "view", "--web", &name, "-R", &repo], None).err();
+                    Some(Msg::TaskFinished { task_id: tid, section: None, err, payload: Payload::None })
+                });
+            }
+            return false;
+        }
+        for (b, action) in [(&br.delete, "delete"), (&br.new, "new"), (&br.create_pr, "create_pr")] {
+            if b.matches(key) {
+                if let Some(s) = self.section_mut() {
+                    s.prompt = Some((action.to_string(), TextInput::new("")));
+                }
+                return true;
+            }
+        }
+        if br.view_prs.matches(key) {
+            self.switch_selected_view();
+            return false;
+        }
+        false
+    }
+
+    /// reposection.Update keys: checkout, push, force-push, fast-forward.
+    fn branch_section_key(&mut self, key: &str) {
+        let br = self.keys.branch.clone();
+        let Some(b) = self.current_branch() else { return };
+        let name = b.b.name.clone();
+        let stamp = Local::now().timestamp();
+        if br.checkout.matches(key) {
+            let n = name.clone();
+            self.repo_task(
+                format!("checkout_{name}_{stamp}"),
+                &format!("Checking out branch {name}"),
+                &format!("Branch {name} has been checked out"),
+                true,
+                move |d| {
+                    crate::git::checkout(d, &n)?;
+                    crate::git::get_repo(d)
+                },
+            );
+        } else if br.push.matches(key) || br.force_push.matches(key) {
+            let force = br.force_push.matches(key);
+            let with = if force { " with force" } else { "" };
+            let (remote, upstream) = match b.b.remotes.first() {
+                Some(r) => (r.clone(), false),
+                None => ("origin".to_string(), true),
+            };
+            let n = name.clone();
+            self.repo_task(
+                format!("push_{name}_{stamp}"),
+                &format!("Pushing branch {name}{with}"),
+                &format!("Branch {name} has been pushed{with}"),
+                false,
+                move |d| {
+                    crate::git::push(d, &remote, &n, force, upstream)?;
+                    crate::git::get_repo(d)
+                },
+            );
+        } else if br.fast_forward.matches(key) {
+            let n = name.clone();
+            let checked_out = b.b.is_checked_out;
+            self.repo_task(
+                format!("fast-forward_{name}_{stamp}"),
+                &format!("Fast-forwarding branch {name}"),
+                &format!("Branch {name} has been fast-forwarded"),
+                false,
+                move |d| {
+                    crate::git::fast_forward(d, &n, checked_out)?;
+                    crate::git::get_repo(d)
+                },
+            );
+        }
+    }
+
+    fn delete_branch(&mut self) {
+        let Some(b) = self.current_branch() else { return };
+        let name = b.b.name.clone();
+        let n = name.clone();
+        self.repo_task(
+            format!("delete_{name}_{}", Local::now().timestamp()),
+            &format!("Deleting branch {name}"),
+            &format!("Branch {name} has been deleted"),
+            false,
+            move |d| {
+                crate::git::delete_branch(d, &n)?;
+                crate::git::get_repo(d)
+            },
+        );
+    }
+
+    fn new_branch(&mut self, name: &str) {
+        let n = name.to_string();
+        let base = self.repo_head.clone();
+        self.repo_task(
+            format!("create_branch_{name}_{}", Local::now().timestamp()),
+            &format!("Creating branch {name}"),
+            &format!("Branch {name} has been created"),
+            false,
+            move |d| {
+                crate::git::new_branch(d, &n, &base)?;
+                crate::git::get_repo(d)
+            },
+        );
+    }
+
+    /// tasks.CreatePR runs `gh pr create` interactively, then fetches the new PR.
+    fn create_branch_pr(&mut self, title: &str) {
+        let Some(b) = self.current_branch() else { return };
+        let branch = b.b.name.clone();
+        let tid = format!("create_pr_{title}");
+        self.start_task(&tid, &format!("Creating PR \"{title}\""), &format!("PR \"{title}\" has been created"));
+        let mut cmd = std::process::Command::new("gh");
+        cmd.args(["pr", "create", "--title", title, "-R", &self.repo_url]);
+        let short = crate::git::repo_short_name(&self.repo_url);
+        let key = SectionKey { view: ViewType::Repo, id: 0 };
+        self.exec = Some(ExecRequest {
+            cmd,
+            on_done: Box::new(move |res| {
+                let created = matches!(&res, Ok(st) if st.success());
+                let mut msgs = vec![Msg::TaskFinished { task_id: tid, section: None, err: None, payload: Payload::None }];
+                if created {
+                    msgs.push(Msg::FetchBranchPr { branch, short, key });
+                }
+                msgs
+            }),
+        });
+    }
+
+    /// reposection.fetchPRCmd
+    fn fetch_branch_pr(&mut self, branch: String, short: String, key: SectionKey) {
+        let tid = task_id(&format!("fetching_pr_for_branch_{branch}"));
+        self.start_task(&tid, &format!("Fetching PR for branch {branch}"), "PR fetched");
+        self.pool.spawn(move || {
+            let res = github::fetch_pull_requests(&format!("author:@me repo:{short} head:{branch}"), 1, None);
+            Some(match res {
+                Ok(p) if p.items.len() == 1 => Msg::TaskFinished {
+                    task_id: tid,
+                    section: Some(key),
+                    err: None,
+                    payload: Payload::BranchPr(p.items.into_iter().next().unwrap()),
+                },
+                Ok(p) => Msg::TaskFinished { task_id: tid, section: Some(key), err: Some(format!("expected 1 PR, got {}", p.items.len())), payload: Payload::None },
+                Err(e) => Msg::TaskFinished { task_id: tid, section: Some(key), err: Some(e.to_string()), payload: Payload::None },
+            })
+        });
     }
 }
 

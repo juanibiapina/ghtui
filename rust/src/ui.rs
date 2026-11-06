@@ -258,10 +258,12 @@ fn view_switcher(app: &App) -> Line<'static> {
         footer.fg(t.faint_border),
     ));
     if let Some(p) = &app.repo_path {
-        let name = p
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
+        // footer.renderViewSwitcher: the origin's short name when known.
+        let name = if !app.repo_url.is_empty() {
+            crate::git::repo_short_name(&app.repo_url)
+        } else {
+            p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+        };
         spans.push(span(
             format!("{} {name}", icons::REPO),
             footer.fg(t.inverted_text),
@@ -356,7 +358,12 @@ fn footer_line(app: &App) -> Line<'static> {
     } else {
         None
     };
+    let branch_pager = app
+        .section()
+        .filter(|s| s.kind == crate::section::Kind::Branch && s.prompt.is_none() && app.notif_prompt.is_none())
+        .map(|s| crate::section::branch_pager(s, t));
     let left = match left_text {
+        _ if branch_pager.is_some() => branch_pager.unwrap(),
         Some(c) if !c.is_empty() => Line::from(vec![
             span(" ", pager_style),
             span(c, pager_style),
@@ -426,18 +433,19 @@ pub fn draw(f: &mut Frame, app: &App) {
     let t = &app.theme;
     let w = area.width as usize;
 
-    draw_block(buf, Rect::new(0, 0, area.width, 1), &[tabs_line(app)]);
-    draw_block(
-        buf,
-        Rect::new(0, 1, area.width, 1),
-        &[Line::from(span(
-            "━".repeat(w),
-            Style::default().fg(t.primary_border),
-        ))],
-    );
+    // ui.View leaves out the tabs in the repo view, leaving one empty line.
+    let repo_view = app.view == crate::config::ViewType::Repo;
+    if !repo_view {
+        draw_block(buf, Rect::new(0, 0, area.width, 1), &[tabs_line(app)]);
+        draw_block(
+            buf,
+            Rect::new(0, 1, area.width, 1),
+            &[Line::from(span("━".repeat(w), Style::default().fg(t.primary_border)))],
+        );
+    }
 
     let l = app.layout();
-    let top = TABS_HEIGHT as u16;
+    let top = if repo_view { 1 } else { TABS_HEIGHT as u16 };
     // lipgloss never shrinks the search box and table header, so a tall help
     // footer pushes everything down and gets cut at the bottom of the screen.
     let mut sec_h = l.main_h;
@@ -561,9 +569,10 @@ pub fn draw(f: &mut Frame, app: &App) {
         let popup = c.view(t, l.main_w.saturating_sub(4), app.spinner, false);
         draw_block(
             buf,
+            // ui.View places the popup at a fixed row, which sits one row low in the repo view.
             Rect::new(
                 1,
-                top + 3,
+                TABS_HEIGHT as u16 + 3,
                 l.main_w.saturating_sub(2) as u16,
                 popup.len() as u16,
             ),

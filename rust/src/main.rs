@@ -6,6 +6,7 @@ mod bookmarks;
 mod chroma;
 mod complete;
 mod config;
+mod git;
 mod github;
 mod glamour;
 mod highlight;
@@ -78,7 +79,6 @@ const HELP: &str = "
                     2. $GH_DASH_CONFIG env var
                     3. $XDG_CONFIG_HOME/gh-dash/config.yml
                   )
-    --cpuprofile  Write cpu profile to file
     --debug       Passing this flag will allow writing debug output to debug.log
     -h --help     Help for gh-dash
     -v --version  Version for gh
@@ -121,13 +121,9 @@ fn parse_args() -> Result<Args, String> {
                 args.config = Some(it.next().ok_or("flag needs an argument: --config")?)
             }
             "--debug" => args.debug = true,
-            "--cpuprofile" => {
-                it.next();
-            }
             s if s.starts_with("--config=") => {
                 args.config = Some(s["--config=".len()..].to_string())
             }
-            s if s.starts_with("--cpuprofile=") => {}
             s if s.starts_with('-') => return Err(format!("unknown flag: {s}")),
             _ => {
                 positional += 1;
@@ -230,6 +226,17 @@ fn main() {
         fatal("Reading config file", e);
     }
 
+    // ui.initScreen: the repo view needs the origin URL; a repo without one is fatal.
+    let mut repo_url = String::new();
+    if config::feature_enabled("FF_REPO_VIEW") {
+        if let Some(p) = &repo_path {
+            match git::origin_url(&p.display().to_string()) {
+                Ok(u) => repo_url = u,
+                Err(e) => fatal("Reading config file", e),
+            }
+        }
+    }
+
     let (pool, rx) = msg::Pool::new(12);
     let mut terminal = ratatui::init();
     // Like the Go version: report focus (refetch on return) and capture the mouse.
@@ -244,6 +251,7 @@ fn main() {
         size.width as usize,
         size.height as usize,
     );
+    app.repo_url = repo_url;
     app.start();
 
     let mut dirty = true;

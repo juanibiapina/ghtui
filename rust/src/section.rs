@@ -24,6 +24,8 @@ pub enum Kind {
     Pr,
     Issue,
     Notification,
+    /// The local branches section of the repo view (FF_REPO_VIEW).
+    Branch,
 }
 
 impl Kind {
@@ -32,6 +34,7 @@ impl Kind {
             Kind::Pr => "pr",
             Kind::Issue => "issue",
             Kind::Notification => "notification",
+            Kind::Branch => "repo",
         }
     }
     pub fn singular(&self) -> &'static str {
@@ -39,6 +42,7 @@ impl Kind {
             Kind::Pr => "PR",
             Kind::Issue => "Issue",
             Kind::Notification => "Notification",
+            Kind::Branch => "branch",
         }
     }
     pub fn plural(&self) -> &'static str {
@@ -46,6 +50,7 @@ impl Kind {
             Kind::Pr => "PRs",
             Kind::Issue => "Issues",
             Kind::Notification => "Notifications",
+            Kind::Branch => "branches",
         }
     }
 }
@@ -170,6 +175,14 @@ pub enum RowRef {
     Pr(PrRow),
     Issue(Issue),
     Notification(NotifRow),
+    Branch(BranchRow),
+}
+
+/// branch.BranchData: a local branch and the PR whose head it is.
+#[derive(Clone, Debug, Default)]
+pub struct BranchRow {
+    pub b: crate::git::Branch,
+    pub pr: Option<PullRequest>,
 }
 
 impl RowRef {
@@ -178,6 +191,7 @@ impl RowRef {
             RowRef::Pr(p) => p.primary.number,
             RowRef::Issue(i) => i.number,
             RowRef::Notification(n) => n.number(),
+            RowRef::Branch(b) => b.pr.as_ref().map(|p| p.number).unwrap_or(0),
         }
     }
     pub fn url(&self) -> String {
@@ -185,6 +199,7 @@ impl RowRef {
             RowRef::Pr(p) => p.primary.url.clone(),
             RowRef::Issue(i) => i.url.clone(),
             RowRef::Notification(n) => n.url(),
+            RowRef::Branch(b) => b.pr.as_ref().map(|p| p.url.clone()).unwrap_or_default(),
         }
     }
     pub fn repo(&self) -> String {
@@ -192,6 +207,7 @@ impl RowRef {
             RowRef::Pr(p) => p.primary.repository.name_with_owner.clone(),
             RowRef::Issue(i) => i.repository.name_with_owner.clone(),
             RowRef::Notification(n) => n.repo().to_string(),
+            RowRef::Branch(b) => b.b.remotes.first().cloned().unwrap_or_default(),
         }
     }
 }
@@ -338,6 +354,8 @@ pub struct Section {
     pub prs: Vec<PrRow>,
     pub issues: Vec<Issue>,
     pub notifs: Vec<NotifRow>,
+    pub branches: Vec<BranchRow>,
+    pub repo_status: crate::git::NameStatus,
     pub total_count: usize,
     pub page_info: Option<PageInfo>,
     pub last_fetch_task: String,
@@ -385,6 +403,8 @@ impl Section {
             prs: vec![],
             issues: vec![],
             notifs: vec![],
+            branches: vec![],
+            repo_status: Default::default(),
             total_count: 0,
             page_info: None,
             last_fetch_task: String::new(),
@@ -426,7 +446,13 @@ impl Section {
             Kind::Pr => self.prs.len(),
             Kind::Issue => self.issues.len(),
             Kind::Notification => self.notifs.len(),
+            Kind::Branch => self.filtered_branches().len(),
         }
+    }
+
+    /// reposection.getFilteredBranches: branch names containing the search text.
+    pub fn filtered_branches(&self) -> Vec<&BranchRow> {
+        self.branches.iter().filter(|b| b.b.name.contains(&self.search_value)).collect()
     }
 
     pub fn current(&self) -> Option<RowRef> {
@@ -438,6 +464,7 @@ impl Section {
                 .get(self.cursor)
                 .cloned()
                 .map(RowRef::Notification),
+            Kind::Branch => self.filtered_branches().get(self.cursor).map(|b| RowRef::Branch((*b).clone())),
         }
     }
 
@@ -584,11 +611,15 @@ impl Section {
     // ---- footer pager ----
 
     pub fn pager_content(&self) -> String {
+        if self.kind == Kind::Branch {
+            return String::new();
+        }
         if self.total_count == 0 {
             return String::new();
         }
         let pos = self.cursor + 1;
         match self.kind {
+            Kind::Branch => String::new(),
             Kind::Pr => {
                 let el = time_elapsed(self.last_updated.with_timezone(&chrono::Utc));
                 let el = if el == "now" {
@@ -632,7 +663,7 @@ impl Section {
         let what = match self.kind {
             Kind::Pr => "PR",
             Kind::Issue => "issue",
-            Kind::Notification => "",
+            Kind::Notification | Kind::Branch => "",
         };
         Some(match (self.kind, action.as_str()) {
             (Kind::Pr | Kind::Issue, "close") => {
@@ -647,6 +678,9 @@ impl Section {
             (Kind::Pr, "approveWorkflows") => {
                 "Are you sure you want to approve all workflows? (y/N) ".into()
             }
+            (Kind::Branch, "delete") => "Are you sure you want to delete this branch? (y/N) ".into(),
+            (Kind::Branch, "new") => "Enter branch name: ".into(),
+            (Kind::Branch, "create_pr") => "Enter PR title: ".into(),
             (Kind::Notification, "done_all") => {
                 "Are you sure you want to mark all as done? (y/N) ".into()
             }
@@ -666,10 +700,26 @@ impl Section {
         } else {
             t.primary_border
         });
-        let prompt = format!("{} is:{} ", icons::SEARCH, self.kind.type_name());
+        let prompt = if self.kind == Kind::Branch {
+            format!("{}  ", icons::SEARCH)
+        } else {
+            format!("{} is:{} ", icons::SEARCH, self.kind.type_name())
+        };
         let prompt_w = str_width(&prompt);
         let input = self.search.as_ref().unwrap_or(&self.search_bar);
-        let value_line = input.view(inner.saturating_sub(prompt_w), t.primary(), focused);
+        let mut value_line = input.view(inner.saturating_sub(prompt_w), t.primary(), focused);
+        if self.kind == Kind::Branch && input.value().is_empty() {
+            // The branch search shows its placeholder while empty.
+            let ph = "Search branches...";
+            value_line = if focused {
+                Line::from(vec![
+                    span(&ph[..1], t.faint().add_modifier(Modifier::REVERSED)),
+                    span(&ph[1..], t.faint()),
+                ])
+            } else {
+                Line::from(span(ph, t.faint()))
+            };
+        }
         let mut content = vec![Span::styled(prompt, t.secondary())];
         content.extend(value_line.spans);
         let content = fit_line(&Line::from(content), inner, Style::default());
@@ -697,9 +747,15 @@ impl Section {
                 span(format!("{bl}{}{br}", "─".repeat(inner)), border),
             ]),
         ];
-        let table_h = rc.height.saturating_sub(3);
+        // The branches table is given the full content height (reposection.UpdateProgramContext),
+        // so it runs two rows past the section like the Go version.
+        let table_h = rc.height.saturating_sub(3) + if self.kind == Kind::Branch { 2 } else { 0 };
         let table = self.table_view(rc, rc.width.saturating_sub(2), table_h);
         out.extend(indent(table, 1));
+        if self.kind == Kind::Branch {
+            // The Go table viewport keeps its height when few branches match.
+            out.resize(3 + table_h, Line::default());
+        }
         out
     }
 
@@ -917,6 +973,10 @@ impl Section {
             Kind::Pr => pr_row(&self.prs[i], rc, &self.columns, widths, selected),
             Kind::Issue => issue_row(&self.issues[i], rc),
             Kind::Notification => notification_row(&self.notifs[i], rc),
+            Kind::Branch => {
+                let rows = self.filtered_branches();
+                branch_row(rows[i], rc, &self.columns, widths)
+            }
         };
         shown_idx
             .into_iter()
@@ -1339,4 +1399,147 @@ fn notification_row(row: &NotifRow, rc: &RenderCtx) -> Vec<Block> {
         Line::default(),
     ];
     vec![type_cell, title_cell, activity_cell, updated_cell]
+}
+
+/// reposection.GetSectionColumns
+pub fn branch_columns(cfg: &Config) -> Vec<Column> {
+    let d = &cfg.defaults.layout.prs;
+    let mut title_col = col("Title", None, d.title.is_hidden());
+    title_col.grow = true;
+    let ci = col(icons::CHECKS, Some(" CI ".len()), d.ci.is_hidden());
+    if !cfg.theme.ui.table.compact {
+        return vec![
+            col(icons::STATE_COL, Some(3), d.state.is_hidden()),
+            title_col,
+            col("Assignees", d.assignees.width, d.assignees.is_hidden()),
+            col("Base", d.base.width, d.base.is_hidden()),
+            col(icons::REVIEW_STATUS, Some(4), d.review_status.is_hidden()),
+            ci,
+            col(icons::LINES, d.lines.width, d.lines.is_hidden()),
+            col(icons::PENDING_CHECKS, d.updated_at.width, d.updated_at.is_hidden()),
+        ];
+    }
+    vec![
+        col(icons::STATE_COL, Some(3), d.state.is_hidden()),
+        col(icons::REPO, d.repo.width, d.repo.is_hidden()),
+        title_col,
+        col("Author", d.author.width, d.author.is_hidden()),
+        col("Assignees", d.assignees.width, d.assignees.is_hidden()),
+        col("Base", d.base.width, d.base.is_hidden()),
+        col(icons::REVIEW_STATUS, Some(4), d.review_status.is_hidden()),
+        ci,
+        col(icons::LINES, d.lines.width, d.lines.is_hidden()),
+        col(icons::PENDING_CHECKS, d.updated_at.width, d.updated_at.is_hidden()),
+    ]
+}
+
+/// branch.Branch.ToTableRow
+fn branch_row(row: &BranchRow, rc: &RenderCtx, columns: &[Column], widths: &[usize]) -> Vec<Block> {
+    let t = rc.theme;
+    let cfg = rc.cfg;
+    let pr = row.pr.as_ref();
+    let dash = || one(vec![raw("-")]);
+    let state = match pr {
+        None => one(vec![span(icons::NO_DATA, Style::default().fg(t.success_text))]),
+        Some(p) => {
+            let (icon, color) = match p.state.as_str() {
+                "OPEN" if p.is_draft => (icons::DRAFT, t.faint_text),
+                "OPEN" => (icons::OPEN, theme::OPEN_PR),
+                "CLOSED" => (icons::CLOSED, theme::CLOSED_PR),
+                "MERGED" => (icons::MERGED, theme::MERGED_PR),
+                _ => ("-", t.faint_text),
+            };
+            one(vec![span(icon, Style::default().fg(color))])
+        }
+    };
+    let review = match pr {
+        None => dash(),
+        Some(p) if p.review_decision == "APPROVED" => one(vec![span(icons::APPROVED, Style::default().fg(t.success_text))]),
+        Some(p) if p.review_decision == "CHANGES_REQUESTED" => {
+            one(vec![span(icons::CHANGES_REQUESTED, Style::default().fg(t.error_text))])
+        }
+        Some(_) => {
+            let (g, s) = t.waiting_glyph();
+            one(vec![span(g, s)])
+        }
+    };
+    let ci = match pr {
+        None => dash(),
+        Some(p) => {
+            let rollup = p.commits.nodes.first().map(|c| c.commit.status_check_rollup.state.as_str()).unwrap_or("UNKNOWN");
+            match rollup {
+                "SUCCESS" => one(vec![span(icons::SUCCESS, Style::default().fg(t.success_text))]),
+                "PENDING" => {
+                    let (g, s) = t.waiting_glyph();
+                    one(vec![span(g, s)])
+                }
+                _ => one(vec![span(icons::FAILURE, Style::default().fg(t.error_text))]),
+            }
+        }
+    };
+    let lines = match pr {
+        None => dash(),
+        Some(p) => one(render_lines(p, t)),
+    };
+    let updated = {
+        let at = pr.map(|p| p.updated_at).or(row.b.last_updated_at);
+        match at {
+            Some(at) => one(vec![span(time_cell(at, cfg), t.faint())]),
+            None => one(vec![]),
+        }
+    };
+    let base = one(vec![span(pr.map(|p| p.base_ref_name.clone()).unwrap_or_default(), t.primary())]);
+    let assignees = one(vec![span(
+        pr.map(|p| p.assignees.nodes.iter().map(|a| a.login.clone()).collect::<Vec<_>>().join(",")).unwrap_or_default(),
+        t.primary(),
+    )]);
+
+    if !cfg.theme.ui.table.compact {
+        // renderExtendedTitle: the branch with ahead/behind counts over its last commit.
+        let width = columns
+            .iter()
+            .filter(|c| !c.hidden)
+            .zip(widths)
+            .find(|(c, _)| c.grow)
+            .map(|(_, w)| *w)
+            .unwrap_or(0)
+            .saturating_sub(2);
+        let name_color = if row.b.is_checked_out { t.success_text } else { t.primary_text };
+        let mut top = vec![span(row.b.name.clone(), Style::default().fg(name_color))];
+        if row.b.commits_ahead > 0 {
+            top.push(span(format!(" ↑{}", row.b.commits_ahead), Style::default().fg(t.warning_text)));
+        }
+        if row.b.commits_behind > 0 {
+            top.push(span(format!(" ↓{}", row.b.commits_behind), Style::default().fg(t.warning_text)));
+        }
+        let msg = row.b.last_commit_msg.clone().unwrap_or_else(|| "-".into());
+        let msg_line = wrap_spans(&[span(msg, t.secondary())], width.max(1)).into_iter().next().unwrap_or_default();
+        let title = vec![fit_line(&Line::from(top), width, Style::default()), msg_line];
+        return vec![state, title, base, assignees, review, ci, lines, updated];
+    }
+    // The Go version dereferences the PR here and crashes for branches without one.
+    let (repo, title, author) = match pr {
+        Some(p) => (
+            one(vec![span(p.head_repository.name.clone(), t.faint())]),
+            one(issue_title(cfg, t, &p.state, &p.title, p.number)),
+            one(vec![span(p.author.login.clone(), t.primary())]),
+        ),
+        None => (one(vec![]), one(vec![span(row.b.name.clone(), t.primary())]), one(vec![])),
+    };
+    vec![state, repo, title, author, base, assignees, review, ci, lines, updated]
+}
+
+/// reposection.GetPagerContent: added, removed and modified file counts.
+pub fn branch_pager(s: &Section, t: &Theme) -> Line<'static> {
+    let bg = Style::default().bg(t.selected_background);
+    let st = &s.repo_status;
+    Line::from(vec![
+        span(" ", bg.fg(t.faint_text)),
+        span(format!("\u{eadc} {}", st.added.len()), bg.fg(t.success_text)),
+        span(" ", bg),
+        span(format!("\u{f458} {}", st.removed.len()), bg.fg(t.error_text)),
+        span(" ", bg),
+        span(format!("\u{f459} {}", st.modified.len()), bg.fg(Color::Rgb(0xe0, 0xaf, 0x68))),
+        span(" ", bg.fg(t.faint_text)),
+    ])
 }

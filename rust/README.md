@@ -19,8 +19,13 @@ It authenticates like `gh`: `$GH_TOKEN` or `$GITHUB_TOKEN` when set, otherwise
 `gh auth token`. Mutations (merge, comment, label, checkout, ...) run through the
 `gh` CLI, which must be on `PATH`.
 
-## Not ported
+## Differences from the Go version
 
-- The branches view behind `FF_REPO_VIEW`.
-- `FF_MOCK_DATA`, `--debug` logging and `--cpuprofile` (the flags are accepted and ignored).
-- Mouse input, and the "Update available!" release check.
+These fix Go bugs:
+
+- A new section shows an empty preview instead of the previous section's PR.
+- Switching into the branches view (`FF_REPO_VIEW`) with `s` loads the branches;
+  Go shows "No sections defined".
+- The branches view renders branches without a PR in the compact table; Go panics.
+- The branch preview follows the selection after searching or checking out.
+- Custom branch keybindings run their command.

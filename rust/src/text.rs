@@ -143,6 +143,7 @@ pub fn ansi_wrap(cells: &[(char, Style)], limit: usize) -> Vec<Vec<(char, Style)
 }
 
 /// `ansi_wrap` with extra ASCII breakpoint characters (glamour uses " ,.;-+|").
+#[allow(unused_assignments)] // The macros mirror the Go closures, which reset state they don't reread.
 pub fn ansi_wrap_with(cells: &[(char, Style)], limit: usize, breakpoints: &str) -> Vec<Vec<(char, Style)>> {
     if limit < 1 {
         return vec![cells.to_vec()];

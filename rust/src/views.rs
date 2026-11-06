@@ -1483,3 +1483,27 @@ pub fn notification_prompt(t: &Theme, row: &NotifRow) -> Block {
     }
     b
 }
+
+/// branchsidebar.View: working tree status, then the branch and its PR.
+pub fn branch_view(t: &Theme, b: &crate::section::BranchRow, status: Option<&crate::git::NameStatus>, rule_w: usize) -> Block {
+    let mut out: Block = vec![Line::from(span("STATUS", Style::default().add_modifier(Modifier::BOLD))), Line::default()];
+    match status {
+        None => out.push(Line::from("Loading...")),
+        Some(st) => {
+            if st.added.is_empty() && st.removed.is_empty() && st.modified.is_empty() {
+                out.push(Line::from("No changes"));
+            }
+            out.extend(st.added.iter().map(|f| Line::from(format!("A {f}"))));
+            out.extend(st.removed.iter().map(|f| Line::from(format!("D {f}"))));
+            out.extend(st.modified.iter().map(|f| Line::from(format!("M {f}"))));
+        }
+    }
+    out.push(Line::default());
+    out.push(Line::from(span("─".repeat(rule_w), Style::default().fg(t.faint_border))));
+    out.push(Line::default());
+    out.push(Line::from(b.b.name.clone()));
+    if let Some(pr) = &b.pr {
+        out.push(Line::from(format!("#{} {}", pr.number, pr.title)));
+    }
+    out
+}
