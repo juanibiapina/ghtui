@@ -6,7 +6,6 @@ import Terminal from "../components/Terminal.astro";
 import Footer from "../components/Footer.astro";
 import Box from "../components/Box.astro";
 import Showcase from "../components/Showcase.astro";
-import Discord from "../components/Discord.astro";
 import FadeImages from "../components/FadeImages.astro";
 import prSectionsImage from "../assets/pr-sections.png";
 import { Image } from "astro:assets";
@@ -15,11 +14,8 @@ import tokyonightSrc from "../assets/tokyo.png";
 import catppuccinSrc from "../assets/catpuccin.png";
 import gruvSrc from "../assets/gruv.png";
 import charmVidPreviewSrc from "../assets/charm-vid-preview.jpg";
-import EnhanceCard from "../components/EnhanceCard.astro";
-import DiffnavCard from "../components/DiffnavCard.astro";
 import DashHeroLogo from "../components/DashHeroLogo.astro";
 import Hero from "../components/Hero.astro";
-import SupportSection from "../components/SupportSection.astro";
 ---
 
 <style is:global>
@@ -35,7 +31,7 @@ import SupportSection from "../components/SupportSection.astro";
     <Hero
       tagline="A rich terminal UI for GitHub that doesn't break your flow"
       videoUrl="overview"
-      githubUrl="https://github.com/dlvhdr/gh-dash"
+      githubUrl="https://github.com/juanibiapina/gh-dash"
       getStartedUrl="/getting-started/"
     >
       <DashHeroLogo />
@@ -43,25 +39,12 @@ import SupportSection from "../components/SupportSection.astro";
   </div>
   <div class="mt-32 mb-16 text-[var(--sl-color-gray-5)]">──◇──</div>
 
-  <h2 class="mt-8 mb-12 text-center !text-3xl">Companion Apps</h2>
-
-  <div
-    class="grid w-full grid-cols-[repeat(auto-fit,_minmax(20em,_30em))] justify-center gap-6 overflow-hidden"
-  >
-    <EnhanceCard />
-    <DiffnavCard />
-  </div>
-
   <div
     class="absolute top-[90vh] right-32 hidden h-10 animate-bounce rounded-2xl border border-gray-700 p-1 text-[var(--sl-color-accent)] lg:block"
   >
     <div>⌄</div>
     <div class="relative -top-8 mt-0">⌄</div>
   </div>
-
-  <div class="mt-32 mb-12 text-[var(--sl-color-gray-5)]">──◇──</div>
-
-  <SupportSection />
 
   <div class="mt-32 mb-8 text-[var(--sl-color-gray-5)]">──◇──</div>
 
@@ -192,6 +175,5 @@ colors:
     </a>
   </div>
   <div class="mt-16 text-[var(--sl-color-gray-5)]">──◇──</div>
-  <Discord class="mt-20" />
   <Footer class="mt-20" />
 </StarlightPage>

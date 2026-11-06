@@ -70,8 +70,8 @@ export function GET() {
           type: "object",
           examples: [
             {
-              "dlvhdr/*": "~/code/repos/*",
-              "dlvhdr/gh-dash": "~/code/gh-dash",
+              "juanibiapina/*": "~/code/repos/*",
+              "juanibiapina/gh-dash": "~/code/gh-dash",
             },
           ],
           patternProperties: {

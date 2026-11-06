@@ -1,8 +1,8 @@
 prSections:
   - title: My Pull Requests
-    filters: is:open author:@me owner:dlvhdr
+    filters: is:open author:@me owner:juanibiapina
   - title: Needs My Review
-    filters: review-requested:@me owner:dlvhdr
+    filters: review-requested:@me owner:juanibiapina
 issuesSections:
   - title: Ghostty
     filters: is:open ghostty-org/ghostty
@@ -29,7 +29,7 @@ keybindings:
         nvim -c ":silent Octo pr edit {{.PrNumber}}"
         '
 repoPaths:
-  dlvhdr/*: ~/code/personal/*
+  juanibiapina/*: ~/code/personal/*
 pager:
   diff: diffnav
 theme:

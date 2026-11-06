@@ -46,7 +46,7 @@ export default defineConfig({
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com/dlvhdr/gh-dash",
+          href: "https://github.com/juanibiapina/gh-dash",
         },
       ],
       sidebar: [
@@ -89,27 +89,6 @@ export default defineConfig({
             },
           ],
         },
-        {
-          label: "Companion Apps",
-          items: [
-            {
-              label: "ENHANCE",
-              collapsed: true,
-              items: [
-                "companions/enhance/getting-started",
-                "companions/enhance/usage",
-                "companions/enhance/keybindings",
-                "companions/enhance/dash-integration",
-                "companions/enhance/theme",
-              ],
-            },
-          ],
-        },
-        {
-          label: "Insiders 🌟",
-          items: ["insiders"],
-        },
-        { slug: "donating" },
       ],
     }),
   ],

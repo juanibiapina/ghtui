@@ -2,7 +2,7 @@
 import DecorationTop from "./DecorationTop.astro";
 import DecorationBottom from "./DecorationBottom.astro";
 
-const { class: className, isCommunity = true } = Astro.props;
+const { class: className } = Astro.props;
 ---
 
 <div
@@ -13,17 +13,7 @@ const { class: className, isCommunity = true } = Astro.props;
 >
   <DecorationTop />
   <p class="mb-2">
-    Created and maintained by <a href="https://github.com/dlvhdr">@dlvhdr</a>{
-      isCommunity ? (
-        <>
-          {" "}
-          and the{" "}
-          <a href="https://github.com/dlvhdr/gh-dash/graphs/contributors">
-            community
-          </a>
-        </>
-      ) : null
-    }
+    Forked from <a href="https://github.com/dlvhdr/gh-dash">dlvhdr/gh-dash</a> by Dolev Hadar
   </p>
   <div class="flex gap-3">
     <a
