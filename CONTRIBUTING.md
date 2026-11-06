@@ -8,8 +8,12 @@ build and test:
 ```sh
 cargo build
 cargo test
-cargo clippy
+cargo clippy --all-targets
+cargo fmt --all -- --check
+make install  # installs gh-dash to ~/.cargo/bin
 ```
+
+Warnings and clippy lints fail the build.
 
 The UI is built on [ratatui](https://ratatui.rs).
 

@@ -27,13 +27,16 @@ If you like quickly navigating with your keyboard, seeing the PRs and issues you
 ## 📦 Install
 
 ```sh
-git clone https://github.com/juanibiapina/gh-dash
-cd gh-dash
-cargo install --path .
+brew install juanibiapina/taps/gh-dash
 ```
 
-This installs `gh-dash` to `~/.cargo/bin`. To update, run `git pull` and
-`cargo install --path .` again.
+Or install from source with [cargo](https://rustup.rs):
+
+```sh
+cargo install --git https://github.com/juanibiapina/gh-dash
+```
+
+Then run `gh-dash`.
 
 It authenticates like `gh`: `$GH_TOKEN` or `$GITHUB_TOKEN` when set, otherwise
 `gh auth token`. Mutations (merge, comment, label, checkout, ...) run through the

@@ -13,20 +13,20 @@ To use `dash`, follow these steps after you've [installed it][01]:
 1. Run
 
    ```bash
-   gh dash
+   gh-dash
    ```
 
 2. Press <kbd>?</kbd> for help.
-3. Run `gh dash --help` for more info:
+3. Run `gh-dash --help` for more info:
 
    ```bash
-   Usage:
-     gh dash [flags]
+   Usage: gh-dash [OPTIONS]
 
-   Flags:
-     -c, --config string   use this configuration file (default lookup: a .gh-dash.yml file if inside a git repo, $GH_DASH_CONFIG env var, or if not set, $XDG_CONFIG_HOME/gh-dash/config.yml)
-         --debug           passing this flag will allow writing debug output to debug.log
-     -h, --help            help for Dash
+   Options:
+     -c, --config <FILE>  Use this configuration file instead of a .gh-dash.yml in the git repo, $GH_DASH_CONFIG, or $XDG_CONFIG_HOME/gh-dash/config.yml
+         --debug          Write debug output to debug.log
+     -v, --version        Print version and exit
+     -h, --help           Print help
    ```
 
 ## Flags
@@ -37,7 +37,7 @@ Specify the path to a configuration file to use for the dashboard. If the config
 doesn't exist or is invalid, `dash` returns an error.
 
 ```bash
-gh dash --config path/to/configuration/file.yml
+gh-dash --config path/to/configuration/file.yml
 ```
 
 | Aliases |  Type  | Default                                                                                                                   |
@@ -67,7 +67,7 @@ Specify whether `dash` should write logs to the `debug.log` file in the current 
 default, `dash` doesn't output debug information.
 
 ```bash
-gh dash --debug
+gh-dash --debug
 ```
 
 | Aliases |  Type   | Default |
@@ -82,7 +82,7 @@ Use this flag to display the help information for `dash` in the terminal. If you
 flag, `dash` ignores all other flags. It only displays the help information.
 
 ```bash
-gh dash --help
+gh-dash --help
 ```
 
 | Aliases |  Type   | Default |
@@ -96,39 +96,17 @@ flag with the `--config` or `--debug` flags, `dash` ignores them. It only displa
 information.
 
 ```bash
-gh dash --version
+gh-dash --version
 ```
 
 | Aliases |  Type   | Default |
 | :------ | :-----: | :------ |
 | `-v`    | Boolean | `false` |
 
-When you use this flag, `dash` emits the following information:
+When you use this flag, `dash` prints its name and version:
 
 ```text
-gh-dash version <version>
-commit: <commit_sha>
-built at: <build_timestamp>
-built by: <build_user>
-goos: <operating_system>
-goarch: <cpu_architecture>
-```
-
-- `<version>` is the extension's semantic version without a `v` prefix.
-- `<commit_sha>` is the exact commit SHA the extension was built from.
-- `<build_timestamp>` is the UTC date and time when the extension was built.
-- `<build_user>` is who built the extension. For official releases, this is always `goreleaser`.
-
-For example, the version information for the [v3.7.7 release][03] on Windows with an x64 processor
-is:
-
-```text
-gh-dash version 3.7.7
-commit: 6ce3f89ab0d73dd88e359133699d1cf920f88699
-built at: 2023-04-15T08:42:16Z
-built by: goreleaser
-goos: windows
-goarch: amd64
+gh-dash 0.1.0
 ```
 
 ## Default Keybindings
@@ -145,5 +123,4 @@ For more information about the keybindings for the dashboard, see [Keybindings][
 
 [01]: /getting-started/
 [02]: /configuration/
-[03]: https://github.com/dlvhdr/gh-dash/releases/tag/v3.7.7
 [04]: /getting-started/keybindings/

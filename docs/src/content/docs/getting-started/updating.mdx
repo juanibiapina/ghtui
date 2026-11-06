@@ -2,11 +2,14 @@
 title: Updating
 ---
 
-To update `dash`, pull the latest changes and rebuild from the directory you cloned:
+To update `dash`, upgrade it with the tool you installed it with:
 
 ```sh
-git pull
-go build -o gh-dash .
+brew upgrade gh-dash
 ```
 
-`gh extension install .` links the directory, so the new binary takes effect right away.
+Or, if you installed it with cargo:
+
+```sh
+cargo install --git https://github.com/juanibiapina/gh-dash
+```

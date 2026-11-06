@@ -713,14 +713,11 @@ fn review_status(t: &Theme, row: &PrRow, w: usize) -> (Block, Status) {
             Status::Failure,
         ),
         "REVIEW_REQUIRED" => {
-            let (sub, st) = if rules
+            let code_owner_required = rules
                 .first()
                 .map(|r| r.requires_code_owner_reviews)
-                .unwrap_or(false)
-                && approving < 1
-            {
-                ("Code owner review required".to_string(), Status::Failure)
-            } else if approving < owners {
+                .unwrap_or(false);
+            let (sub, st) = if (code_owner_required && approving < 1) || approving < owners {
                 ("Code owner review required".to_string(), Status::Failure)
             } else if let Some(r) = rules
                 .first()
@@ -1485,8 +1482,19 @@ pub fn notification_prompt(t: &Theme, row: &NotifRow) -> Block {
 }
 
 /// branchsidebar.View: working tree status, then the branch and its PR.
-pub fn branch_view(t: &Theme, b: &crate::section::BranchRow, status: Option<&crate::git::NameStatus>, rule_w: usize) -> Block {
-    let mut out: Block = vec![Line::from(span("STATUS", Style::default().add_modifier(Modifier::BOLD))), Line::default()];
+pub fn branch_view(
+    t: &Theme,
+    b: &crate::section::BranchRow,
+    status: Option<&crate::git::NameStatus>,
+    rule_w: usize,
+) -> Block {
+    let mut out: Block = vec![
+        Line::from(span(
+            "STATUS",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::default(),
+    ];
     match status {
         None => out.push(Line::from("Loading...")),
         Some(st) => {
@@ -1499,7 +1507,10 @@ pub fn branch_view(t: &Theme, b: &crate::section::BranchRow, status: Option<&cra
         }
     }
     out.push(Line::default());
-    out.push(Line::from(span("─".repeat(rule_w), Style::default().fg(t.faint_border))));
+    out.push(Line::from(span(
+        "─".repeat(rule_w),
+        Style::default().fg(t.faint_border),
+    )));
     out.push(Line::default());
     out.push(Line::from(b.b.name.clone()));
     if let Some(pr) = &b.pr {

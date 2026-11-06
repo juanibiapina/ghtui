@@ -19,7 +19,8 @@ use crate::keys::{Keys, NotificationSubject};
 use crate::model::*;
 use crate::msg::*;
 use crate::section::{
-    self, Kind, NotifRow, PrRow, RowRef, Section, issue_columns, notification_columns, pr_columns,
+    self, Kind, NotifRow, PrRow, RowRef, Section, SectionSpec, issue_columns, notification_columns,
+    pr_columns,
 };
 use crate::tasks;
 use crate::text::Block;
@@ -178,7 +179,7 @@ impl App {
             quit: false,
             timers: vec![],
             last_refresh: Instant::now(),
-            version: option_env!("GH_DASH_VERSION").unwrap_or("dev").to_string(),
+            version: concat!("v", env!("CARGO_PKG_VERSION")).to_string(),
             latest_version: String::new(),
             cfg,
         };
@@ -197,9 +198,11 @@ impl App {
                 Section::new(
                     i,
                     Kind::Pr,
-                    &s.title,
-                    &s.filters,
-                    s.limit,
+                    SectionSpec {
+                        title: &s.title,
+                        filters: &s.filters,
+                        limit: s.limit,
+                    },
                     pr_columns(cfg, &s.layout),
                     cfg,
                     gh.as_ref(),
@@ -214,9 +217,11 @@ impl App {
                 Section::new(
                     i,
                     Kind::Issue,
-                    &s.title,
-                    &s.filters,
-                    s.limit,
+                    SectionSpec {
+                        title: &s.title,
+                        filters: &s.filters,
+                        limit: s.limit,
+                    },
                     issue_columns(cfg, &s.layout),
                     cfg,
                     gh.as_ref(),
@@ -231,9 +236,11 @@ impl App {
                 Section::new(
                     i,
                     Kind::Notification,
-                    &s.title,
-                    &s.filters,
-                    s.limit,
+                    SectionSpec {
+                        title: &s.title,
+                        filters: &s.filters,
+                        limit: s.limit,
+                    },
                     notification_columns(),
                     cfg,
                     gh.as_ref(),
@@ -252,7 +259,8 @@ impl App {
             })
         });
         // tabs.Init: check for a newer release.
-        self.pool.spawn(|| github::latest_version().ok().map(Msg::LatestVersion));
+        self.pool
+            .spawn(|| github::latest_version().ok().map(Msg::LatestVersion));
         self.on_viewed_row_changed();
     }
 
@@ -1051,14 +1059,21 @@ impl App {
             Msg::RepoTick { id, prs } => {
                 if id == self.repo_refresh_id {
                     let cfg = &self.cfg.repo;
-                    let secs = if prs { cfg.prs_refetch_interval_seconds } else { cfg.branches_refetch_interval_seconds };
+                    let secs = if prs {
+                        cfg.prs_refetch_interval_seconds
+                    } else {
+                        cfg.branches_refetch_interval_seconds
+                    };
                     // onRefreshPrsMsg runs `git fetch` (not a PR fetch) in the Go version.
                     if prs {
                         self.git_fetch();
                     } else {
                         self.read_repo(false);
                     }
-                    self.timers.push((Instant::now() + Duration::from_secs(secs), Msg::RepoTick { id, prs }));
+                    self.timers.push((
+                        Instant::now() + Duration::from_secs(secs),
+                        Msg::RepoTick { id, prs },
+                    ));
                 }
             }
             Msg::BranchStatus(st) => self.branch_status = Some(st),
@@ -1215,7 +1230,10 @@ impl App {
                     s.branches = repo
                         .branches
                         .iter()
-                        .map(|b| section::BranchRow { b: b.clone(), pr: None })
+                        .map(|b| section::BranchRow {
+                            b: b.clone(),
+                            pr: None,
+                        })
                         .collect();
                     s.repo_status = repo.status.clone();
                     s.is_loading = false;
@@ -1229,10 +1247,19 @@ impl App {
                     repo_head = Some(repo.head_branch_name.clone());
                 }
                 Payload::BranchPrs(prs) => {
-                    s.prs = prs.into_iter().map(|p| PrRow { primary: p, enriched: None }).collect();
+                    s.prs = prs
+                        .into_iter()
+                        .map(|p| PrRow {
+                            primary: p,
+                            enriched: None,
+                        })
+                        .collect();
                 }
                 Payload::BranchPr(pr) => {
-                    s.prs.push(PrRow { primary: pr, enriched: None });
+                    s.prs.push(PrRow {
+                        primary: *pr,
+                        enriched: None,
+                    });
                 }
                 Payload::MarkAllRead => {
                     for n in s.notifs.iter_mut() {
@@ -1338,7 +1365,8 @@ impl App {
             if let Some(s) = self.section_mut() {
                 let prev = s.cursor;
                 s.next_row(&cfg, body_h);
-                let fetch_more = prev != s.cursor && s.cursor + 1 == s.num_rows() && s.kind != Kind::Branch;
+                let fetch_more =
+                    prev != s.cursor && s.cursor + 1 == s.num_rows() && s.kind != Kind::Branch;
                 let (view, id) = (self.view, self.curr);
                 if fetch_more {
                     self.fetch_next_page(view, id);
@@ -1861,9 +1889,12 @@ impl App {
     fn editor_target(&self, is_pr: bool) -> Option<RowRef> {
         if self.view == ViewType::Notifications {
             if is_pr {
-                return self.subject_pr.clone().map(RowRef::Pr);
+                return self.subject_pr.clone().map(|p| RowRef::Pr(Box::new(p)));
             }
-            return self.subject_issue.clone().map(RowRef::Issue);
+            return self
+                .subject_issue
+                .clone()
+                .map(|i| RowRef::Issue(Box::new(i)));
         }
         self.current_row()
     }
@@ -2362,9 +2393,11 @@ impl App {
             ViewType::Issues => Section::new(
                 id,
                 Kind::Issue,
-                "Scratch",
-                "archived:false",
-                None,
+                SectionSpec {
+                    title: "Scratch",
+                    filters: "archived:false",
+                    limit: None,
+                },
                 issue_columns(&cfg, &IssuesSectionConfig::default().layout),
                 &cfg,
                 gh.as_ref(),
@@ -2374,9 +2407,11 @@ impl App {
                 Section::new(
                     id,
                     Kind::Notification,
-                    "Scratch",
-                    "archived:false",
-                    None,
+                    SectionSpec {
+                        title: "Scratch",
+                        filters: "archived:false",
+                        limit: None,
+                    },
                     notification_columns(),
                     &cfg,
                     gh.as_ref(),
@@ -2385,9 +2420,11 @@ impl App {
             _ => Section::new(
                 id,
                 Kind::Pr,
-                "Scratch",
-                "archived:false",
-                None,
+                SectionSpec {
+                    title: "Scratch",
+                    filters: "archived:false",
+                    limit: None,
+                },
                 pr_columns(&cfg, &PrsSectionConfig::default().layout),
                 &cfg,
                 gh.as_ref(),
@@ -2817,7 +2854,18 @@ impl App {
     /// reposection.FetchAllBranches: a fresh section, read + fetch + PRs, and refresh ticks.
     fn fetch_all_branches(&mut self) {
         let cfg = self.cfg.clone();
-        let mut s = Section::new(0, Kind::Branch, "Local Branches", "", None, section::branch_columns(&cfg), &cfg, None);
+        let mut s = Section::new(
+            0,
+            Kind::Branch,
+            SectionSpec {
+                title: "Local Branches",
+                filters: "",
+                limit: None,
+            },
+            section::branch_columns(&cfg),
+            &cfg,
+            None,
+        );
         s.search_value.clear();
         s.search_bar.set_value("");
         self.repo = vec![s];
@@ -2831,49 +2879,101 @@ impl App {
         self.repo_refresh_id += 1;
         let id = self.repo_refresh_id;
         let now = Instant::now();
-        self.timers.push((now + Duration::from_secs(cfg.repo.branches_refetch_interval_seconds), Msg::RepoTick { id, prs: false }));
-        self.timers.push((now + Duration::from_secs(cfg.repo.prs_refetch_interval_seconds), Msg::RepoTick { id, prs: true }));
+        self.timers.push((
+            now + Duration::from_secs(cfg.repo.branches_refetch_interval_seconds),
+            Msg::RepoTick { id, prs: false },
+        ));
+        self.timers.push((
+            now + Duration::from_secs(cfg.repo.prs_refetch_interval_seconds),
+            Msg::RepoTick { id, prs: true },
+        ));
     }
 
-    fn repo_task(&mut self, tid: String, start: &str, done: &str, reset: bool, work: impl FnOnce(&str) -> anyhow::Result<crate::git::Repo> + Send + 'static) {
+    fn repo_task(
+        &mut self,
+        tid: String,
+        start: &str,
+        done: &str,
+        reset: bool,
+        work: impl FnOnce(&str) -> anyhow::Result<crate::git::Repo> + Send + 'static,
+    ) {
         let Some(dir) = self.repo_dir() else { return };
         self.start_task(&tid, start, done);
-        let key = SectionKey { view: ViewType::Repo, id: 0 };
+        let key = SectionKey {
+            view: ViewType::Repo,
+            id: 0,
+        };
         self.pool.spawn(move || {
             Some(match work(&dir) {
-                Ok(repo) => Msg::TaskFinished { task_id: tid, section: Some(key), err: None, payload: Payload::Repo { repo, reset } },
-                Err(e) => Msg::TaskFinished { task_id: tid, section: None, err: Some(e.to_string()), payload: Payload::None },
+                Ok(repo) => Msg::TaskFinished {
+                    task_id: tid,
+                    section: Some(key),
+                    err: None,
+                    payload: Payload::Repo { repo, reset },
+                },
+                Err(e) => Msg::TaskFinished {
+                    task_id: tid,
+                    section: None,
+                    err: Some(e.to_string()),
+                    payload: Payload::None,
+                },
             })
         });
     }
 
     fn read_repo(&mut self, reset: bool) {
         let tid = task_id("fetching_branches");
-        self.repo_task(tid, "Reading local branches", "Branches read", reset, |d| crate::git::get_repo(d));
+        self.repo_task(tid, "Reading local branches", "Branches read", reset, |d| {
+            crate::git::get_repo(d)
+        });
     }
 
     fn git_fetch(&mut self) {
         let tid = task_id("git_fetch_repo");
-        self.repo_task(tid, "Fetching branches from origin", "Fetched origin branches", false, |d| crate::git::fetch_repo(d));
+        self.repo_task(
+            tid,
+            "Fetching branches from origin",
+            "Fetched origin branches",
+            false,
+            crate::git::fetch_repo,
+        );
     }
 
     fn fetch_branch_prs(&mut self) {
         let tid = task_id("fetching_pr_branches");
         self.start_task(&tid, "Fetching PRs", "PRs fetched");
-        let query = format!("author:@me repo:{}", crate::git::repo_short_name(&self.repo_url));
+        let query = format!(
+            "author:@me repo:{}",
+            crate::git::repo_short_name(&self.repo_url)
+        );
         let limit = self.cfg.defaults.prs_limit;
-        let key = SectionKey { view: ViewType::Repo, id: 0 };
+        let key = SectionKey {
+            view: ViewType::Repo,
+            id: 0,
+        };
         self.pool.spawn(move || {
             Some(match github::fetch_pull_requests(&query, limit, None) {
-                Ok(p) => Msg::TaskFinished { task_id: tid, section: Some(key), err: None, payload: Payload::BranchPrs(p.items) },
-                Err(e) => Msg::TaskFinished { task_id: tid, section: Some(key), err: Some(e.to_string()), payload: Payload::None },
+                Ok(p) => Msg::TaskFinished {
+                    task_id: tid,
+                    section: Some(key),
+                    err: None,
+                    payload: Payload::BranchPrs(p.items),
+                },
+                Err(e) => Msg::TaskFinished {
+                    task_id: tid,
+                    section: Some(key),
+                    err: Some(e.to_string()),
+                    payload: Payload::None,
+                },
             })
         });
     }
 
     /// updateBranchesWithPrs: attach each branch's PR, checked-out branch first, then newest.
     fn relink_branch_prs(&mut self) {
-        let Some(s) = self.repo.first_mut() else { return };
+        let Some(s) = self.repo.first_mut() else {
+            return;
+        };
         let prs: Vec<PullRequest> = s.prs.iter().map(|p| p.primary.clone()).collect();
         for b in s.branches.iter_mut() {
             b.pr = prs.iter().find(|p| p.head_ref_name == b.b.name).cloned();
@@ -2881,7 +2981,11 @@ impl App {
         s.branches.sort_by(|a, b| {
             use std::cmp::Ordering;
             if a.b.is_checked_out != b.b.is_checked_out {
-                return if a.b.is_checked_out { Ordering::Less } else { Ordering::Greater };
+                return if a.b.is_checked_out {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                };
             }
             match (a.b.last_updated_at, b.b.last_updated_at) {
                 (Some(x), Some(y)) => y.cmp(&x),
@@ -2895,12 +2999,13 @@ impl App {
 
     fn refresh_branch_status(&mut self) {
         let Some(dir) = self.repo_dir() else { return };
-        self.pool.spawn(move || crate::git::status(&dir).ok().map(Msg::BranchStatus));
+        self.pool
+            .spawn(move || crate::git::status(&dir).ok().map(Msg::BranchStatus));
     }
 
     fn current_branch(&self) -> Option<section::BranchRow> {
         match self.current_row() {
-            Some(RowRef::Branch(b)) => Some(b),
+            Some(RowRef::Branch(b)) => Some(*b),
             _ => None,
         }
     }
@@ -2911,16 +3016,30 @@ impl App {
             if let Some(b) = self.current_branch() {
                 let name = b.b.name.clone();
                 let tid = format!("branch_open_{name}");
-                self.start_task(&tid, &format!("Opening PR for branch {name}"), &format!("PR for branch {name} has been opened"));
+                self.start_task(
+                    &tid,
+                    &format!("Opening PR for branch {name}"),
+                    &format!("PR for branch {name} has been opened"),
+                );
                 let repo = self.repo_url.clone();
                 self.pool.spawn(move || {
-                    let err = tasks::run_gh(&["pr", "view", "--web", &name, "-R", &repo], None).err();
-                    Some(Msg::TaskFinished { task_id: tid, section: None, err, payload: Payload::None })
+                    let err =
+                        tasks::run_gh(&["pr", "view", "--web", &name, "-R", &repo], None).err();
+                    Some(Msg::TaskFinished {
+                        task_id: tid,
+                        section: None,
+                        err,
+                        payload: Payload::None,
+                    })
                 });
             }
             return false;
         }
-        for (b, action) in [(&br.delete, "delete"), (&br.new, "new"), (&br.create_pr, "create_pr")] {
+        for (b, action) in [
+            (&br.delete, "delete"),
+            (&br.new, "new"),
+            (&br.create_pr, "create_pr"),
+        ] {
             if b.matches(key) {
                 if let Some(s) = self.section_mut() {
                     s.prompt = Some((action.to_string(), TextInput::new("")));
@@ -2938,7 +3057,9 @@ impl App {
     /// reposection.Update keys: checkout, push, force-push, fast-forward.
     fn branch_section_key(&mut self, key: &str) {
         let br = self.keys.branch.clone();
-        let Some(b) = self.current_branch() else { return };
+        let Some(b) = self.current_branch() else {
+            return;
+        };
         let name = b.b.name.clone();
         let stamp = Local::now().timestamp();
         if br.checkout.matches(key) {
@@ -2988,7 +3109,9 @@ impl App {
     }
 
     fn delete_branch(&mut self) {
-        let Some(b) = self.current_branch() else { return };
+        let Some(b) = self.current_branch() else {
+            return;
+        };
         let name = b.b.name.clone();
         let n = name.clone();
         self.repo_task(
@@ -3020,19 +3143,33 @@ impl App {
 
     /// tasks.CreatePR runs `gh pr create` interactively, then fetches the new PR.
     fn create_branch_pr(&mut self, title: &str) {
-        let Some(b) = self.current_branch() else { return };
+        let Some(b) = self.current_branch() else {
+            return;
+        };
         let branch = b.b.name.clone();
         let tid = format!("create_pr_{title}");
-        self.start_task(&tid, &format!("Creating PR \"{title}\""), &format!("PR \"{title}\" has been created"));
+        self.start_task(
+            &tid,
+            &format!("Creating PR \"{title}\""),
+            &format!("PR \"{title}\" has been created"),
+        );
         let mut cmd = std::process::Command::new("gh");
         cmd.args(["pr", "create", "--title", title, "-R", &self.repo_url]);
         let short = crate::git::repo_short_name(&self.repo_url);
-        let key = SectionKey { view: ViewType::Repo, id: 0 };
+        let key = SectionKey {
+            view: ViewType::Repo,
+            id: 0,
+        };
         self.exec = Some(ExecRequest {
             cmd,
             on_done: Box::new(move |res| {
                 let created = matches!(&res, Ok(st) if st.success());
-                let mut msgs = vec![Msg::TaskFinished { task_id: tid, section: None, err: None, payload: Payload::None }];
+                let mut msgs = vec![Msg::TaskFinished {
+                    task_id: tid,
+                    section: None,
+                    err: None,
+                    payload: Payload::None,
+                }];
                 if created {
                     msgs.push(Msg::FetchBranchPr { branch, short, key });
                 }
@@ -3044,18 +3181,36 @@ impl App {
     /// reposection.fetchPRCmd
     fn fetch_branch_pr(&mut self, branch: String, short: String, key: SectionKey) {
         let tid = task_id(&format!("fetching_pr_for_branch_{branch}"));
-        self.start_task(&tid, &format!("Fetching PR for branch {branch}"), "PR fetched");
+        self.start_task(
+            &tid,
+            &format!("Fetching PR for branch {branch}"),
+            "PR fetched",
+        );
         self.pool.spawn(move || {
-            let res = github::fetch_pull_requests(&format!("author:@me repo:{short} head:{branch}"), 1, None);
+            let res = github::fetch_pull_requests(
+                &format!("author:@me repo:{short} head:{branch}"),
+                1,
+                None,
+            );
             Some(match res {
                 Ok(p) if p.items.len() == 1 => Msg::TaskFinished {
                     task_id: tid,
                     section: Some(key),
                     err: None,
-                    payload: Payload::BranchPr(p.items.into_iter().next().unwrap()),
+                    payload: Payload::BranchPr(Box::new(p.items.into_iter().next().unwrap())),
                 },
-                Ok(p) => Msg::TaskFinished { task_id: tid, section: Some(key), err: Some(format!("expected 1 PR, got {}", p.items.len())), payload: Payload::None },
-                Err(e) => Msg::TaskFinished { task_id: tid, section: Some(key), err: Some(e.to_string()), payload: Payload::None },
+                Ok(p) => Msg::TaskFinished {
+                    task_id: tid,
+                    section: Some(key),
+                    err: Some(format!("expected 1 PR, got {}", p.items.len())),
+                    payload: Payload::None,
+                },
+                Err(e) => Msg::TaskFinished {
+                    task_id: tid,
+                    section: Some(key),
+                    err: Some(e.to_string()),
+                    payload: Payload::None,
+                },
             })
         });
     }

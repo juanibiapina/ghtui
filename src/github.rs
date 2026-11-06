@@ -22,10 +22,12 @@ pub struct Client {
 }
 
 static CLIENT: OnceLock<std::result::Result<Client, String>> = OnceLock::new();
-static ENRICHED_CACHE: OnceLock<Mutex<HashMap<String, EnrichedPullRequest>>> = OnceLock::new();
-static ISSUE_CACHE: OnceLock<Mutex<HashMap<String, Issue>>> = OnceLock::new();
-static USER_CACHE: OnceLock<Mutex<HashMap<String, Vec<(String, String)>>>> = OnceLock::new();
-static LABEL_CACHE: OnceLock<Mutex<HashMap<String, Vec<Label>>>> = OnceLock::new();
+type Cache<T> = OnceLock<Mutex<HashMap<String, T>>>;
+
+static ENRICHED_CACHE: Cache<EnrichedPullRequest> = OnceLock::new();
+static ISSUE_CACHE: Cache<Issue> = OnceLock::new();
+static USER_CACHE: Cache<Vec<(String, String)>> = OnceLock::new();
+static LABEL_CACHE: Cache<Vec<Label>> = OnceLock::new();
 
 /// The ctrl+f "refresh" key in autocomplete drops the cached lists for a repo.
 pub fn clear_suggestion_cache(repo: &str) {
@@ -75,10 +77,18 @@ pub fn client() -> Result<&'static Client> {
                 crate::info!("using mock data server=https://localhost:3000");
                 let agent: ureq::Agent = ureq::Agent::config_builder()
                     .http_status_as_error(false)
-                    .tls_config(ureq::tls::TlsConfig::builder().disable_verification(true).build())
+                    .tls_config(
+                        ureq::tls::TlsConfig::builder()
+                            .disable_verification(true)
+                            .build(),
+                    )
                     .build()
                     .into();
-                return Ok(Client { host: "localhost:3000".into(), token: "fake-token".into(), agent });
+                return Ok(Client {
+                    host: "localhost:3000".into(),
+                    token: "fake-token".into(),
+                    agent,
+                });
             }
             let host = host();
             let token = resolve_token(&host).map_err(|e| e.to_string())?;
@@ -391,7 +401,10 @@ pub fn latest_version() -> Result<String> {
         "query LatestVersion($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { latestRelease { tagName } } }",
         json!({ "owner": "juanibiapina", "name": "gh-dash" }),
     )?;
-    Ok(d.repository.and_then(|r| r.latest_release).map(|r| r.tag_name).unwrap_or_default())
+    Ok(d.repository
+        .and_then(|r| r.latest_release)
+        .map(|r| r.tag_name)
+        .unwrap_or_default())
 }
 
 pub fn current_login() -> Result<String> {

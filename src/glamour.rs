@@ -9,7 +9,7 @@ use ratatui::text::Line;
 
 use crate::highlight;
 use crate::icons;
-use crate::text::{ansi_wrap_with, cells_to_line, str_width, Block};
+use crate::text::{Block, ansi_wrap_with, cells_to_line, str_width};
 use crate::theme::parse_color;
 
 type Cell = (char, Style);
@@ -145,12 +145,31 @@ struct Theme {
 }
 
 fn theme() -> Theme {
-    let prim = |c: Option<&str>| Prim { color: c.and_then(col), ..Default::default() };
-    let zero = Blk { indent: Some(0), margin: Some(0), indent_token: Some(String::new()), ..Default::default() };
-    let mut heading = Blk::default();
-    heading.prim = Prim { block_suffix: "\n".into(), color: col("#82aaff"), bold: Some(true), ..Default::default() };
+    let prim = |c: Option<&str>| Prim {
+        color: c.and_then(col),
+        ..Default::default()
+    };
+    let zero = Blk {
+        indent: Some(0),
+        margin: Some(0),
+        indent_token: Some(String::new()),
+        ..Default::default()
+    };
+    let heading = Blk {
+        prim: Prim {
+            block_suffix: "\n".into(),
+            color: col("#82aaff"),
+            bold: Some(true),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
     let hb = |c: &str, bold: bool| Blk {
-        prim: Prim { color: col(c), bold: bold.then_some(true), ..Default::default() },
+        prim: Prim {
+            color: col(c),
+            bold: bold.then_some(true),
+            ..Default::default()
+        },
         ..Default::default()
     };
     Theme {
@@ -164,19 +183,54 @@ fn theme() -> Theme {
         paragraph: zero,
         list_level_indent: 2,
         heading,
-        h: [hb("#c099ff", true), hb("#82aaff", false), hb("#86e1fc", false), hb("#c8d3f5", false), hb("#c8d3f5", false), hb("#c8d3f5", false)],
+        h: [
+            hb("#c099ff", true),
+            hb("#82aaff", false),
+            hb("#86e1fc", false),
+            hb("#c8d3f5", false),
+            hb("#c8d3f5", false),
+            hb("#c8d3f5", false),
+        ],
         text: Prim::default(),
-        strikethrough: Prim { crossed: Some(true), ..Default::default() },
-        emph: Prim { italic: Some(true), ..Default::default() },
-        strong: Prim { bold: Some(true), ..Default::default() },
-        hr: Prim { color: col("#3b4261"), format: "\n--------\n".into(), ..Default::default() },
-        item: Prim { block_prefix: "• ".into(), ..Default::default() },
-        enumeration: Prim { block_prefix: ". ".into(), ..Default::default() },
+        strikethrough: Prim {
+            crossed: Some(true),
+            ..Default::default()
+        },
+        emph: Prim {
+            italic: Some(true),
+            ..Default::default()
+        },
+        strong: Prim {
+            bold: Some(true),
+            ..Default::default()
+        },
+        hr: Prim {
+            color: col("#3b4261"),
+            format: "\n--------\n".into(),
+            ..Default::default()
+        },
+        item: Prim {
+            block_prefix: "• ".into(),
+            ..Default::default()
+        },
+        enumeration: Prim {
+            block_prefix: ". ".into(),
+            ..Default::default()
+        },
         task: Prim::default(),
         ticked: "[✓] ".into(),
         unticked: "[ ] ".into(),
-        link: Prim { color: col("#82aaff"), underline: Some(false), format: icons::LINK.into(), ..Default::default() },
-        link_text: Prim { color: col("#82aaff"), bold: Some(true), ..Default::default() },
+        link: Prim {
+            color: col("#82aaff"),
+            underline: Some(false),
+            format: icons::LINK.into(),
+            ..Default::default()
+        },
+        link_text: Prim {
+            color: col("#82aaff"),
+            bold: Some(true),
+            ..Default::default()
+        },
         image: Prim {
             color: col("#82aaff"),
             underline: Some(false),
@@ -184,7 +238,12 @@ fn theme() -> Theme {
             format: icons::IMAGE.into(),
             ..Default::default()
         },
-        image_text: Prim { color: col("#82aaff"), bold: Some(true), format: icons::LINK.into(), ..Default::default() },
+        image_text: Prim {
+            color: col("#82aaff"),
+            bold: Some(true),
+            format: icons::LINK.into(),
+            ..Default::default()
+        },
         code: Blk {
             prim: Prim {
                 color: col("#ff966c"),
@@ -195,7 +254,11 @@ fn theme() -> Theme {
             },
             ..Default::default()
         },
-        code_block: Blk { prim: prim(Some("244")), margin: Some(0), ..Default::default() },
+        code_block: Blk {
+            prim: prim(Some("244")),
+            margin: Some(0),
+            ..Default::default()
+        },
         html: Prim::default(),
     }
 }
@@ -310,7 +373,12 @@ fn url_end(s: &str) -> Option<usize> {
         _ => {}
     }
     let mut i = end;
-    while i > 1 && matches!(b[i - 1], b'?' | b'!' | b'.' | b',' | b':' | b'*' | b'_' | b'~') {
+    while i > 1
+        && matches!(
+            b[i - 1],
+            b'?' | b'!' | b'.' | b',' | b':' | b'*' | b'_' | b'~'
+        )
+    {
         i -= 1;
     }
     Some(i)
@@ -367,7 +435,10 @@ fn linkify(text: &str, out: &mut Vec<Node>) {
                     out.push(Node::new(K::Text(std::mem::take(&mut buf))));
                 }
                 let url = rest[..e].to_string();
-                let mut n = Node::new(K::AutoLink { url: url.clone(), email });
+                let mut n = Node::new(K::AutoLink {
+                    url: url.clone(),
+                    email,
+                });
                 n.ch.push(Node::new(K::Text(url)));
                 out.push(n);
                 i += e;
@@ -394,7 +465,11 @@ fn parse(md: &str) -> Node {
     opts.insert(Options::ENABLE_TABLES);
     opts.insert(Options::ENABLE_DEFINITION_LIST);
     let mut stack: Vec<Node> = vec![Node::new(K::Document)];
-    let in_link = |stack: &Vec<Node>| stack.iter().any(|n| matches!(n.k, K::Link(_) | K::Image(_) | K::AutoLink { .. }));
+    let in_link = |stack: &Vec<Node>| {
+        stack
+            .iter()
+            .any(|n| matches!(n.k, K::Link(_) | K::Image(_) | K::AutoLink { .. }))
+    };
     let push_text = |stack: &mut Vec<Node>, t: &str, linkable: bool| {
         let parent = stack.last_mut().unwrap();
         if linkable {
@@ -402,11 +477,19 @@ fn parse(md: &str) -> Node {
             linkify(t, &mut nodes);
             for n in nodes {
                 match (parent.ch.last_mut(), &n.k) {
-                    (Some(Node { k: K::Text(prev), .. }), K::Text(cur)) => prev.push_str(cur),
+                    (
+                        Some(Node {
+                            k: K::Text(prev), ..
+                        }),
+                        K::Text(cur),
+                    ) => prev.push_str(cur),
                     _ => parent.ch.push(n),
                 }
             }
-        } else if let Some(Node { k: K::Text(prev), .. }) = parent.ch.last_mut() {
+        } else if let Some(Node {
+            k: K::Text(prev), ..
+        }) = parent.ch.last_mut()
+        {
             prev.push_str(t);
         } else {
             parent.ch.push(Node::new(K::Text(t.to_string())));
@@ -421,22 +504,37 @@ fn parse(md: &str) -> Node {
                     Tag::BlockQuote(_) => K::Blockquote,
                     Tag::CodeBlock(kind) => K::Code {
                         lang: match kind {
-                            CodeBlockKind::Fenced(l) => l.split_whitespace().next().unwrap_or("").to_string(),
+                            CodeBlockKind::Fenced(l) => {
+                                l.split_whitespace().next().unwrap_or("").to_string()
+                            }
                             CodeBlockKind::Indented => String::new(),
                         },
                         code: String::new(),
                     },
-                    Tag::List(start) => K::List { ordered: start.is_some(), start: start.unwrap_or(1) },
+                    Tag::List(start) => K::List {
+                        ordered: start.is_some(),
+                        start: start.unwrap_or(1),
+                    },
                     Tag::Item => K::Item,
                     Tag::Emphasis => K::Emph(1),
                     Tag::Strong => K::Emph(2),
                     Tag::Strikethrough => K::Strike,
-                    Tag::Link { link_type: LinkType::Autolink, dest_url, .. } => {
-                        K::AutoLink { url: dest_url.to_string(), email: false }
-                    }
-                    Tag::Link { link_type: LinkType::Email, dest_url, .. } => {
-                        K::AutoLink { url: dest_url.to_string(), email: true }
-                    }
+                    Tag::Link {
+                        link_type: LinkType::Autolink,
+                        dest_url,
+                        ..
+                    } => K::AutoLink {
+                        url: dest_url.to_string(),
+                        email: false,
+                    },
+                    Tag::Link {
+                        link_type: LinkType::Email,
+                        dest_url,
+                        ..
+                    } => K::AutoLink {
+                        url: dest_url.to_string(),
+                        email: true,
+                    },
                     Tag::Link { dest_url, .. } => K::Link(dest_url.to_string()),
                     Tag::Image { dest_url, .. } => K::Image(dest_url.to_string()),
                     Tag::HtmlBlock => K::HtmlBlock(String::new()),
@@ -456,13 +554,19 @@ fn parse(md: &str) -> Node {
                             run.push(c);
                         } else {
                             if !run.is_empty() {
-                                ch.push(Node { k: K::TextBlock, ch: std::mem::take(&mut run) });
+                                ch.push(Node {
+                                    k: K::TextBlock,
+                                    ch: std::mem::take(&mut run),
+                                });
                             }
                             ch.push(c);
                         }
                     }
                     if !run.is_empty() {
-                        ch.push(Node { k: K::TextBlock, ch: run });
+                        ch.push(Node {
+                            k: K::TextBlock,
+                            ch: run,
+                        });
                     }
                     n.ch = ch;
                 }
@@ -482,16 +586,28 @@ fn parse(md: &str) -> Node {
                     }
                 }
             }
-            Event::Code(t) => stack.last_mut().unwrap().ch.push(Node::new(K::CodeSpan(t.to_string()))),
+            Event::Code(t) => stack
+                .last_mut()
+                .unwrap()
+                .ch
+                .push(Node::new(K::CodeSpan(t.to_string()))),
             Event::SoftBreak | Event::HardBreak => push_text(&mut stack, "\n", false),
             Event::Rule => stack.last_mut().unwrap().ch.push(Node::new(K::Rule)),
-            Event::TaskListMarker(c) => stack.last_mut().unwrap().ch.push(Node::new(K::TaskCheck(c))),
+            Event::TaskListMarker(c) => stack
+                .last_mut()
+                .unwrap()
+                .ch
+                .push(Node::new(K::TaskCheck(c))),
             Event::Html(h) => {
                 if let K::HtmlBlock(b) = &mut stack.last_mut().unwrap().k {
                     b.push_str(&h);
                 }
             }
-            Event::InlineHtml(h) => stack.last_mut().unwrap().ch.push(Node::new(K::RawHtml(h.to_string()))),
+            Event::InlineHtml(h) => stack
+                .last_mut()
+                .unwrap()
+                .ch
+                .push(Node::new(K::RawHtml(h.to_string()))),
             _ => {}
         }
     }
@@ -502,7 +618,9 @@ fn parse(md: &str) -> Node {
 fn sanitize_html(s: &str) -> String {
     static TAG: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     static DROP: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let drop = DROP.get_or_init(|| regex::Regex::new(r"(?is)<(script|style)[^>]*>.*?</(script|style)>").unwrap());
+    let drop = DROP.get_or_init(|| {
+        regex::Regex::new(r"(?is)<(script|style)[^>]*>.*?</(script|style)>").unwrap()
+    });
     let tag = TAG.get_or_init(|| regex::Regex::new(r"(?s)<[^>]*>").unwrap());
     let s = drop.replace_all(s, "");
     let s = tag.replace_all(&s, "");
@@ -570,7 +688,10 @@ impl Ctx {
         }
     }
     fn current(&self) -> Blk {
-        self.stack.last().map(|b| b.style.clone()).unwrap_or_default()
+        self.stack
+            .last()
+            .map(|b| b.style.clone())
+            .unwrap_or_default()
     }
     fn parent(&self) -> Blk {
         if self.stack.len() >= 2 {
@@ -629,7 +750,10 @@ impl Ctx {
     }
 
     fn push_block(&mut self, style: Blk) {
-        self.stack.push(BlockEl { block: vec![], style });
+        self.stack.push(BlockEl {
+            block: vec![],
+            style,
+        });
     }
 
     /// BlockElement.Render
@@ -664,11 +788,23 @@ impl Ctx {
     }
 
     /// BaseElement.doRender
-    fn base_render(&mut self, w: W, token: &str, prefix: &str, suffix: &str, st1: &Prim, st2: &Prim) {
+    fn base_render(
+        &mut self,
+        w: W,
+        token: &str,
+        prefix: &str,
+        suffix: &str,
+        st1: &Prim,
+        st2: &Prim,
+    ) {
         self.render_text(w, st1, prefix);
         self.render_text(w, st1, &st2.block_prefix);
         self.render_text(w, st2, &st2.prefix);
-        let s = if st2.format.is_empty() { token.to_string() } else { st2.format.replace("{{.text}}", token) };
+        let s = if st2.format.is_empty() {
+            token.to_string()
+        } else {
+            st2.format.replace("{{.text}}", token)
+        };
         self.render_text(w, st2, &s);
         self.render_text(w, st2, &st2.suffix);
         self.render_text(w, st1, &st2.block_suffix);
@@ -678,7 +814,15 @@ impl Ctx {
     /// BaseElement.Render
     fn base(&mut self, w: W, token: &str, prefix: &str, suffix: &str, style: &Prim) {
         let st1 = self.current().prim;
-        let st2 = cascade_blk(&self.current(), &Blk { prim: style.clone(), ..Default::default() }, false).prim;
+        let st2 = cascade_blk(
+            &self.current(),
+            &Blk {
+                prim: style.clone(),
+                ..Default::default()
+            },
+            false,
+        )
+        .prim;
         self.base_render(w, token, prefix, suffix, &st1, &st2);
     }
 
@@ -686,7 +830,15 @@ impl Ctx {
     fn base_override(&mut self, w: W, token: &str, style: &Prim, over: &Prim) {
         let cur = self.current();
         let st1 = cascade_prims(&[&cur.prim, over]);
-        let with = cascade_blk(&cur, &Blk { prim: style.clone(), ..Default::default() }, false).prim;
+        let with = cascade_blk(
+            &cur,
+            &Blk {
+                prim: style.clone(),
+                ..Default::default()
+            },
+            false,
+        )
+        .prim;
         let st2 = cascade_prims(&[&with, over]);
         self.base_render(w, token, "", "", &st1, &st2);
     }
@@ -700,7 +852,11 @@ impl Ctx {
                 None => self.base(w, t, "", "", &th_text),
             },
             K::Emph(level) => {
-                let base = if *level > 1 { self.th.strong.clone() } else { self.th.emph.clone() };
+                let base = if *level > 1 {
+                    self.th.strong.clone()
+                } else {
+                    self.th.emph.clone()
+                };
                 let style = match over {
                     Some(o) => cascade_prims(&[&base, o]),
                     None => base,
@@ -727,8 +883,16 @@ impl Ctx {
             }
             K::Link(url) => self.link(w, url, &n.ch, false, false),
             K::AutoLink { url, email } => {
-                let ch = if n.ch.is_empty() { vec![Node::new(K::Text(url.clone()))] } else { n.ch.clone() };
-                let url = if *email && !url.to_lowercase().starts_with("mailto:") { format!("mailto:{url}") } else { url.clone() };
+                let ch = if n.ch.is_empty() {
+                    vec![Node::new(K::Text(url.clone()))]
+                } else {
+                    n.ch.clone()
+                };
+                let url = if *email && !url.to_lowercase().starts_with("mailto:") {
+                    format!("mailto:{url}")
+                } else {
+                    url.clone()
+                };
                 self.link(w, &url, &ch, !*email, *email);
             }
             K::Image(url) => {
@@ -765,13 +929,24 @@ impl Ctx {
                         self.inline(w, c, None);
                         let inner = std::mem::replace(self.buf(w), save);
                         let st1 = self.current().prim;
-                        let st2 = cascade_blk(&self.current(), &Blk { prim: lt.clone(), ..Default::default() }, false).prim;
+                        let st2 = cascade_blk(
+                            &self.current(),
+                            &Blk {
+                                prim: lt.clone(),
+                                ..Default::default()
+                            },
+                            false,
+                        )
+                        .prim;
                         self.render_text(w, &st1, &st2.block_prefix);
                         self.render_text(w, &st2, &st2.prefix);
                         // The inner SGR codes only override what they set, so the
                         // LinkText attributes (bold) carry into the inner text.
                         let outer = to_style(&st2);
-                        let inner: Vec<Cell> = inner.into_iter().map(|(c, s)| (c, outer.patch(s))).collect();
+                        let inner: Vec<Cell> = inner
+                            .into_iter()
+                            .map(|(c, s)| (c, outer.patch(s)))
+                            .collect();
                         self.write(w, &inner);
                         self.render_text(w, &st2, &st2.suffix);
                         self.render_text(w, &st1, &st2.block_suffix);
@@ -798,7 +973,11 @@ impl Ctx {
             }
             K::Heading(level) => {
                 let idx = (*level as usize).clamp(1, 6) - 1;
-                let rules = cascade_blk(&cascade_blk(&Blk::default(), &self.th.heading, true), &self.th.h[idx], true);
+                let rules = cascade_blk(
+                    &cascade_blk(&Blk::default(), &self.th.heading, true),
+                    &self.th.h[idx],
+                    true,
+                );
                 if !first {
                     let cur = self.current().prim;
                     self.render_text(w, &cur, "\n");
@@ -842,7 +1021,10 @@ impl Ctx {
                 let block = std::mem::take(&mut self.stack.last_mut().unwrap().block);
                 let text: String = block.iter().map(|c| c.0).collect();
                 if !text.trim().is_empty() {
-                    let blk: Vec<Cell> = block.into_iter().map(|(c, s)| if c == '\n' { (' ', s) } else { (c, s) }).collect();
+                    let blk: Vec<Cell> = block
+                        .into_iter()
+                        .map(|(c, s)| if c == '\n' { (' ', s) } else { (c, s) })
+                        .collect();
                     let mut flow = join_wrapped(&blk, self.width(), "");
                     flow.push(('\n', Style::default()));
                     self.margin_write(pw, &rules, &flow);
@@ -863,7 +1045,10 @@ impl Ctx {
             K::List { .. } => {
                 self.write(w, &[('\n', Style::default())]);
                 let nested = self.stack_has_list();
-                let s = Blk { indent: Some(if nested { self.th.list_level_indent } else { 0 }), ..Default::default() };
+                let s = Blk {
+                    indent: Some(if nested { self.th.list_level_indent } else { 0 }),
+                    ..Default::default()
+                };
                 let st = cascade_blk(&self.current(), &s, false);
                 self.block_render(w, st);
                 self.stack.last_mut().unwrap().style.indent_token = None;
@@ -872,13 +1057,19 @@ impl Ctx {
                 self.block_finish(pw, true, true);
             }
             K::Item => {
-                let task = n
-                    .ch
-                    .first()
-                    .and_then(|c| c.ch.first())
-                    .and_then(|c| if let K::TaskCheck(b) = c.k { Some(b) } else { None });
+                let task = n.ch.first().and_then(|c| c.ch.first()).and_then(|c| {
+                    if let K::TaskCheck(b) = c.k {
+                        Some(b)
+                    } else {
+                        None
+                    }
+                });
                 if let Some(checked) = task {
-                    let pre = if checked { self.th.ticked.clone() } else { self.th.unticked.clone() };
+                    let pre = if checked {
+                        self.th.ticked.clone()
+                    } else {
+                        self.th.unticked.clone()
+                    };
                     let st = self.th.task.clone();
                     self.base(w, "", &pre, "", &st);
                 } else if let Some((ordered, enumeration)) = self.item_info() {
@@ -891,7 +1082,10 @@ impl Ctx {
                     }
                 }
                 self.children(n);
-                let last_is_list = n.ch.last().map(|c| matches!(c.k, K::List { .. })).unwrap_or(false);
+                let last_is_list =
+                    n.ch.last()
+                        .map(|c| matches!(c.k, K::List { .. }))
+                        .unwrap_or(false);
                 if !(last_is_list || next_sibling.is_none()) {
                     let cw = self.cur_w();
                     self.write(cw, &[('\n', Style::default())]);
@@ -937,10 +1131,10 @@ impl Ctx {
             self.items.push((ordered, start, 0));
         }
         for (i, c) in n.ch.iter().enumerate() {
-            if matches!(c.k, K::Item) {
-                if let Some(top) = self.items.last_mut() {
-                    top.2 += 1;
-                }
+            if matches!(c.k, K::Item)
+                && let Some(top) = self.items.last_mut()
+            {
+                top.2 += 1;
             }
             self.node(c, i == 0, n.ch.get(i + 1));
         }
@@ -958,7 +1152,9 @@ impl Ctx {
         !self.items.is_empty()
     }
     fn item_info(&self) -> Option<(bool, u64)> {
-        self.items.last().map(|(o, start, idx)| (*o, if *o { start + idx - 1 } else { 0 }))
+        self.items
+            .last()
+            .map(|(o, start, idx)| (*o, if *o { start + idx - 1 } else { 0 }))
     }
 }
 
@@ -980,7 +1176,14 @@ fn join_wrapped(cells: &[Cell], width: usize, breakpoints: &str) -> Vec<Cell> {
 
 pub fn render(md: &str, width: usize) -> Block {
     let tree = parse(md);
-    let mut ctx = Ctx { width, th: theme(), stack: vec![], out: vec![], items: vec![], parents: vec![] };
+    let mut ctx = Ctx {
+        width,
+        th: theme(),
+        stack: vec![],
+        out: vec![],
+        items: vec![],
+        parents: vec![],
+    };
     ctx.node(&tree, true, None);
     let mut lines: Block = vec![];
     let mut cur: Vec<Cell> = vec![];

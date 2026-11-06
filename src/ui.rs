@@ -158,8 +158,11 @@ fn tabs_line(app: &App) -> Line<'static> {
         span(app.version.clone(), t.secondary()),
     ]);
     let mut logo = logo;
-    if !app.latest_version.is_empty() && app.version != "dev" && app.version != app.latest_version {
-        logo.spans.push(span(format!(" {} Update available!", icons::UPDATE_AVAILABLE), Style::default().fg(theme::SUCCESS_GREEN)));
+    if !app.latest_version.is_empty() && app.version != app.latest_version {
+        logo.spans.push(span(
+            format!(" {} Update available!", icons::UPDATE_AVAILABLE),
+            Style::default().fg(theme::SUCCESS_GREEN),
+        ));
     }
     logo.spans.push(raw(" "));
     let button = Line::from(vec![
@@ -262,7 +265,9 @@ fn view_switcher(app: &App) -> Line<'static> {
         let name = if !app.repo_url.is_empty() {
             crate::git::repo_short_name(&app.repo_url)
         } else {
-            p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+            p.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default()
         };
         spans.push(span(
             format!("{} {name}", icons::REPO),
@@ -360,7 +365,11 @@ fn footer_line(app: &App) -> Line<'static> {
     };
     let branch_pager = app
         .section()
-        .filter(|s| s.kind == crate::section::Kind::Branch && s.prompt.is_none() && app.notif_prompt.is_none())
+        .filter(|s| {
+            s.kind == crate::section::Kind::Branch
+                && s.prompt.is_none()
+                && app.notif_prompt.is_none()
+        })
         .map(|s| crate::section::branch_pager(s, t));
     let left = match left_text {
         _ if branch_pager.is_some() => branch_pager.unwrap(),
@@ -440,7 +449,10 @@ pub fn draw(f: &mut Frame, app: &App) {
         draw_block(
             buf,
             Rect::new(0, 1, area.width, 1),
-            &[Line::from(span("━".repeat(w), Style::default().fg(t.primary_border)))],
+            &[Line::from(span(
+                "━".repeat(w),
+                Style::default().fg(t.primary_border),
+            ))],
         );
     }
 

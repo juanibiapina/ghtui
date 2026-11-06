@@ -58,9 +58,12 @@ pub enum Payload {
     NotificationRead(String),
     ClearAllNotifications,
     MarkAllRead,
-    Repo { repo: crate::git::Repo, reset: bool },
+    Repo {
+        repo: crate::git::Repo,
+        reset: bool,
+    },
     BranchPrs(Vec<PullRequest>),
-    BranchPr(PullRequest),
+    BranchPr(Box<PullRequest>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -117,9 +120,16 @@ pub enum Msg {
         notif_id: String,
     },
     User(String),
-    RepoTick { id: u64, prs: bool },
+    RepoTick {
+        id: u64,
+        prs: bool,
+    },
     BranchStatus(crate::git::NameStatus),
-    FetchBranchPr { branch: String, short: String, key: SectionKey },
+    FetchBranchPr {
+        branch: String,
+        short: String,
+        key: SectionKey,
+    },
     LatestVersion(String),
     Error(String),
 }

@@ -2,6 +2,11 @@
 name = "gh-dash"
 version = "0.1.0"
 edition = "2024"
+description = "A rich terminal UI for GitHub that doesn't break your flow"
+authors = ["Juan Ibiapina <juanibiapina@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/juanibiapina/gh-dash"
+homepage = "https://github.com/juanibiapina/gh-dash"
 
 [dependencies]
 anyhow = "1.0.104"
@@ -19,3 +24,14 @@ serde_json = "1.0.154"
 serde_yaml = "0.9.34"
 unicode-width = "0.2.3"
 ureq = { version = "3.5.1", features = ["json"] }
+
+[lints.rust]
+warnings = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+
+# The profile that 'cargo dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

@@ -1,5 +1,4 @@
-//! gh-dash: a rich terminal UI for GitHub. A Rust/ratatui port of the Go
-//! implementation in this repository.
+//! gh-dash: a rich terminal UI for GitHub.
 
 mod app;
 mod bookmarks;
@@ -32,108 +31,37 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
+use clap::Parser;
 use ratatui::crossterm::event::{
-    self, DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture, Event, KeyEventKind,
+    self, DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture, Event,
+    KeyEventKind,
 };
 use ratatui::crossterm::execute;
 
 use crate::app::App;
 use crate::config::Location;
 
-const HELP: &str = "
-  DASH
-
-  A rich terminal UI for GitHub that doesn't break your flow.
-
-  Visit https://github.com/juanibiapina/gh-dash for the docs.
-
-  USAGE
-
-
-    gh dash [--flags]
-
-
-  EXAMPLES
-
-
-    # Running without arguments will either:
-    #   - Use the global configuration file
-    #   - Use a local .gh-dash.yml file if in a git repo
-    gh dash
-
-    # Run with a specific configuration file
-    gh dash --config /path/to/configuration/file.yml
-
-    # Run with debug logging to debug.log
-    gh dash --debug
-
-    # Print version
-    gh dash -v
-
-
-  FLAGS
-
-    -c --config   Use this configuration file
-                  (default lookup:
-                    1. a .gh-dash.yml file if inside a git repo
-                    2. $GH_DASH_CONFIG env var
-                    3. $XDG_CONFIG_HOME/gh-dash/config.yml
-                  )
-    --debug       Passing this flag will allow writing debug output to debug.log
-    -h --help     Help for gh-dash
-    -v --version  Version for gh
-";
-
+/// A rich terminal UI for GitHub that doesn't break your flow.
+#[derive(Debug, Parser)]
+#[command(
+    name = "gh-dash",
+    version,
+    disable_version_flag = true,
+    after_help = "Docs: https://github.com/juanibiapina/gh-dash"
+)]
 struct Args {
+    /// Use this configuration file instead of a .gh-dash.yml in the git repo,
+    /// $GH_DASH_CONFIG, or $XDG_CONFIG_HOME/gh-dash/config.yml
+    #[arg(short, long, value_name = "FILE")]
     config: Option<String>,
+
+    /// Write debug output to debug.log
+    #[arg(long)]
     debug: bool,
-}
 
-fn version_text() -> String {
-    let version = option_env!("GH_DASH_VERSION").unwrap_or("dev");
-    let os = match std::env::consts::OS {
-        "macos" => "darwin",
-        other => other,
-    };
-    let arch = match std::env::consts::ARCH {
-        "aarch64" => "arm64",
-        "x86_64" => "amd64",
-        other => other,
-    };
-    format!("\nDASH\n\ngh-dash version {version}\ngoos: {os}\ngoarch: {arch}\n")
-}
-
-fn parse_args() -> Result<Args, String> {
-    let mut args = Args { config: None, debug: false };
-    let mut it = std::env::args().skip(1);
-    let mut positional = 0;
-    while let Some(a) = it.next() {
-        match a.as_str() {
-            "-h" | "--help" => {
-                print!("{HELP}");
-                std::process::exit(0);
-            }
-            "-v" | "--version" => {
-                print!("{}", version_text());
-                std::process::exit(0);
-            }
-            "-c" | "--config" => {
-                args.config = Some(it.next().ok_or("flag needs an argument: --config")?)
-            }
-            "--debug" => args.debug = true,
-            s if s.starts_with("--config=") => {
-                args.config = Some(s["--config=".len()..].to_string())
-            }
-            s if s.starts_with('-') => return Err(format!("unknown flag: {s}")),
-            _ => {
-                positional += 1;
-                if positional > 1 {
-                    return Err("accepts at most 1 arg(s)".into());
-                }
-            }
-        }
-    }
-    Ok(args)
+    /// Print version and exit
+    #[arg(short = 'v', long = "version", action = clap::ArgAction::Version)]
+    version: (),
 }
 
 /// go-gh repository.Current: $GH_REPO, else the git remotes (upstream, github, origin first).
@@ -195,13 +123,7 @@ fn fatal(prefix: &str, err: impl std::fmt::Display) -> ! {
 }
 
 fn main() {
-    let args = match parse_args() {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    };
+    let args = Args::parse();
     log::init(args.debug);
     crate::info!("Logging to debug.log");
     let repo_path: Option<PathBuf> = std::env::current_dir().ok();
@@ -228,12 +150,12 @@ fn main() {
 
     // ui.initScreen: the repo view needs the origin URL; a repo without one is fatal.
     let mut repo_url = String::new();
-    if config::feature_enabled("FF_REPO_VIEW") {
-        if let Some(p) = &repo_path {
-            match git::origin_url(&p.display().to_string()) {
-                Ok(u) => repo_url = u,
-                Err(e) => fatal("Reading config file", e),
-            }
+    if config::feature_enabled("FF_REPO_VIEW")
+        && let Some(p) = &repo_path
+    {
+        match git::origin_url(&p.display().to_string()) {
+            Ok(u) => repo_url = u,
+            Err(e) => fatal("Reading config file", e),
         }
     }
 

@@ -30,50 +30,121 @@ fn token_types() -> &'static HashMap<&'static str, TT> {
             }
         };
         add(-11, &["Error", "Other", "None", "Ignore"]);
-        add(1000, &["Keyword", "KeywordConstant", "KeywordDeclaration", "KeywordNamespace", "KeywordPseudo", "KeywordReserved", "KeywordType"]);
+        add(
+            1000,
+            &[
+                "Keyword",
+                "KeywordConstant",
+                "KeywordDeclaration",
+                "KeywordNamespace",
+                "KeywordPseudo",
+                "KeywordReserved",
+                "KeywordType",
+            ],
+        );
         add(
             2000,
             &[
-                "Name", "NameAttribute", "NameClass", "NameConstant", "NameDecorator", "NameEntity", "NameException",
-                "NameKeyword", "NameLabel", "NameNamespace", "NameOperator", "NameOther", "NamePseudo", "NameProperty",
+                "Name",
+                "NameAttribute",
+                "NameClass",
+                "NameConstant",
+                "NameDecorator",
+                "NameEntity",
+                "NameException",
+                "NameKeyword",
+                "NameLabel",
+                "NameNamespace",
+                "NameOperator",
+                "NameOther",
+                "NamePseudo",
+                "NameProperty",
                 "NameTag",
             ],
         );
         add(2100, &["NameBuiltin", "NameBuiltinPseudo"]);
         add(
             2200,
-            &["NameVariable", "NameVariableAnonymous", "NameVariableClass", "NameVariableGlobal", "NameVariableInstance", "NameVariableMagic"],
+            &[
+                "NameVariable",
+                "NameVariableAnonymous",
+                "NameVariableClass",
+                "NameVariableGlobal",
+                "NameVariableInstance",
+                "NameVariableMagic",
+            ],
         );
         add(2300, &["NameFunction", "NameFunctionMagic"]);
         add(3000, &["Literal", "LiteralDate", "LiteralOther"]);
         add(
             3100,
             &[
-                "LiteralString", "LiteralStringAffix", "LiteralStringAtom", "LiteralStringBacktick", "LiteralStringBoolean",
-                "LiteralStringChar", "LiteralStringDelimiter", "LiteralStringDoc", "LiteralStringDouble", "LiteralStringEscape",
-                "LiteralStringHeredoc", "LiteralStringInterpol", "LiteralStringName", "LiteralStringOther", "LiteralStringRegex",
-                "LiteralStringSingle", "LiteralStringSymbol",
+                "LiteralString",
+                "LiteralStringAffix",
+                "LiteralStringAtom",
+                "LiteralStringBacktick",
+                "LiteralStringBoolean",
+                "LiteralStringChar",
+                "LiteralStringDelimiter",
+                "LiteralStringDoc",
+                "LiteralStringDouble",
+                "LiteralStringEscape",
+                "LiteralStringHeredoc",
+                "LiteralStringInterpol",
+                "LiteralStringName",
+                "LiteralStringOther",
+                "LiteralStringRegex",
+                "LiteralStringSingle",
+                "LiteralStringSymbol",
             ],
         );
         add(
             3200,
             &[
-                "LiteralNumber", "LiteralNumberBin", "LiteralNumberFloat", "LiteralNumberHex", "LiteralNumberInteger",
-                "LiteralNumberIntegerLong", "LiteralNumberOct", "LiteralNumberByte",
+                "LiteralNumber",
+                "LiteralNumberBin",
+                "LiteralNumberFloat",
+                "LiteralNumberHex",
+                "LiteralNumberInteger",
+                "LiteralNumberIntegerLong",
+                "LiteralNumberOct",
+                "LiteralNumberByte",
             ],
         );
         add(4000, &["Operator", "OperatorWord"]);
         add(5000, &["Punctuation"]);
-        add(6000, &["Comment", "CommentHashbang", "CommentMultiline", "CommentSingle", "CommentSpecial"]);
+        add(
+            6000,
+            &[
+                "Comment",
+                "CommentHashbang",
+                "CommentMultiline",
+                "CommentSingle",
+                "CommentSpecial",
+            ],
+        );
         add(6100, &["CommentPreproc", "CommentPreprocFile"]);
         add(
             7000,
             &[
-                "Generic", "GenericDeleted", "GenericEmph", "GenericError", "GenericHeading", "GenericInserted",
-                "GenericOutput", "GenericPrompt", "GenericStrong", "GenericSubheading", "GenericTraceback", "GenericUnderline",
+                "Generic",
+                "GenericDeleted",
+                "GenericEmph",
+                "GenericError",
+                "GenericHeading",
+                "GenericInserted",
+                "GenericOutput",
+                "GenericPrompt",
+                "GenericStrong",
+                "GenericSubheading",
+                "GenericTraceback",
+                "GenericUnderline",
             ],
         );
-        add(8000, &["Text", "TextWhitespace", "TextSymbol", "TextPunctuation"]);
+        add(
+            8000,
+            &["Text", "TextWhitespace", "TextSymbol", "TextPunctuation"],
+        );
         m
     })
 }
@@ -103,8 +174,14 @@ pub fn translate(p: &str) -> String {
         if ch == '\\' && i + 1 < c.len() {
             let n = c[i + 1];
             match n {
-                'u' if i + 5 < c.len() + 0 && c[i + 2..].len() >= 4 && c[i + 2..i + 6].iter().all(|x| x.is_ascii_hexdigit()) => {
-                    out.push_str(&format!("\\x{{{}}}", c[i + 2..i + 6].iter().collect::<String>()));
+                'u' if i + 5 < c.len()
+                    && c[i + 2..].len() >= 4
+                    && c[i + 2..i + 6].iter().all(|x| x.is_ascii_hexdigit()) =>
+                {
+                    out.push_str(&format!(
+                        "\\x{{{}}}",
+                        c[i + 2..i + 6].iter().collect::<String>()
+                    ));
                     i += 6;
                 }
                 'Z' if !in_class => {
@@ -156,9 +233,7 @@ pub fn translate(p: &str) -> String {
             '{' => {
                 // Keep valid quantifiers, escape literal braces.
                 let rest: String = c[i..].iter().collect();
-                static Q: OnceLock<regex::Regex> = OnceLock::new();
-                let q = Q.get_or_init(|| regex::Regex::new(r"^\{\d+(,\d*)?\}").unwrap());
-                if let Some(m) = q.find(&rest) {
+                if let Some(m) = quantifier_re().find(&rest) {
                     out.push_str(m.as_str());
                     i += m.as_str().chars().count();
                     continue;
@@ -188,7 +263,10 @@ pub fn translate(p: &str) -> String {
 }
 
 fn compile(pattern: &str) -> Option<Regex> {
-    RegexBuilder::new(&translate(pattern)).backtrack_limit(200_000).build().ok()
+    RegexBuilder::new(&translate(pattern))
+        .backtrack_limit(200_000)
+        .build()
+        .ok()
 }
 
 // ---------------- lexer model ----------------
@@ -199,9 +277,17 @@ pub enum Emitter {
     ByGroups(Vec<Option<Emitter>>),
     Using(String),
     UsingSelf(String),
-    UsingByGroup { name_group: usize, code_group: usize, emitters: Vec<Option<Emitter>> },
+    UsingByGroup {
+        name_group: usize,
+        code_group: usize,
+        emitters: Vec<Option<Emitter>>,
+    },
     /// UsingLexer(TypeRemappingLexer(lexer, {from -> to}))
-    UsingRemap { lexer: String, from: TT, to: TT },
+    UsingRemap {
+        lexer: String,
+        from: TT,
+        to: TT,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -222,7 +308,12 @@ pub struct Rule {
 
 impl Rule {
     fn new(pattern: &str, emitter: Option<Emitter>, mutator: Option<Mutator>) -> Rule {
-        Rule { pattern: pattern.to_string(), emitter, mutator, re: OnceLock::new() }
+        Rule {
+            pattern: pattern.to_string(),
+            emitter,
+            mutator,
+            re: OnceLock::new(),
+        }
     }
 }
 
@@ -254,7 +345,6 @@ pub struct Lexer {
     analyse_res: OnceLock<Vec<(Option<Regex>, f32)>>,
 }
 
-
 // ---------------- XML loading ----------------
 
 #[derive(Debug, Default)]
@@ -267,10 +357,17 @@ struct El {
 
 impl El {
     fn attr(&self, k: &str) -> Option<&str> {
-        self.attrs.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str())
+        self.attrs
+            .iter()
+            .find(|(n, _)| n == k)
+            .map(|(_, v)| v.as_str())
     }
     fn attrs_all(&self, k: &str) -> Vec<String> {
-        self.attrs.iter().filter(|(n, _)| n == k).map(|(_, v)| v.clone()).collect()
+        self.attrs
+            .iter()
+            .filter(|(n, _)| n == k)
+            .map(|(_, v)| v.clone())
+            .collect()
     }
     fn child(&self, n: &str) -> Option<&El> {
         self.children.iter().find(|c| c.name == n)
@@ -294,7 +391,9 @@ fn parse_xml(src: &str) -> Option<El> {
             }
             Event::Text(t) => {
                 let s = t.into_inner();
-                let s = quick_xml::escape::unescape(&s).map(|c| c.to_string()).unwrap_or_else(|_| s.to_string());
+                let s = quick_xml::escape::unescape(&s)
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|_| s.to_string());
                 stack.last_mut()?.text.push_str(&s);
             }
             Event::GeneralRef(r) => {
@@ -302,7 +401,9 @@ fn parse_xml(src: &str) -> Option<El> {
                     Ok(Some(ch)) => ch.to_string(),
                     _ => {
                         let name = r.into_inner();
-                        quick_xml::escape::unescape(&format!("&{name};")).map(|c| c.to_string()).unwrap_or_default()
+                        quick_xml::escape::unescape(&format!("&{name};"))
+                            .map(|c| c.to_string())
+                            .unwrap_or_default()
                     }
                 };
                 stack.last_mut()?.text.push_str(&s);
@@ -323,11 +424,18 @@ fn element(e: &quick_xml::events::BytesStart) -> El {
         .map(|a| {
             let k = a.key.as_ref().to_string();
             let raw = a.value.to_string();
-            let v = quick_xml::escape::unescape(&raw).map(|c| c.to_string()).unwrap_or(raw);
+            let v = quick_xml::escape::unescape(&raw)
+                .map(|c| c.to_string())
+                .unwrap_or(raw);
             (k, v)
         })
         .collect();
-    El { name, attrs, children: vec![], text: String::new() }
+    El {
+        name,
+        attrs,
+        children: vec![],
+        text: String::new(),
+    }
 }
 
 fn parse_config(el: &El) -> Config {
@@ -349,7 +457,8 @@ fn parse_config(el: &El) -> Config {
                 for r in &ch.children {
                     if r.name == "regex" {
                         let score = r.attr("score").and_then(|s| s.parse().ok()).unwrap_or(0.0);
-                        c.analyse.push((r.attr("pattern").unwrap_or("").to_string(), score));
+                        c.analyse
+                            .push((r.attr("pattern").unwrap_or("").to_string(), score));
                     }
                 }
             }
@@ -362,13 +471,28 @@ fn parse_config(el: &El) -> Config {
 fn parse_emitter(el: &El) -> Option<Emitter> {
     match el.name.as_str() {
         "token" => Some(Emitter::Token(tt(el.attr("type").unwrap_or("Error")))),
-        "bygroups" => Some(Emitter::ByGroups(el.children.iter().map(parse_emitter).collect())),
+        "bygroups" => Some(Emitter::ByGroups(
+            el.children.iter().map(parse_emitter).collect(),
+        )),
         "using" => Some(Emitter::Using(el.attr("lexer").unwrap_or("").to_string())),
-        "usingself" => Some(Emitter::UsingSelf(el.attr("state").unwrap_or("root").to_string())),
+        "usingself" => Some(Emitter::UsingSelf(
+            el.attr("state").unwrap_or("root").to_string(),
+        )),
         "usingbygroup" => {
-            let num = |n: &str| el.child(n).and_then(|c| c.text.trim().parse().ok()).unwrap_or(0);
-            let emitters = el.child("emitters").map(|e| e.children.iter().map(parse_emitter).collect()).unwrap_or_default();
-            Some(Emitter::UsingByGroup { name_group: num("sublexer_name_group"), code_group: num("code_group"), emitters })
+            let num = |n: &str| {
+                el.child(n)
+                    .and_then(|c| c.text.trim().parse().ok())
+                    .unwrap_or(0)
+            };
+            let emitters = el
+                .child("emitters")
+                .map(|e| e.children.iter().map(parse_emitter).collect())
+                .unwrap_or_default();
+            Some(Emitter::UsingByGroup {
+                name_group: num("sublexer_name_group"),
+                code_group: num("code_group"),
+                emitters,
+            })
         }
         _ => None,
     }
@@ -377,16 +501,22 @@ fn parse_emitter(el: &El) -> Option<Emitter> {
 fn parse_mutator(el: &El) -> Option<Mutator> {
     match el.name.as_str() {
         "push" => Some(Mutator::Push(el.attrs_all("state"))),
-        "pop" => Some(Mutator::Pop(el.attr("depth").and_then(|d| d.parse().ok()).unwrap_or(1))),
+        "pop" => Some(Mutator::Pop(
+            el.attr("depth").and_then(|d| d.parse().ok()).unwrap_or(1),
+        )),
         "include" => Some(Mutator::Include(el.attr("state").unwrap_or("").to_string())),
         "combined" => Some(Mutator::Combined(el.attrs_all("state"))),
-        "mutators" => Some(Mutator::Multi(el.children.iter().filter_map(parse_mutator).collect())),
+        "mutators" => Some(Mutator::Multi(
+            el.children.iter().filter_map(parse_mutator).collect(),
+        )),
         _ => None,
     }
 }
 
 fn parse_rules(el: &El) -> Vec<(String, Vec<Rule>)> {
-    let Some(rules) = el.child("rules") else { return vec![] };
+    let Some(rules) = el.child("rules") else {
+        return vec![];
+    };
     rules
         .children
         .iter()
@@ -423,17 +553,27 @@ impl Lexer {
         let start = src.find("<config")?;
         let end = src.find("</config>")? + "</config>".len();
         let el = parse_xml(&src[start..end])?;
-        Some(Lexer { config: parse_config(&el), source: Source::Xml(src), analyser: None, rules: OnceLock::new(), analyse_res: OnceLock::new() })
+        Some(Lexer {
+            config: parse_config(&el),
+            source: Source::Xml(src),
+            analyser: None,
+            rules: OnceLock::new(),
+            analyse_res: OnceLock::new(),
+        })
     }
 
     fn rules(&self) -> &HashMap<String, Vec<Arc<Rule>>> {
         self.rules.get_or_init(|| {
             let raw = match &self.source {
-                Source::Xml(src) => parse_xml(src).map(|el| parse_rules(&el)).unwrap_or_default(),
+                Source::Xml(src) => parse_xml(src)
+                    .map(|el| parse_rules(&el))
+                    .unwrap_or_default(),
                 Source::Rules(f) => f(),
             };
-            let mut map: HashMap<String, Vec<Arc<Rule>>> =
-                raw.into_iter().map(|(k, v)| (k, v.into_iter().map(Arc::new).collect())).collect();
+            let mut map: HashMap<String, Vec<Arc<Rule>>> = raw
+                .into_iter()
+                .map(|(k, v)| (k, v.into_iter().map(Arc::new).collect()))
+                .collect();
             expand(&mut map);
             map
         })
@@ -478,14 +618,21 @@ impl Lexer {
                 .analyse
                 .iter()
                 .map(|(p, s)| {
-                    let p = if self.config.case_insensitive { format!("(?i){p}") } else { p.clone() };
+                    let p = if self.config.case_insensitive {
+                        format!("(?i){p}")
+                    } else {
+                        p.clone()
+                    };
                     (compile(&p), *s)
                 })
                 .collect()
         });
         let mut score = 0.0f32;
         for (re, s) in res {
-            let ok = re.as_ref().and_then(|r| r.is_match(text).ok()).unwrap_or(false);
+            let ok = re
+                .as_ref()
+                .and_then(|r| r.is_match(text).ok())
+                .unwrap_or(false);
             if ok && self.config.analyse_first {
                 return s.min(1.0);
             }
@@ -527,7 +674,11 @@ fn expand(map: &mut HashMap<String, Vec<Arc<Rule>>>) {
                             map.insert(name.clone(), combined);
                         }
                         let old = &map[&state][i];
-                        let replaced = Rule::new(&old.pattern, old.emitter.clone(), Some(Mutator::Push(vec![name])));
+                        let replaced = Rule::new(
+                            &old.pattern,
+                            old.emitter.clone(),
+                            Some(Mutator::Push(vec![name])),
+                        );
                         map.get_mut(&state).unwrap()[i] = Arc::new(replaced);
                         continue 'restart;
                     }
@@ -547,7 +698,11 @@ fn ensure_lf(t: &str) -> String {
 
 /// RegexLexer.Tokenise + LexerState.Iterator.
 pub fn tokenise(lexer: &Lexer, text: &str, state: &str, nested: bool) -> Vec<Token> {
-    let mut text = if nested { text.to_string() } else { ensure_lf(text) };
+    let mut text = if nested {
+        text.to_string()
+    } else {
+        ensure_lf(text)
+    };
     let mut added = false;
     if !nested && lexer.config.ensure_nl && !text.ends_with('\n') {
         text.push('\n');
@@ -561,16 +716,26 @@ pub fn tokenise(lexer: &Lexer, text: &str, state: &str, nested: bool) -> Vec<Tok
     let mut idle = 0usize;
     while pos < end && !stack.is_empty() {
         let cur = stack.last().unwrap().clone();
-        let Some(state_rules) = rules.get(&cur) else { break };
+        let Some(state_rules) = rules.get(&cur) else {
+            break;
+        };
         let mut matched: Option<(Arc<Rule>, Vec<String>)> = None;
         for rule in state_rules {
-            let Some(re) = lexer.regex(rule) else { continue };
-            if let Ok(Some(caps)) = re.captures_from_pos(&text, pos) {
-                if caps.get(0).map(|m| m.start()) == Some(pos) {
-                    let groups = (0..caps.len()).map(|i| caps.get(i).map(|m| m.as_str().to_string()).unwrap_or_default()).collect();
-                    matched = Some((rule.clone(), groups));
-                    break;
-                }
+            let Some(re) = lexer.regex(rule) else {
+                continue;
+            };
+            if let Ok(Some(caps)) = re.captures_from_pos(&text, pos)
+                && caps.get(0).map(|m| m.start()) == Some(pos)
+            {
+                let groups = (0..caps.len())
+                    .map(|i| {
+                        caps.get(i)
+                            .map(|m| m.as_str().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect();
+                matched = Some((rule.clone(), groups));
+                break;
             }
         }
         let Some((rule, groups)) = matched else {
@@ -585,10 +750,10 @@ pub fn tokenise(lexer: &Lexer, text: &str, state: &str, nested: bool) -> Vec<Tok
         };
         let before = stack.clone();
         pos += groups[0].len();
-        if let Some(m) = &rule.mutator {
-            if !mutate(m, &mut stack, &cur) {
-                break;
-            }
+        if let Some(m) = &rule.mutator
+            && !mutate(m, &mut stack, &cur)
+        {
+            break;
         }
         if let Some(e) = &rule.emitter {
             emit(e, &groups, lexer, &mut out);
@@ -661,16 +826,28 @@ fn emit(e: &Emitter, groups: &[String], lexer: &Lexer, out: &mut Vec<Token>) {
             }
         }
         Emitter::UsingSelf(state) => out.extend(tokenise(lexer, &groups[0], state, true)),
-        Emitter::UsingRemap { lexer: name, from, to } => {
+        Emitter::UsingRemap {
+            lexer: name,
+            from,
+            to,
+        } => {
             if let Some(l) = get(name) {
-                out.extend(tokenise(l, &groups[0], "root", true).into_iter().map(|(t, v)| (if t == *from { *to } else { t }, v)));
+                out.extend(
+                    tokenise(l, &groups[0], "root", true)
+                        .into_iter()
+                        .map(|(t, v)| (if t == *from { *to } else { t }, v)),
+                );
             }
         }
-        Emitter::UsingByGroup { name_group, code_group, emitters } => {
+        Emitter::UsingByGroup {
+            name_group,
+            code_group,
+            emitters,
+        } => {
             let sub = groups.get(*name_group).and_then(|n| get(n));
             for (i, g) in groups[1..].iter().enumerate() {
-                if i + 1 == *code_group && sub.is_some() {
-                    out.extend(tokenise(sub.unwrap(), &groups[*code_group], "root", false));
+                if let Some(sub) = sub.filter(|_| i + 1 == *code_group) {
+                    out.extend(tokenise(sub, &groups[*code_group], "root", false));
                 } else if let Some(Some(em)) = emitters.get(i) {
                     emit(em, std::slice::from_ref(g), lexer, out);
                 }
@@ -699,14 +876,69 @@ fn bygroups(names: &[Option<Emitter>]) -> Option<Emitter> {
 fn go_rules() -> Vec<(String, Vec<Rule>)> {
     let r = |p: &str, e: Option<Emitter>| Rule::new(p, e, None);
     let builtins = [
-        "uint", "uint8", "uint16", "uint32", "uint64", "int", "int8", "int16", "int32", "int64", "float", "float32", "float64",
-        "complex64", "complex128", "byte", "rune", "string", "bool", "error", "uintptr", "print", "println", "panic",
-        "recover", "close", "complex", "real", "imag", "len", "cap", "append", "copy", "delete", "new", "make", "clear",
-        "min", "max",
+        "uint",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "int",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "float",
+        "float32",
+        "float64",
+        "complex64",
+        "complex128",
+        "byte",
+        "rune",
+        "string",
+        "bool",
+        "error",
+        "uintptr",
+        "print",
+        "println",
+        "panic",
+        "recover",
+        "close",
+        "complex",
+        "real",
+        "imag",
+        "len",
+        "cap",
+        "append",
+        "copy",
+        "delete",
+        "new",
+        "make",
+        "clear",
+        "min",
+        "max",
     ];
     let types = [
-        "uint", "uint8", "uint16", "uint32", "uint64", "int", "int8", "int16", "int32", "int64", "float", "float32", "float64",
-        "complex64", "complex128", "byte", "rune", "string", "bool", "error", "uintptr", "any",
+        "uint",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "int",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "float",
+        "float32",
+        "float64",
+        "complex64",
+        "complex128",
+        "byte",
+        "rune",
+        "string",
+        "bool",
+        "error",
+        "uintptr",
+        "any",
     ];
     vec![(
         "root".into(),
@@ -717,34 +949,66 @@ fn go_rules() -> Vec<(String, Vec<Rule>)> {
             r(r"//\s+[^\n\r]*", tok("CommentSingle")),
             r(r"/(\\\n)?[*](.|\n)*?[*](\\\n)?/", tok("CommentMultiline")),
             r(r"(import|package)\b", tok("KeywordNamespace")),
-            r(r"(var|func|struct|map|chan|type|interface|const)\b", tok("KeywordDeclaration")),
+            r(
+                r"(var|func|struct|map|chan|type|interface|const)\b",
+                tok("KeywordDeclaration"),
+            ),
             r(
                 &words(
                     "",
                     r"\b",
-                    &["break", "default", "select", "case", "defer", "go", "else", "goto", "switch", "fallthrough", "if", "range", "continue", "for", "return"],
+                    &[
+                        "break",
+                        "default",
+                        "select",
+                        "case",
+                        "defer",
+                        "go",
+                        "else",
+                        "goto",
+                        "switch",
+                        "fallthrough",
+                        "if",
+                        "range",
+                        "continue",
+                        "for",
+                        "return",
+                    ],
                 ),
                 tok("Keyword"),
             ),
             r(r"(true|false|iota|nil)\b", tok("KeywordConstant")),
-            r(&words("", r"\b(\()", &builtins), bygroups(&[tok("NameBuiltin"), tok("Punctuation")])),
+            r(
+                &words("", r"\b(\()", &builtins),
+                bygroups(&[tok("NameBuiltin"), tok("Punctuation")]),
+            ),
             r(&words("", r"\b", &types), tok("KeywordType")),
             r(r"\d+i", tok("LiteralNumber")),
             r(r"\d+\.\d*([Ee][-+]\d+)?i", tok("LiteralNumber")),
             r(r"\.\d+([Ee][-+]\d+)?i", tok("LiteralNumber")),
             r(r"\d+[Ee][-+]\d+i", tok("LiteralNumber")),
-            r(r"\d+(\.\d+[eE][+\-]?\d+|\.\d*|[eE][+\-]?\d+)", tok("LiteralNumberFloat")),
+            r(
+                r"\d+(\.\d+[eE][+\-]?\d+|\.\d*|[eE][+\-]?\d+)",
+                tok("LiteralNumberFloat"),
+            ),
             r(r"\.\d+([eE][+\-]?\d+)?", tok("LiteralNumberFloat")),
             r(r"0[0-7]+", tok("LiteralNumberOct")),
             r(r"0[xX][0-9a-fA-F_]+", tok("LiteralNumberHex")),
             r(r"0b[01_]+", tok("LiteralNumberBin")),
             r(r"(0|[1-9][0-9_]*)", tok("LiteralNumberInteger")),
-            r(r#"'(\\['"\\abfnrtv]|\\x[0-9a-fA-F]{2}|\\[0-7]{1,3}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8}|[^\\])'"#, tok("LiteralStringChar")),
+            r(
+                r#"'(\\['"\\abfnrtv]|\\x[0-9a-fA-F]{2}|\\[0-7]{1,3}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8}|[^\\])'"#,
+                tok("LiteralStringChar"),
+            ),
             r(
                 "(`)([^`]*)(`)",
                 bygroups(&[
                     tok("LiteralString"),
-                    Some(Emitter::UsingRemap { lexer: "Go Text Template".into(), from: OTHER, to: tt("LiteralString") }),
+                    Some(Emitter::UsingRemap {
+                        lexer: "Go Text Template".into(),
+                        from: OTHER,
+                        to: tt("LiteralString"),
+                    }),
                     tok("LiteralString"),
                 ]),
             ),
@@ -753,7 +1017,14 @@ fn go_rules() -> Vec<(String, Vec<Rule>)> {
                 r"(<<=|>>=|<<|>>|<=|>=|&\^=|&\^|\+=|-=|\*=|/=|%=|&=|\|=|&&|\|\||<-|\+\+|--|==|!=|:=|\.\.\.|[+\-*/%&])",
                 tok("Operator"),
             ),
-            r(r"([a-zA-Z_]\w*)(\s*)(\()", bygroups(&[tok("NameFunction"), Some(Emitter::UsingSelf("root".into())), tok("Punctuation")])),
+            r(
+                r"([a-zA-Z_]\w*)(\s*)(\()",
+                bygroups(&[
+                    tok("NameFunction"),
+                    Some(Emitter::UsingSelf("root".into())),
+                    tok("Punctuation"),
+                ]),
+            ),
             r(r"[|^<>=!()\[\]{}.,;:~]", tok("Punctuation")),
             r(r"[^\W\d]\w*", tok("NameOther")),
         ],
@@ -769,17 +1040,48 @@ fn markdown_rules() -> Vec<(String, Vec<Rule>)> {
             vec![
                 r(r"^(#[^#].+\n)", bygroups(&[tok("GenericHeading")])),
                 r(r"^(#{2,6}.+\n)", bygroups(&[tok("GenericSubheading")])),
-                r(r"^(\s*)([*-] )(\[[ xX]\])( .+\n)", bygroups(&[tok("Text"), tok("Keyword"), tok("Keyword"), inline_self.clone()])),
-                r(r"^(\s*)([*-])(\s)(.+\n)", bygroups(&[tok("Text"), tok("Keyword"), tok("Text"), inline_self.clone()])),
-                r(r"^(\s*)([0-9]+\.)( .+\n)", bygroups(&[tok("Text"), tok("Keyword"), inline_self.clone()])),
-                r(r"^(\s*>\s)(.+\n)", bygroups(&[tok("Keyword"), tok("GenericEmph")])),
-                r("^(```\\n)([\\w\\W]*?)(^```$)", bygroups(&[tok("LiteralString"), tok("Text"), tok("LiteralString")])),
+                r(
+                    r"^(\s*)([*-] )(\[[ xX]\])( .+\n)",
+                    bygroups(&[
+                        tok("Text"),
+                        tok("Keyword"),
+                        tok("Keyword"),
+                        inline_self.clone(),
+                    ]),
+                ),
+                r(
+                    r"^(\s*)([*-])(\s)(.+\n)",
+                    bygroups(&[
+                        tok("Text"),
+                        tok("Keyword"),
+                        tok("Text"),
+                        inline_self.clone(),
+                    ]),
+                ),
+                r(
+                    r"^(\s*)([0-9]+\.)( .+\n)",
+                    bygroups(&[tok("Text"), tok("Keyword"), inline_self.clone()]),
+                ),
+                r(
+                    r"^(\s*>\s)(.+\n)",
+                    bygroups(&[tok("Keyword"), tok("GenericEmph")]),
+                ),
+                r(
+                    "^(```\\n)([\\w\\W]*?)(^```$)",
+                    bygroups(&[tok("LiteralString"), tok("Text"), tok("LiteralString")]),
+                ),
                 r(
                     "^(```)(\\w+)(\\n)([\\w\\W]*?)(^```$)",
                     Some(Emitter::UsingByGroup {
                         name_group: 2,
                         code_group: 4,
-                        emitters: vec![tok("LiteralString"), tok("LiteralString"), tok("LiteralString"), tok("Text"), tok("LiteralString")],
+                        emitters: vec![
+                            tok("LiteralString"),
+                            tok("LiteralString"),
+                            tok("LiteralString"),
+                            tok("Text"),
+                            tok("LiteralString"),
+                        ],
                     }),
                 ),
                 Rule::new("", None, Some(Mutator::Include("inline".into()))),
@@ -789,12 +1091,42 @@ fn markdown_rules() -> Vec<(String, Vec<Rule>)> {
             "inline".into(),
             vec![
                 r(r"\\.", tok("Text")),
-                r(r"(\s)(\*|_)((?:(?!\2).)*)(\2)((?=\W|\n))", bygroups(&[tok("Text"), tok("GenericEmph"), tok("GenericEmph"), tok("GenericEmph"), tok("Text")])),
-                r(r"(\s)((\*\*|__).*?)\3((?=\W|\n))", bygroups(&[tok("Text"), tok("GenericStrong"), tok("GenericStrong"), tok("Text")])),
-                r(r"(\s)(~~[^~]+~~)((?=\W|\n))", bygroups(&[tok("Text"), tok("GenericDeleted"), tok("Text")])),
+                r(
+                    r"(\s)(\*|_)((?:(?!\2).)*)(\2)((?=\W|\n))",
+                    bygroups(&[
+                        tok("Text"),
+                        tok("GenericEmph"),
+                        tok("GenericEmph"),
+                        tok("GenericEmph"),
+                        tok("Text"),
+                    ]),
+                ),
+                r(
+                    r"(\s)((\*\*|__).*?)\3((?=\W|\n))",
+                    bygroups(&[
+                        tok("Text"),
+                        tok("GenericStrong"),
+                        tok("GenericStrong"),
+                        tok("Text"),
+                    ]),
+                ),
+                r(
+                    r"(\s)(~~[^~]+~~)((?=\W|\n))",
+                    bygroups(&[tok("Text"), tok("GenericDeleted"), tok("Text")]),
+                ),
                 r("`[^`]+`", tok("LiteralStringBacktick")),
                 r(r"[@#][\w/:]+", tok("NameEntity")),
-                r(r"(!?\[)([^]]+)(\])(\()([^)]+)(\))", bygroups(&[tok("Text"), tok("NameTag"), tok("Text"), tok("Text"), tok("NameAttribute"), tok("Text")])),
+                r(
+                    r"(!?\[)([^]]+)(\])(\()([^)]+)(\))",
+                    bygroups(&[
+                        tok("Text"),
+                        tok("NameTag"),
+                        tok("Text"),
+                        tok("Text"),
+                        tok("NameAttribute"),
+                        tok("Text"),
+                    ]),
+                ),
                 r(r".|\n", tok("Text")),
             ],
         ),
@@ -802,7 +1134,13 @@ fn markdown_rules() -> Vec<(String, Vec<Rule>)> {
 }
 
 fn plaintext_rules() -> Vec<(String, Vec<Rule>)> {
-    vec![("root".into(), vec![Rule::new(".+", tok("Text"), None), Rule::new(r"\n", tok("Text"), None)])]
+    vec![(
+        "root".into(),
+        vec![
+            Rule::new(".+", tok("Text"), None),
+            Rule::new(r"\n", tok("Text"), None),
+        ],
+    )]
 }
 
 fn go_analyser(text: &str) -> f32 {
@@ -819,8 +1157,14 @@ fn go_analyser(text: &str) -> f32 {
 fn mysql_analyser(text: &str) -> f32 {
     static BT: OnceLock<regex::Regex> = OnceLock::new();
     static BR: OnceLock<regex::Regex> = OnceLock::new();
-    let bt = BT.get_or_init(|| regex::Regex::new(r"`[a-zA-Z_]\w*`").unwrap()).find_iter(text).count();
-    let br = BR.get_or_init(|| regex::Regex::new(r"\[[a-zA-Z_]\w*\]").unwrap()).find_iter(text).count();
+    let bt = BT
+        .get_or_init(|| regex::Regex::new(r"`[a-zA-Z_]\w*`").unwrap())
+        .find_iter(text)
+        .count();
+    let br = BR
+        .get_or_init(|| regex::Regex::new(r"\[[a-zA-Z_]\w*\]").unwrap())
+        .find_iter(text)
+        .count();
     if bt + br >= 1 && bt >= 2 * br {
         0.5
     } else if bt > br {
@@ -835,7 +1179,10 @@ fn mysql_analyser(text: &str) -> f32 {
 /// lexers/dns.go
 fn dns_analyser(text: &str) -> f32 {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
-    if RE.get_or_init(|| regex::Regex::new(r"(?m)^@\s+IN\s+SOA\s+").unwrap()).is_match(text) {
+    if RE
+        .get_or_init(|| regex::Regex::new(r"(?m)^@\s+IN\s+SOA\s+").unwrap())
+        .is_match(text)
+    {
         1.0
     } else {
         0.0
@@ -844,7 +1191,11 @@ fn dns_analyser(text: &str) -> f32 {
 
 /// lexers/zed.go
 fn zed_analyser(text: &str) -> f32 {
-    let (d, r, p) = (text.contains("definition "), text.contains("relation "), text.contains("permission "));
+    let (d, r, p) = (
+        text.contains("definition "),
+        text.contains("relation "),
+        text.contains("permission "),
+    );
     if d && r && p {
         0.9
     } else if d || r {
@@ -856,7 +1207,12 @@ fn zed_analyser(text: &str) -> f32 {
     }
 }
 
-fn coded(name: &str, aliases: &[&str], filenames: &[&str], rules: fn() -> Vec<(String, Vec<Rule>)>) -> Lexer {
+fn coded(
+    name: &str,
+    aliases: &[&str],
+    filenames: &[&str],
+    rules: fn() -> Vec<(String, Vec<Rule>)>,
+) -> Lexer {
     Lexer {
         config: Config {
             name: name.into(),
@@ -897,19 +1253,30 @@ pub fn registry() -> &'static Registry {
         let mut go = coded("Go", &["go", "golang"], &["*.go"], go_rules);
         go.analyser = Some(go_analyser);
         add(go);
-        if let Some((_, src)) = EMBEDDED.iter().find(|(n, _)| *n == "go_template.xml") {
-            if let Some(mut l) = Lexer::from_xml(src) {
-                l.config.name = "Go Text Template".into();
-                l.config.aliases = vec!["go-text-template".into()];
-                l.config.filenames.clear();
-                l.config.analyse.clear();
-                add(l);
-            }
+        if let Some((_, src)) = EMBEDDED.iter().find(|(n, _)| *n == "go_template.xml")
+            && let Some(mut l) = Lexer::from_xml(src)
+        {
+            l.config.name = "Go Text Template".into();
+            l.config.aliases = vec!["go-text-template".into()];
+            l.config.filenames.clear();
+            l.config.analyse.clear();
+            add(l);
         }
-        add(coded("markdown", &["md", "mkd"], &["*.md", "*.mkd", "*.markdown"], markdown_rules));
+        add(coded(
+            "markdown",
+            &["md", "mkd"],
+            &["*.md", "*.mkd", "*.markdown"],
+            markdown_rules,
+        ));
         // Analysers attached to XML lexers in Go code.
-        for (name, f) in [("mysql", mysql_analyser as fn(&str) -> f32), ("dns", dns_analyser), ("zed", zed_analyser)] {
-            if let Some(l) = lexers.iter_mut().find(|l| l.config.name.to_lowercase() == name || l.config.aliases.iter().any(|a| a == name)) {
+        for (name, f) in [
+            ("mysql", mysql_analyser as fn(&str) -> f32),
+            ("dns", dns_analyser),
+            ("zed", zed_analyser),
+        ] {
+            if let Some(l) = lexers.iter_mut().find(|l| {
+                l.config.name.to_lowercase() == name || l.config.aliases.iter().any(|a| a == name)
+            }) {
                 l.analyser = Some(f);
             }
         }
@@ -926,7 +1293,9 @@ fn glob_match(glob: &str, name: &str) -> bool {
             Some('*') => (0..=n.len()).any(|i| rec(&g[1..], &n[i..])),
             Some('?') => !n.is_empty() && rec(&g[1..], &n[1..]),
             Some('[') => {
-                let Some(close) = g.iter().position(|c| *c == ']') else { return false };
+                let Some(close) = g.iter().position(|c| *c == ']') else {
+                    return false;
+                };
                 let Some(&c) = n.first() else { return false };
                 let class = &g[1..close];
                 let (neg, class) = match class.first() {
@@ -950,11 +1319,26 @@ fn glob_match(glob: &str, name: &str) -> bool {
             Some(c) => n.first() == Some(c) && rec(&g[1..], &n[1..]),
         }
     }
-    rec(&glob.chars().collect::<Vec<_>>(), &name.chars().collect::<Vec<_>>())
+    rec(
+        &glob.chars().collect::<Vec<_>>(),
+        &name.chars().collect::<Vec<_>>(),
+    )
 }
 
 const IGNORED_SUFFIXES: [&str; 13] = [
-    "~", ".bak", ".old", ".orig", ".dpkg-dist", ".dpkg-old", ".ucf-dist", ".ucf-new", ".ucf-old", ".rpmnew", ".rpmorig", ".rpmsave", ".in",
+    "~",
+    ".bak",
+    ".old",
+    ".orig",
+    ".dpkg-dist",
+    ".dpkg-old",
+    ".ucf-dist",
+    ".ucf-new",
+    ".ucf-old",
+    ".rpmnew",
+    ".rpmorig",
+    ".rpmsave",
+    ".in",
 ];
 
 fn priority(l: &Lexer) -> f32 {
@@ -972,15 +1356,27 @@ fn match_filename(filename: &str) -> Option<&'static Lexer> {
     for alias in [false, true] {
         let mut matched: Vec<&Lexer> = vec![];
         for l in &reg.lexers {
-            let globs = if alias { &l.config.alias_filenames } else { &l.config.filenames };
+            let globs = if alias {
+                &l.config.alias_filenames
+            } else {
+                &l.config.filenames
+            };
             for g in globs {
-                if glob_match(g, base) || IGNORED_SUFFIXES.iter().any(|s| glob_match(&format!("{g}{s}"), base)) {
+                if glob_match(g, base)
+                    || IGNORED_SUFFIXES
+                        .iter()
+                        .any(|s| glob_match(&format!("{g}{s}"), base))
+                {
                     matched.push(l);
                 }
             }
         }
         if !matched.is_empty() {
-            matched.sort_by(|a, b| priority(b).partial_cmp(&priority(a)).unwrap_or(std::cmp::Ordering::Equal));
+            matched.sort_by(|a, b| {
+                priority(b)
+                    .partial_cmp(&priority(a))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             return Some(matched[0]);
         }
     }
@@ -992,10 +1388,19 @@ pub fn get(name: &str) -> Option<&'static Lexer> {
     let reg = registry();
     let lower = name.to_lowercase();
     for n in [name, lower.as_str()] {
-        if let Some(l) = reg.lexers.iter().find(|l| l.config.name == n || l.config.name.to_lowercase() == n) {
+        if let Some(l) = reg
+            .lexers
+            .iter()
+            .find(|l| l.config.name == n || l.config.name.to_lowercase() == n)
+        {
             return Some(l);
         }
-        if let Some(l) = reg.lexers.iter().find(|l| l.config.aliases.iter().any(|a| a == n || a.to_lowercase() == n)) {
+        if let Some(l) = reg.lexers.iter().find(|l| {
+            l.config
+                .aliases
+                .iter()
+                .any(|a| a == n || a.to_lowercase() == n)
+        }) {
             return Some(l);
         }
     }
@@ -1009,7 +1414,11 @@ pub fn get(name: &str) -> Option<&'static Lexer> {
     if let Some(l) = match_filename(name) {
         candidates.push(l);
     }
-    candidates.sort_by(|a, b| priority(b).partial_cmp(&priority(a)).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.sort_by(|a, b| {
+        priority(b)
+            .partial_cmp(&priority(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     candidates.first().copied()
 }
 
@@ -1038,6 +1447,12 @@ pub fn tokenise_code(code: &str, lang: &str) -> Vec<Token> {
     tokenise(lexer, code, "root", false)
 }
 
+/// Matches a regex quantifier such as `{2}` or `{2,5}` at the start of a string.
+fn quantifier_re() -> &'static regex::Regex {
+    static Q: OnceLock<regex::Regex> = OnceLock::new();
+    Q.get_or_init(|| regex::Regex::new(r"^\{\d+(,\d*)?\}").unwrap())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1054,7 +1469,21 @@ mod tests {
 
     #[test]
     fn rules_compile_for_common_lexers() {
-        for name in ["javascript", "typescript", "bash", "python", "rust", "json", "yaml", "diff", "html", "css", "toml", "go", "markdown"] {
+        for name in [
+            "javascript",
+            "typescript",
+            "bash",
+            "python",
+            "rust",
+            "json",
+            "yaml",
+            "diff",
+            "html",
+            "css",
+            "toml",
+            "go",
+            "markdown",
+        ] {
             let l = get(name).unwrap();
             let mut bad = vec![];
             for (state, rules) in l.rules() {

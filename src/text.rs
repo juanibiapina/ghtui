@@ -144,7 +144,11 @@ pub fn ansi_wrap(cells: &[(char, Style)], limit: usize) -> Vec<Vec<(char, Style)
 
 /// `ansi_wrap` with extra ASCII breakpoint characters (glamour uses " ,.;-+|").
 #[allow(unused_assignments)] // The macros mirror the Go closures, which reset state they don't reread.
-pub fn ansi_wrap_with(cells: &[(char, Style)], limit: usize, breakpoints: &str) -> Vec<Vec<(char, Style)>> {
+pub fn ansi_wrap_with(
+    cells: &[(char, Style)],
+    limit: usize,
+    breakpoints: &str,
+) -> Vec<Vec<(char, Style)>> {
     if limit < 1 {
         return vec![cells.to_vec()];
     }
@@ -262,7 +266,10 @@ pub fn ansi_wrap_with(cells: &[(char, Style)], limit: usize, breakpoints: &str) 
 }
 
 pub fn spans_to_cells(spans: &[Span<'static>]) -> Vec<(char, Style)> {
-    spans.iter().flat_map(|s| s.content.chars().map(move |c| (c, s.style))).collect()
+    spans
+        .iter()
+        .flat_map(|s| s.content.chars().map(move |c| (c, s.style)))
+        .collect()
 }
 
 pub fn cells_to_line(cells: &[(char, Style)]) -> Line<'static> {
@@ -284,7 +291,10 @@ pub fn cells_to_line(cells: &[(char, Style)]) -> Line<'static> {
 
 /// Word-wraps styled spans to `width` with `ansi_wrap`.
 pub fn wrap_spans(spans: &[Span<'static>], width: usize) -> Block {
-    ansi_wrap(&spans_to_cells(spans), width.max(1)).iter().map(|l| cells_to_line(l)).collect()
+    ansi_wrap(&spans_to_cells(spans), width.max(1))
+        .iter()
+        .map(|l| cells_to_line(l))
+        .collect()
 }
 
 pub fn wrap_str(text: &str, width: usize, style: Style) -> Block {

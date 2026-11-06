@@ -3,7 +3,7 @@
 
 use std::process::Command;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use chrono::{DateTime, TimeZone, Utc};
 
 #[derive(Clone, Debug, Default)]
@@ -35,7 +35,14 @@ fn git(dir: &str, args: &[&str]) -> Result<String> {
     let out = Command::new("git").args(args).current_dir(dir).output()?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-        bail!("{}", if err.is_empty() { format!("git {} failed", args.join(" ")) } else { err });
+        bail!(
+            "{}",
+            if err.is_empty() {
+                format!("git {} failed", args.join(" "))
+            } else {
+                err
+            }
+        );
     }
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
@@ -47,7 +54,10 @@ pub fn origin_url(dir: &str) -> Result<String> {
         bail!("no origin remote found");
     }
     let urls = git(dir, &["remote", "get-url", "origin"])?;
-    urls.lines().next().map(|s| s.to_string()).ok_or_else(|| anyhow!("no origin remote found"))
+    urls.lines()
+        .next()
+        .map(|s| s.to_string())
+        .ok_or_else(|| anyhow!("no origin remote found"))
 }
 
 /// git.GetRepoShortName
@@ -76,16 +86,24 @@ pub fn status(dir: &str) -> Result<NameStatus> {
 }
 
 fn rev_count(dir: &str, range: &str) -> i64 {
-    git(dir, &["rev-list", "--count", range]).ok().and_then(|s| s.trim().parse().ok()).unwrap_or(0)
+    git(dir, &["rev-list", "--count", range])
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0)
 }
 
 /// git.GetRepo
 pub fn get_repo(dir: &str) -> Result<Repo> {
-    let names: Vec<String> = git(dir, &["for-each-ref", "--format=%(refname:short)", "refs/heads"])?
-        .lines()
-        .map(|s| s.to_string())
-        .collect();
-    let head_ref = git(dir, &["rev-parse", "--abbrev-ref", "HEAD"])?.trim().to_string();
+    let names: Vec<String> = git(
+        dir,
+        &["for-each-ref", "--format=%(refname:short)", "refs/heads"],
+    )?
+    .lines()
+    .map(|s| s.to_string())
+    .collect();
+    let head_ref = git(dir, &["rev-parse", "--abbrev-ref", "HEAD"])?
+        .trim()
+        .to_string();
     let status = status(dir)?;
     let mut branches: Vec<Branch> = names
         .iter()
@@ -93,7 +111,9 @@ pub fn get_repo(dir: &str) -> Result<Repo> {
             let log = git(dir, &["log", "-1", "--format=%ct%x00%s", b]).ok();
             let (updated, msg) = match log.as_deref().and_then(|l| l.trim_end().split_once('\0')) {
                 Some((ts, subject)) => (
-                    ts.parse::<i64>().ok().and_then(|t| Utc.timestamp_opt(t, 0).single()),
+                    ts.parse::<i64>()
+                        .ok()
+                        .and_then(|t| Utc.timestamp_opt(t, 0).single()),
                     Some(subject.to_string()),
                 ),
                 None => (None, None),
@@ -118,11 +138,18 @@ pub fn get_repo(dir: &str) -> Result<Repo> {
         _ => std::cmp::Ordering::Equal,
     });
     let head = git(dir, &["symbolic-ref", "HEAD"])?.trim().to_string();
-    let head_branch_name = head.strip_prefix("refs/heads/").unwrap_or(&head).to_string();
+    let head_branch_name = head
+        .strip_prefix("refs/heads/")
+        .unwrap_or(&head)
+        .to_string();
     // git.GetRepo also reads the remotes and the origin URL and fails without them.
     git(dir, &["remote", "show"])?;
     git(dir, &["remote", "get-url", "--all", "origin"])?;
-    Ok(Repo { branches, head_branch_name, status })
+    Ok(Repo {
+        branches,
+        head_branch_name,
+        status,
+    })
 }
 
 /// git.FetchRepo: `git fetch --all`, then read.
@@ -160,6 +187,15 @@ pub fn fast_forward(dir: &str, branch: &str, checked_out: bool) -> Result<()> {
     if checked_out {
         git(dir, &["pull", "--ff-only", "--no-edit", "origin", branch]).map(|_| ())
     } else {
-        git(dir, &["fetch", "--no-write-fetch-head", "origin", &format!("{branch}:{branch}")]).map(|_| ())
+        git(
+            dir,
+            &[
+                "fetch",
+                "--no-write-fetch-head",
+                "origin",
+                &format!("{branch}:{branch}"),
+            ],
+        )
+        .map(|_| ())
     }
 }

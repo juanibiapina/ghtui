@@ -5,7 +5,7 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::chroma::{self, category, sub_category, TT};
+use crate::chroma::{self, TT, category, sub_category};
 use crate::text::Block;
 
 /// Chroma's terminal256 foreground table (formatters/tty_indexed.go); repeated colours keep the later index.
@@ -265,7 +265,11 @@ pub fn nearest_256(r: u8, g: u8, b: u8) -> u8 {
     let mut best = 0u8;
     let mut best_d = i64::MAX;
     for (hex, idx) in CHROMA_256 {
-        let (br, bg, bb) = ((hex >> 16) as i64 & 0xff, (hex >> 8) as i64 & 0xff, hex as i64 & 0xff);
+        let (br, bg, bb) = (
+            (hex >> 16) as i64 & 0xff,
+            (hex >> 8) as i64 & 0xff,
+            hex as i64 & 0xff,
+        );
         let rmean = (ar + br) / 2;
         let (dr, dg, db) = (ar - br, ag - bg, ab - bb);
         let d = (((512 + rmean) * dr * dr) >> 8) + 4 * dg * dg + (((767 - rmean) * db * db) >> 8);
@@ -288,10 +292,19 @@ struct Entry {
 
 /// internal/tui/markdown/theme.go CodeBlock.Chroma
 fn entry(t: TT) -> Option<Entry> {
-    let fg = |c: u32| Some(Entry { fg: Some(c), ..Default::default() });
+    let fg = |c: u32| {
+        Some(Entry {
+            fg: Some(c),
+            ..Default::default()
+        })
+    };
     match t {
         8000 => fg(0xC4C4C4),
-        -11 => Some(Entry { fg: Some(0xF1F1F1), bg: Some(0xF05B5B), ..Default::default() }),
+        -11 => Some(Entry {
+            fg: Some(0xF1F1F1),
+            bg: Some(0xF05B5B),
+            ..Default::default()
+        }),
         6000 => fg(0x676767),
         6100 => fg(0xFF875F),
         1000 => fg(0x00AAFF),
@@ -304,16 +317,27 @@ fn entry(t: TT) -> Option<Entry> {
         2100 => fg(0xFF8EC7),
         2014 => fg(0xB083EA),
         2001 => fg(0x7A7AE6),
-        2002 => Some(Entry { fg: Some(0xF1F1F1), bold: true, underline: true, ..Default::default() }),
+        2002 => Some(Entry {
+            fg: Some(0xF1F1F1),
+            bold: true,
+            underline: true,
+            ..Default::default()
+        }),
         2004 => fg(0xFFFF87),
         2300 => fg(0x00D787),
         3200 => fg(0x6EEFC0),
         3100 => fg(0xC69669),
         3109 => fg(0xAFFFD7),
         7001 => fg(0xFD5B5B),
-        7002 => Some(Entry { italic: true, ..Default::default() }),
+        7002 => Some(Entry {
+            italic: true,
+            ..Default::default()
+        }),
         7005 => fg(0x00D787),
-        7008 => Some(Entry { bold: true, ..Default::default() }),
+        7008 => Some(Entry {
+            bold: true,
+            ..Default::default()
+        }),
         7009 => fg(0x777777),
         _ => None,
     }
@@ -321,7 +345,10 @@ fn entry(t: TT) -> Option<Entry> {
 
 /// Style.Get inheritance (type, sub-category, category, Text; the background is cleared).
 fn token_style(t: TT) -> Style {
-    let chain: Vec<Entry> = [t, sub_category(t), category(t), chroma::TEXT].iter().filter_map(|x| entry(*x)).collect();
+    let chain: Vec<Entry> = [t, sub_category(t), category(t), chroma::TEXT]
+        .iter()
+        .filter_map(|x| entry(*x))
+        .collect();
     let fg = chain.iter().find_map(|e| e.fg);
     let bg = entry(t).and_then(|e| e.bg);
     let mut s = Style::default();
@@ -384,7 +411,13 @@ mod tests {
     #[test]
     fn go_tokens_get_chroma_colors() {
         let b = highlight("func main() {\n\tfmt.Println(\"hi\") // comment\n}\n", "go");
-        let color_of = |line: usize, text: &str| b[line].spans.iter().find(|s| s.content.contains(text)).map(|s| s.style.fg);
+        let color_of = |line: usize, text: &str| {
+            b[line]
+                .spans
+                .iter()
+                .find(|s| s.content.contains(text))
+                .map(|s| s.style.fg)
+        };
         assert_eq!(color_of(0, "func"), Some(Some(Color::Indexed(39))));
         assert_eq!(color_of(0, "main"), Some(Some(Color::Indexed(42))));
         assert_eq!(color_of(1, "Println"), Some(Some(Color::Indexed(42))));
