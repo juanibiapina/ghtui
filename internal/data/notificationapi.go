@@ -135,9 +135,9 @@ func FetchNotifications(
 	// all=true returns both read and unread notifications; is_done=false
 	// leaves out the ones marked done, as GitHub's inbox does
 	includeAll := readState == NotificationStateRead || readState == NotificationStateAll
-	allParam := ""
+	filterParams := "&is_done=false"
 	if includeAll {
-		allParam = "&all=true&is_done=false"
+		filterParams += "&all=true"
 	}
 
 	// Determine page number from PageInfo (EndCursor stores the current page as string)
@@ -148,7 +148,7 @@ func FetchNotifications(
 
 	if len(repoFilters) == 0 {
 		// No repo filter, fetch all notifications
-		path := fmt.Sprintf("notifications?per_page=%d&page=%d%s", limit, page, allParam)
+		path := fmt.Sprintf("notifications?per_page=%d&page=%d%s", limit, page, filterParams)
 		log.Debug("Fetching notifications", "limit", limit, "page", page, "readState", readState)
 		err = client.Get(path, &allNotifications)
 		if err != nil {
@@ -163,7 +163,7 @@ func FetchNotifications(
 				repo,
 				limit,
 				page,
-				allParam,
+				filterParams,
 			)
 			log.Debug(
 				"Fetching notifications for repo",
