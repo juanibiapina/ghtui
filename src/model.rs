@@ -1,10 +1,9 @@
-//! GitHub data shapes. Field names follow the GraphQL/REST responses that the
-//! Go structs in internal/data/*.go are decoded from.
+//! GitHub data shapes. Field names follow the GraphQL/REST responses.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer};
 
-/// Decodes `null` as the type's default, the way Go zero values behave.
+/// Decodes `null` as the type's default.
 fn nd<'de, D, T>(d: D) -> Result<T, D::Error>
 where
     D: Deserializer<'de>,
@@ -110,7 +109,7 @@ pub struct CommitNode<T> {
     pub commit: T,
 }
 
-/// data.PullRequestData: a row in a PR section.
+/// A row in a PR section.
 #[derive(Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct PullRequest {
@@ -359,7 +358,7 @@ pub struct ChangedFile {
     pub change_type: String,
 }
 
-/// data.EnrichedPullRequestData: the full PR fetched for the preview pane.
+/// The full PR fetched for the preview pane.
 #[derive(Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct EnrichedPullRequest {
@@ -446,7 +445,6 @@ impl EnrichedPullRequest {
     }
 }
 
-/// data.IssueData
 #[derive(Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Issue {
@@ -546,7 +544,7 @@ pub struct WorkflowRunsResponse {
     pub workflow_runs: Vec<WorkflowRun>,
 }
 
-// ---- gh-checks state helpers (github.com/dlvhdr/x/gh-checks) ----
+// ---- check state helpers ----
 
 pub fn is_status_waiting(s: &str) -> bool {
     matches!(s, "PENDING" | "QUEUED" | "IN_PROGRESS" | "WAITING")

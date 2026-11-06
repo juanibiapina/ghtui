@@ -290,7 +290,7 @@ struct Entry {
     underline: bool,
 }
 
-/// internal/tui/markdown/theme.go CodeBlock.Chroma
+/// The markdown theme's code block colors.
 fn entry(t: TT) -> Option<Entry> {
     let fg = |c: u32| {
         Some(Entry {

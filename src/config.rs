@@ -1,4 +1,4 @@
-//! Configuration loading. Mirrors internal/config/parser.go:
+//! Configuration loading:
 //! defaults are overlaid by the global config, then by a user-provided config
 //! (flag, $GH_DASH_CONFIG or a repo-local .gh-dash.yml). Each file's `include`
 //! entries load before the file itself. Keybinding groups are unioned by key;
@@ -77,7 +77,7 @@ impl ColumnConfig {
             hidden: Some(hidden),
         }
     }
-    /// config.MergeColumnConfigs: section values win over defaults when set.
+    /// Section values win over defaults when set.
     pub fn merged(&self, section: &ColumnConfig) -> ColumnConfig {
         ColumnConfig {
             width: section.width.or(self.width),
@@ -472,7 +472,6 @@ impl Default for Config {
 }
 
 impl Config {
-    /// config.GetFullScreenDiffPagerEnv
     pub fn diff_pager_env(&self) -> Vec<(String, String)> {
         let mut diff = self.pager.diff.clone();
         if diff.is_empty() {
@@ -564,7 +563,7 @@ fn read_yaml(path: &Path) -> Result<Value> {
 }
 
 /// mapstructure matches struct fields case-insensitively, so `Open:` and `Title:`
-/// (as written by Go marshalling) mean `open` and `title`. repoPaths keys are data.
+/// mean `open` and `title`. repoPaths keys are data.
 fn normalize_keys(v: Value) -> Value {
     match v {
         Value::Mapping(m) => Value::Mapping(

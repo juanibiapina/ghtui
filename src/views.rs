@@ -1,5 +1,4 @@
-//! Preview pane content: PR view (prview), issue view (issueview), notification
-//! view (notificationview) and shared pieces (header, title block, pills, labels,
+//! Preview pane content: PR, issue and notification views, and shared pieces (header, title block, pills, labels,
 //! the input box).
 
 use ratatui::style::{Color, Modifier, Style};
@@ -50,7 +49,6 @@ fn glyph((g, s): (&'static str, Style)) -> Span<'static> {
     span(g, s)
 }
 
-/// common.RenderPreviewHeader
 pub fn preview_header(t: &Theme, width: usize, text: &str) -> Block {
     let st = Style::default()
         .bg(t.selected_background)
@@ -61,7 +59,7 @@ pub fn preview_header(t: &Theme, width: usize, text: &str) -> Block {
         .collect()
 }
 
-/// common.RenderPreviewTitle: a 3-line highlighted block with the title centered vertically.
+/// A 3-line highlighted block with the title centered vertically.
 pub fn preview_title(t: &Theme, width: usize, title: &str) -> Block {
     let bg = Style::default().bg(t.selected_background);
     let st = t.main_text().bg(t.selected_background);
@@ -85,7 +83,7 @@ pub fn preview_title(t: &Theme, width: usize, title: &str) -> Block {
     out
 }
 
-/// PrView.PillStyle: powerline caps around bold text on a colored background.
+/// Powerline caps around bold text on a colored background.
 pub fn pill(text: &str, bg: Color, fg: Color, cap_bg: Option<Color>) -> Vec<Span<'static>> {
     let cap = |s: &str| {
         let mut st = Style::default().fg(bg);
@@ -124,7 +122,7 @@ fn label_pill(l: &Label) -> Vec<Span<'static>> {
     pill(&label_name(&l.name), c, lighten(c, 0.5), None)
 }
 
-/// common.RenderLabels. `max_rows == 0` wraps freely; otherwise overflow becomes a "+N" pill.
+/// `max_rows == 0` wraps freely; otherwise overflow becomes a "+N" pill.
 pub fn render_labels(labels: &[Label], width: usize, max_rows: usize) -> Block {
     if width == 0 || labels.is_empty() {
         return vec![];
@@ -1352,7 +1350,7 @@ fn format_reason(r: &str) -> String {
     .to_string()
 }
 
-/// notificationview.View: details shown while a PR/issue subject loads.
+/// Details shown while a PR/issue subject loads.
 pub fn notification_view(t: &Theme, row: &NotifRow, width: usize) -> Block {
     let n = &row.n;
     let mut b = preview_title(t, width, &n.subject.title);
@@ -1481,7 +1479,7 @@ pub fn notification_prompt(t: &Theme, row: &NotifRow) -> Block {
     b
 }
 
-/// branchsidebar.View: working tree status, then the branch and its PR.
+/// Working tree status, then the branch and its PR.
 pub fn branch_view(
     t: &Theme,
     b: &crate::section::BranchRow,

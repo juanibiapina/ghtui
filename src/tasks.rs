@@ -1,5 +1,4 @@
-//! Background actions. Mirrors components/tasks (gh CLI mutations) and the
-//! notification fetch loop from notificationssection.FetchNextPageSectionRows.
+//! Background actions: gh CLI mutations and the notification fetch loop.
 
 use std::collections::{HashMap, HashSet};
 use std::process::Command;

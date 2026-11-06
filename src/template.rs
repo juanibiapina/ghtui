@@ -1,6 +1,6 @@
 //! The subset of Go text/template used by gh-dash: `{{ .Field }}` in custom
 //! keybinding commands (missing fields are errors) and `{{ nowModify "-2w" }}`
-//! in section filters (utils/templateHandler.go).
+//! in section filters.
 
 use std::collections::HashMap;
 
@@ -43,7 +43,7 @@ fn eval(expr: &str, vars: &HashMap<String, String>) -> Result<String> {
     bail!("unsupported template expression: {expr}")
 }
 
-/// utils.ParseDuration: "10d", "-1.5w", "3Y4M5d"; units d/D, w/W, mo/M, y/Y, plus Go's h/m/s.
+/// "10d", "-1.5w", "3Y4M5d"; units d/D, w/W, mo/M, y/Y, plus Go's h/m/s.
 pub fn parse_duration(s: &str) -> Result<Duration> {
     let (neg, s) = match s.strip_prefix('-') {
         Some(r) => (true, r),

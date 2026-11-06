@@ -1,4 +1,4 @@
-//! GitHub API access. Mirrors internal/data/*api.go: GraphQL search and
+//! GitHub API access: GraphQL search and
 //! resource queries for PRs and issues, REST for notifications, and the gh CLI
 //! for label lists. Authentication follows go-gh: $GH_TOKEN / $GITHUB_TOKEN,
 //! otherwise `gh auth token`.
@@ -381,7 +381,6 @@ pub fn fetch_issue(url: &str) -> Result<Issue> {
     Ok(issue)
 }
 
-/// data.FetchLatestVersion
 pub fn latest_version() -> Result<String> {
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -428,7 +427,7 @@ fn null_str<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Strin
     Ok(Option::<String>::deserialize(d)?.unwrap_or_default())
 }
 
-/// data.FetchRepoUsers: mentionable users as (login, name), cached per repo.
+/// Mentionable users as (login, name), cached per repo.
 pub fn fetch_repo_users(owner: &str, name: &str) -> Result<Vec<(String, String)>> {
     let key = format!("{owner}/{name}");
     let cache = USER_CACHE.get_or_init(Default::default);
@@ -464,7 +463,7 @@ repository(owner: $owner, name: $name) { mentionableUsers(first: $limit) { nodes
     Ok(users)
 }
 
-/// data.FetchRepoLabels: `gh label list`.
+/// `gh label list`.
 pub fn fetch_repo_labels(repo: &str) -> Result<Vec<Label>> {
     let cache = LABEL_CACHE.get_or_init(Default::default);
     if let Some(l) = cache.lock().unwrap().get(repo) {
@@ -511,7 +510,7 @@ pub struct NotificationsPage {
     pub page_info: PageInfo,
 }
 
-/// data.FetchNotifications. Pages are numbered; EndCursor carries the next page number.
+/// Pages are numbered; EndCursor carries the next page number.
 pub fn fetch_notifications(
     limit: usize,
     repo_filters: &[String],
@@ -583,7 +582,6 @@ pub fn mark_all_notifications_read() -> Result<()> {
     client()?.rest("PUT", "notifications").map(|_| ())
 }
 
-/// data.FetchCommentAuthor
 pub fn fetch_comment_author(api_url: &str) -> Result<String> {
     if api_url.is_empty() {
         return Ok(String::new());
@@ -599,7 +597,6 @@ pub fn fetch_comment_author(api_url: &str) -> Result<String> {
     Ok(c.user.login)
 }
 
-/// data.FindBestWorkflowRunMatch
 pub fn best_workflow_run(runs: &[WorkflowRun], at: DateTime<Utc>) -> Option<&WorkflowRun> {
     let mut best: Option<&WorkflowRun> = None;
     let mut best_diff = chrono::Duration::days(365);
@@ -613,7 +610,6 @@ pub fn best_workflow_run(runs: &[WorkflowRun], at: DateTime<Utc>) -> Option<&Wor
     best.or_else(|| runs.first())
 }
 
-/// data.FetchRecentWorkflowRun
 pub fn fetch_recent_workflow_run(repo: &str, at: DateTime<Utc>) -> Result<String> {
     let resp: WorkflowRunsResponse =
         client()?.rest_get(&format!("repos/{repo}/actions/runs?per_page=20"))?;

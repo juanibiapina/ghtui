@@ -1,5 +1,4 @@
-//! Nerd Font glyphs, copied by codepoint from internal/tui/constants/constants.go
-//! and the component files that inline their own icons.
+//! Nerd Font glyphs.
 
 pub const ELLIPSIS: &str = "…";
 pub const SELECTION: &str = "→";

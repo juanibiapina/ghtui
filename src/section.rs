@@ -1,6 +1,5 @@
 //! A section is one tab of a view: a search query, its fetched rows and the
-//! table that shows them. Mirrors components/section, prssection,
-//! issuessection, notificationssection, table and listviewport.
+//! table that shows them.
 
 use std::collections::HashSet;
 use std::time::Instant;
@@ -116,7 +115,6 @@ impl NotifRow {
             format!("https://github.com/{}", self.n.repository.full_name)
         }
     }
-    /// notificationrow.Data.GetUrl
     pub fn url(&self) -> String {
         let base = self.base_url();
         let num = last_segment(&self.n.subject.url);
@@ -134,7 +132,6 @@ impl NotifRow {
     }
 }
 
-/// notificationrow.GenerateActivityDescription
 pub fn activity_description(reason: &str, subject_type: &str, actor: &str) -> String {
     let has = !actor.is_empty();
     match reason {
@@ -178,7 +175,7 @@ pub enum RowRef {
     Branch(Box<BranchRow>),
 }
 
-/// branch.BranchData: a local branch and the PR whose head it is.
+/// A local branch and the PR whose head it is.
 #[derive(Clone, Debug, Default)]
 pub struct BranchRow {
     pub b: crate::git::Branch,
@@ -429,11 +426,11 @@ impl Section {
             session_done: HashSet::new(),
         };
         if kind == Kind::Notification {
-            // notificationssection.NewModel scopes to the current repo when smart filtering is on.
+            // Scopes to the current repo when smart filtering is on.
             s.filtered_by_current_remote = cfg.smart_filtering_at_launch;
             s.search_value = s.search_value_for_fetch(gh_repo, false);
         } else {
-            // section.NewModel: GetConfigFiltersWithCurrentRemoteAdded
+            // Smart filtering adds the current repo to the filters.
             let mut filters = filters.to_string();
             if cfg.smart_filtering_at_launch
                 && let Some((owner, name)) = gh_repo
@@ -460,7 +457,7 @@ impl Section {
         }
     }
 
-    /// reposection.getFilteredBranches: branch names containing the search text.
+    /// Branch names containing the search text.
     pub fn filtered_branches(&self) -> Vec<&BranchRow> {
         self.branches
             .iter()
@@ -554,7 +551,7 @@ impl Section {
         self.top = 0;
     }
 
-    // ---- listviewport ----
+    // ---- cursor and scrolling ----
 
     pub fn item_height(&self, cfg: &Config) -> usize {
         let content = match self.kind {
@@ -773,13 +770,12 @@ impl Section {
                 span(format!("{bl}{}{br}", "─".repeat(inner)), border),
             ]),
         ];
-        // The branches table is given the full content height (reposection.UpdateProgramContext),
-        // so it runs two rows past the section like the Go version.
+        // The branches table gets the full content height, so it runs two rows past the section.
         let table_h = rc.height.saturating_sub(3) + if self.kind == Kind::Branch { 2 } else { 0 };
         let table = self.table_view(rc, rc.width.saturating_sub(2), table_h);
         out.extend(indent(table, 1));
         if self.kind == Kind::Branch {
-            // The Go table viewport keeps its height when few branches match.
+            // The table keeps its height when few branches match.
             out.resize(3 + table_h, Line::default());
         }
         out
@@ -1046,7 +1042,6 @@ fn time_cell(t: chrono::DateTime<chrono::Utc>, cfg: &Config) -> String {
     }
 }
 
-/// components.RenderIssueTitle
 fn issue_title(
     cfg: &Config,
     t: &Theme,
@@ -1082,8 +1077,7 @@ pub fn pr_state_icon(pr: &PullRequest, t: &Theme) -> Span<'static> {
     span(icon, Style::default().fg(color))
 }
 
-/// prrow.RenderLines. The Go code pads with "%7s" around strings that already
-/// contain ANSI escapes, so no padding ever happens; "+adds -dels" is left as is.
+/// The lines column: "+adds -dels", unpadded.
 pub fn render_lines(pr: &PullRequest, t: &Theme) -> Vec<Span<'static>> {
     vec![
         span(
@@ -1419,7 +1413,6 @@ fn notification_row(row: &NotifRow, rc: &RenderCtx) -> Vec<Block> {
     vec![type_cell, title_cell, activity_cell, updated_cell]
 }
 
-/// reposection.GetSectionColumns
 pub fn branch_columns(cfg: &Config) -> Vec<Column> {
     let d = &cfg.defaults.layout.prs;
     let mut title_col = col("Title", None, d.title.is_hidden());
@@ -1459,7 +1452,6 @@ pub fn branch_columns(cfg: &Config) -> Vec<Column> {
     ]
 }
 
-/// branch.Branch.ToTableRow
 fn branch_row(row: &BranchRow, rc: &RenderCtx, columns: &[Column], widths: &[usize]) -> Vec<Block> {
     let t = rc.theme;
     let cfg = rc.cfg;
@@ -1588,7 +1580,6 @@ fn branch_row(row: &BranchRow, rc: &RenderCtx, columns: &[Column], widths: &[usi
         ];
         return vec![state, title, base, assignees, review, ci, lines, updated];
     }
-    // The Go version dereferences the PR here and crashes for branches without one.
     let (repo, title, author) = match pr {
         Some(p) => (
             one(vec![span(p.head_repository.name.clone(), t.faint())]),
@@ -1606,7 +1597,7 @@ fn branch_row(row: &BranchRow, rc: &RenderCtx, columns: &[Column], widths: &[usi
     ]
 }
 
-/// reposection.GetPagerContent: added, removed and modified file counts.
+/// Added, removed and modified file counts.
 pub fn branch_pager(s: &Section, t: &Theme) -> Line<'static> {
     let bg = Style::default().bg(t.selected_background);
     let st = &s.repo_status;

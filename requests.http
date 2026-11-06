@@ -53,7 +53,7 @@ query PRChecks($url: URI!){
 }
 
 # @variables
-{ "url": "https://github.com/dlvhdr/gh-dash/pull/729" }
+{ "url": "https://github.com/juanibiapina/deltoids/pull/28" }
 
 ### PR Reviewers Count
 # @graphql

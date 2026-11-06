@@ -1,6 +1,5 @@
-//! Autocomplete for the search bar and the input box. Mirrors
-//! components/fuzzyselect (sources, fuzzy filter, popup) and the parts of
-//! cmpcontroller/inputbox that route keys to it.
+//! Autocomplete for the search bar and the input box: suggestion sources, the
+//! fuzzy filter, the popup and key routing.
 
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
@@ -68,7 +67,6 @@ fn line_chars(input: &str, y: usize) -> Vec<char> {
     input.split('\n').nth(y).unwrap_or("").chars().collect()
 }
 
-/// fuzzyselect.ExtractWordAtCursor
 pub fn word_at(input: &str, (x, y): (usize, usize)) -> Ctx {
     let runes = line_chars(input, y);
     let x = x.min(runes.len());
@@ -98,7 +96,7 @@ pub fn word_at(input: &str, (x, y): (usize, usize)) -> Ctx {
     }
 }
 
-/// fuzzyselect.ExtractLabelAtCursor: the comma-separated item around the cursor.
+/// The comma-separated item around the cursor.
 fn label_at(input: &str, (x, y): (usize, usize)) -> (Ctx, bool) {
     let runes = line_chars(input, y);
     let x = x.min(runes.len());
@@ -334,7 +332,6 @@ impl Completer {
         }
     }
 
-    /// fuzzyselect.Filter
     pub fn filter(&mut self, input: &str, pos: (usize, usize)) {
         let ctx = self.context(input, pos);
         let ex: Vec<String> = self
@@ -372,7 +369,6 @@ impl Completer {
         self.visible = true;
     }
 
-    /// cmpcontroller.ShowCompletions
     pub fn show_completions(&mut self, input: &str, pos: (usize, usize)) {
         let ctx = self.context(input, pos);
         if self.hide_on_empty && self.filtered.is_empty() {
@@ -442,7 +438,7 @@ impl Completer {
         (parts.join("\n"), (cursor, y))
     }
 
-    /// inputbox.Update + cmpcontroller key handling. Returns true when the key was consumed.
+    /// Returns true when the key was consumed.
     pub fn handle_key<E: Editable>(&mut self, key: &str, input: &mut E) -> bool {
         if key == "ctrl+h" {
             if self.visible {
@@ -502,7 +498,7 @@ impl Completer {
         consumed
     }
 
-    /// fuzzyselect.View: rows, status and help inside a rounded popup.
+    /// Rows, status and help inside a rounded popup.
     pub fn view(&self, t: &Theme, width: usize, spinner: usize, top_border: bool) -> Block {
         if !self.visible {
             return vec![];

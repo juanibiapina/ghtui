@@ -1,5 +1,5 @@
 //! Notification bookmarks persisted as a JSON list of thread ids at
-//! $XDG_STATE_HOME/gh-dash/bookmarks.json (data/bookmarks.go).
+//! $XDG_STATE_HOME/gh-dash/bookmarks.json.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;

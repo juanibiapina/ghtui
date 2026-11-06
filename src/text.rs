@@ -1,5 +1,5 @@
-//! Styled-text helpers that stand in for the lipgloss operations the Go code uses
-//! (Width, JoinHorizontal, JoinVertical, Truncate, PlaceHorizontal, word wrap).
+//! Styled-text helpers: width, joining, truncation, alignment and word wrap,
+//! with lipgloss semantics.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -143,7 +143,7 @@ pub fn ansi_wrap(cells: &[(char, Style)], limit: usize) -> Vec<Vec<(char, Style)
 }
 
 /// `ansi_wrap` with extra ASCII breakpoint characters (glamour uses " ,.;-+|").
-#[allow(unused_assignments)] // The macros mirror the Go closures, which reset state they don't reread.
+#[allow(unused_assignments)] // The macros reset state that later steps don't reread.
 pub fn ansi_wrap_with(
     cells: &[(char, Style)],
     limit: usize,

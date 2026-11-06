@@ -51,4 +51,4 @@ query PullRequestChecks($url: URI!){
   }
 }
 
-{ "url": "https://github.com/dlvhdr/gh-dash/pull/729" }
+{ "url": "https://github.com/juanibiapina/deltoids/pull/28" }

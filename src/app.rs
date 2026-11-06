@@ -1,5 +1,5 @@
-//! Application state and update logic. Mirrors internal/tui/ui.go (Update),
-//! modelUtils.go (custom keybindings) and tasks.go.
+//! Application state and update logic: key handling, custom keybindings and
+//! background tasks.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -258,7 +258,7 @@ impl App {
                 Err(e) => Msg::Error(e.to_string()),
             })
         });
-        // tabs.Init: check for a newer release.
+        // Check for a newer release.
         self.pool
             .spawn(|| github::latest_version().ok().map(Msg::LatestVersion));
         self.on_viewed_row_changed();
@@ -1064,7 +1064,7 @@ impl App {
                     } else {
                         cfg.branches_refetch_interval_seconds
                     };
-                    // onRefreshPrsMsg runs `git fetch` (not a PR fetch) in the Go version.
+                    // The PR timer runs `git fetch`; PRs refresh with the branches.
                     if prs {
                         self.git_fetch();
                     } else {
@@ -1477,7 +1477,7 @@ impl App {
             }
         }
 
-        // sidebar.Update: page up/down scroll the preview.
+        // Page up/down scroll the preview.
         if u.page_down.matches(key) {
             self.sidebar_scroll = self.sidebar_scroll.saturating_add(3);
         } else if u.page_up.matches(key) {
@@ -1499,7 +1499,7 @@ impl App {
         total.saturating_sub(self.sidebar_viewport_height())
     }
 
-    /// Keys handled by the section's own Update (prssection / issuessection / notificationssection).
+    /// Keys that belong to the current section's kind.
     fn section_key(&mut self, key: &str) {
         let k = self.keys.clone();
         let gh = self.gh_repo.clone();
@@ -1668,7 +1668,7 @@ impl App {
                 s.search_cmp = None;
             }
             "enter" if s.kind == Kind::Branch => {
-                // reposection: the branch search filters locally.
+                // The branch search filters locally.
                 s.search_cmp = None;
                 let v = s.search.take().map(|i| i.value()).unwrap_or_default();
                 s.search_value = v.clone();
@@ -1711,7 +1711,7 @@ impl App {
         }
     }
 
-    /// search.Focus: autocomplete loads users and labels for a `repo:` in the query.
+    /// Autocomplete loads users and labels for a `repo:` in the query.
     fn start_search(&mut self) {
         let (view, id) = (self.view, self.curr);
         let Some(s) = self.section_mut() else { return };
@@ -1745,7 +1745,6 @@ impl App {
         }
     }
 
-    /// cmpcontroller.loadSuggestions
     fn load_suggestions(
         &mut self,
         target: CmpTarget,
@@ -2375,8 +2374,7 @@ impl App {
             _ => ViewType::Notifications,
         };
         self.curr = 0;
-        // The Go version never loads branches when switching into the repo view and
-        // shows "No sections defined"; load them on first entry instead.
+        // Load the branches the first time the repo view opens.
         let repo_unloaded = self.view == ViewType::Repo && self.repo.is_empty();
         if repo_unloaded || self.is_view_stale() {
             self.fetch_all_view_sections();
@@ -2430,7 +2428,7 @@ impl App {
                 gh.as_ref(),
             ),
         };
-        // Like Go, a scratch section isn't fetched until refreshed, and shows its empty state.
+        // A scratch section isn't fetched until refreshed, and shows its empty state.
         let mut s = s;
         s.last_fetch_at = Some(Instant::now());
         self.sections_mut().push(s);
@@ -2844,14 +2842,14 @@ impl App {
     }
 }
 
-// ---------------- repo view (reposection) ----------------
+// ---------------- repo view ----------------
 
 impl App {
     fn repo_dir(&self) -> Option<String> {
         self.repo_path.as_ref().map(|p| p.display().to_string())
     }
 
-    /// reposection.FetchAllBranches: a fresh section, read + fetch + PRs, and refresh ticks.
+    /// Starts the branches section: reads the repo, fetches origin and PRs, and schedules refreshes.
     fn fetch_all_branches(&mut self) {
         let cfg = self.cfg.clone();
         let mut s = Section::new(
@@ -3054,7 +3052,7 @@ impl App {
         false
     }
 
-    /// reposection.Update keys: checkout, push, force-push, fast-forward.
+    /// Branch keys: checkout, push, force-push, fast-forward.
     fn branch_section_key(&mut self, key: &str) {
         let br = self.keys.branch.clone();
         let Some(b) = self.current_branch() else {
@@ -3141,7 +3139,7 @@ impl App {
         );
     }
 
-    /// tasks.CreatePR runs `gh pr create` interactively, then fetches the new PR.
+    /// Runs `gh pr create` interactively, then fetches the new PR.
     fn create_branch_pr(&mut self, title: &str) {
         let Some(b) = self.current_branch() else {
             return;
@@ -3178,7 +3176,7 @@ impl App {
         });
     }
 
-    /// reposection.fetchPRCmd
+    /// Fetches the PR for a branch after it was created.
     fn fetch_branch_pr(&mut self, branch: String, short: String, key: SectionKey) {
         let tid = task_id(&format!("fetching_pr_for_branch_{branch}"));
         self.start_task(
@@ -3259,7 +3257,6 @@ pub struct NotificationFilters {
     pub include_bookmarked: bool,
 }
 
-/// notificationssection.parseNotificationFilters
 pub fn parse_notification_filters(search: &str, include_read: bool) -> NotificationFilters {
     let mut f = NotificationFilters {
         repo_filters: vec![],

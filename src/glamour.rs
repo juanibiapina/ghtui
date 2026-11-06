@@ -1,8 +1,7 @@
 //! A port of glamour v2's ANSI renderer (charm.land/glamour/v2/ansi) with the
 //! gh-dash Tokyo Night style. Markdown is parsed with pulldown-cmark into a
 //! tree shaped like goldmark's AST (including GFM linkify), then rendered with
-//! glamour's block stack, margin/indent/padding writers and wrapping passes, so
-//! previews lay out the same way as the Go version.
+//! glamour's block stack, margin/indent/padding writers and wrapping passes.
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;

@@ -1,6 +1,5 @@
-//! Keybindings. Mirrors internal/tui/keys: default bindings, help text and
-//! `Rebind` from config. Keys are matched by bubbletea-style names
-//! ("ctrl+d", "alt+d", "enter", "space", "J").
+//! Keybindings: default bindings, help text and rebinding from config. Keys are
+//! matched by bubbletea-style names ("ctrl+d", "alt+d", "enter", "space", "J").
 
 use anyhow::{Result, bail};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -269,7 +268,6 @@ fn custom_binding(kb: &Keybinding) -> Binding {
 }
 
 impl Keys {
-    /// keys.Rebind
     pub fn rebind(&mut self, kbs: &Keybindings) -> Result<()> {
         for kb in &kbs.universal {
             if kb.builtin.is_empty() {

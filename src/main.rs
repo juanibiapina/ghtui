@@ -161,7 +161,7 @@ fn main() {
 
     let (pool, rx) = msg::Pool::new(12);
     let mut terminal = ratatui::init();
-    // Like the Go version: report focus (refetch on return) and capture the mouse.
+    // Report focus (refetch on return) and capture the mouse.
     let _ = execute!(std::io::stdout(), EnableFocusChange, EnableMouseCapture);
     let size = terminal.size().unwrap_or_default();
     let mut app = App::new(

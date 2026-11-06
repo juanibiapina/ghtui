@@ -1,7 +1,7 @@
 # Agent Instructions
 
 gh-dash is a terminal UI for GitHub (PRs, issues, notifications, local branches), a single Rust
-binary built on ratatui. It started as a port of the Go [dlvhdr/gh-dash](https://github.com/dlvhdr/gh-dash).
+binary built on ratatui.
 
 ## Build & Test
 
@@ -19,7 +19,7 @@ Rust warnings and `clippy::all` are denied in `Cargo.toml`.
 ## Conventions
 
 - Run `cargo fmt --all` before you commit.
-- Config files keep the Go version's format; `docs/` documents them. Keep both in step when you change config.
+- `docs/` documents the config format. Keep it in step when you change config.
 - GitHub reads go through GraphQL (`src/github.rs`); mutations run the `gh` CLI (`src/tasks.rs`).
 - Syntax highlighting uses the Chroma lexer XMLs vendored in `assets/chroma/`, compiled in by `build.rs`.
 

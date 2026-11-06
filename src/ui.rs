@@ -1,4 +1,4 @@
-//! Drawing. Mirrors ui.View plus the tabs/carousel, sidebar and footer views.
+//! Drawing: tabs, sections, preview, footer and popups.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -41,7 +41,7 @@ fn truncate_left(l: &Line<'static>, n: usize, prefix: Option<Span<'static>>) -> 
     Line::from(out)
 }
 
-/// The section tabs carousel (components/carousel UpdateContent + View).
+/// The section tabs carousel.
 fn carousel(items: &[String], cursor: usize, width: usize, app: &App) -> Line<'static> {
     let t = &app.theme;
     let item_style = Style::default().add_modifier(Modifier::DIM);
@@ -442,7 +442,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     let t = &app.theme;
     let w = area.width as usize;
 
-    // ui.View leaves out the tabs in the repo view, leaving one empty line.
+    // The repo view has no tabs, leaving one empty line.
     let repo_view = app.view == crate::config::ViewType::Repo;
     if !repo_view {
         draw_block(buf, Rect::new(0, 0, area.width, 1), &[tabs_line(app)]);
@@ -581,7 +581,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         let popup = c.view(t, l.main_w.saturating_sub(4), app.spinner, false);
         draw_block(
             buf,
-            // ui.View places the popup at a fixed row, which sits one row low in the repo view.
+            // The popup sits at a fixed row, one row low in the repo view.
             Rect::new(
                 1,
                 TABS_HEIGHT as u16 + 3,
@@ -595,7 +595,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     if let (true, Some(ed)) = (app.sidebar_open, editor)
         && let Some(c) = ed.cmp.as_ref().filter(|c| c.visible)
     {
-        // ui.View: y = ScreenHeight - FooterHeight - LineFromBottom - InputBoxHeight - 6, x = preview x + 3.
+        // y = ScreenHeight - FooterHeight - LineFromBottom - InputBoxHeight - 6, x = preview x + 3.
         let text = ed.area.value();
         let lines = text.split('\n').count();
         let (_, cur) = crate::input::Editable::cursor_pos(&ed.area);

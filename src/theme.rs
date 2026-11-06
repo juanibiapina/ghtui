@@ -1,5 +1,4 @@
-//! Theme colors. Mirrors internal/tui/theme/theme.go using the dark variants
-//! of the adaptive defaults, plus the fixed colors from context/styles.go.
+//! Theme colors: the dark variants of the adaptive defaults, plus fixed colors.
 
 use ratatui::style::{Color, Modifier, Style};
 
@@ -182,14 +181,12 @@ impl Theme {
     pub fn secondary(&self) -> Style {
         Style::default().fg(self.secondary_text)
     }
-    /// common.MainTextStyle
     pub fn main_text(&self) -> Style {
         Style::default()
             .fg(self.primary_text)
             .add_modifier(Modifier::BOLD)
     }
 
-    /// data.GetAuthorRoleIcon
     pub fn author_role_icon(&self, role: &str) -> (String, Color) {
         match role {
             "FIRST_TIMER" | "FIRST_TIME_CONTRIBUTOR" | "NONE" => (
@@ -204,7 +201,6 @@ impl Theme {
         }
     }
 
-    // Glyphs from common.BuildStyles
     pub fn waiting_glyph(&self) -> (&'static str, Style) {
         (icons::WAITING, self.fg(self.warning_text))
     }

@@ -8,7 +8,7 @@ const DAYS_IN_YEAR: f64 = 365.0;
 const DAYS_IN_MONTH: f64 = 28.0;
 const DAYS_IN_WEEK: f64 = 7.0;
 
-/// Mirrors utils.TimeElapsed: the largest rounded unit wins ("3d", "2mo", "now").
+/// The largest rounded unit wins ("3d", "2mo", "now").
 pub fn time_elapsed(then: DateTime<Utc>) -> String {
     let diff = Utc::now().signed_duration_since(then);
     let secs = diff.num_milliseconds() as f64 / 1000.0;
@@ -58,7 +58,7 @@ pub fn format_number(n: i64) -> String {
     }
 }
 
-/// Mirrors common.GetRepoLocalPath: exact match, then `owner/*`, then `:owner/:repo`.
+/// Exact match, then `owner/*`, then `:owner/:repo`.
 pub fn repo_local_path(repo_name: &str, paths: &HashMap<String, String>) -> Option<String> {
     if let Some(p) = paths.get(repo_name) {
         return Some(p.clone());
@@ -154,7 +154,7 @@ pub fn copy_to_clipboard(text: &str) -> anyhow::Result<()> {
     Err(last_err)
 }
 
-/// Mirrors shell.Command: `$SHELL -c`, falling back to `sh -c` (or cmd.exe on Windows).
+/// `$SHELL -c`, falling back to `sh -c` (or cmd.exe on Windows).
 pub fn shell_command(cmd: &str) -> Command {
     if let Ok(shell) = std::env::var("SHELL")
         && !shell.is_empty()

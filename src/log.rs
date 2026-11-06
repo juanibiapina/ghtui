@@ -1,4 +1,4 @@
-//! `--debug` logging to ./debug.log, like the Go version's charm log setup:
+//! `--debug` logging to ./debug.log:
 //! kitchen-time stamps, level, caller, and $LOG_LEVEL (debug by default).
 
 use std::fs::File;

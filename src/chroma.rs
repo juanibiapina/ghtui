@@ -1436,7 +1436,7 @@ pub fn analyse(text: &str) -> Option<&'static Lexer> {
     picked
 }
 
-/// quick.Highlight's lexer choice: by name, then by content, then plain text.
+/// Chroma's quick.Highlight lexer choice: by name, then by content, then plain text.
 pub fn tokenise_code(code: &str, lang: &str) -> Vec<Token> {
     let reg = registry();
     let lexer = get(lang).or_else(|| analyse(code)).unwrap_or(&reg.fallback);

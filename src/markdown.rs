@@ -1,4 +1,4 @@
-//! Markdown for the preview pane: body cleanup as prview/issueview do it, and
+//! Markdown for the preview pane: body cleanup and
 //! rendering through the glamour port.
 
 use crate::text::Block;
@@ -7,7 +7,7 @@ pub fn render(md: &str, width: usize) -> Block {
     crate::glamour::render(md, width)
 }
 
-/// Removes HTML comments and table-like lines, as prview/issueview do before rendering.
+/// Removes HTML comments and table-like lines before rendering.
 pub fn clean_body(body: &str) -> String {
     static HTML_COMMENT: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     static TABLE_LINES: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();

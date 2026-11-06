@@ -1,5 +1,4 @@
-//! Local git state for the branches view (internal/git/git.go), read with the
-//! git CLI the same way git-module does.
+//! Local git state for the branches view, read with the git CLI.
 
 use std::process::Command;
 
@@ -47,7 +46,6 @@ fn git(dir: &str, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
-/// git.GetOriginUrl
 pub fn origin_url(dir: &str) -> Result<String> {
     let remotes = git(dir, &["remote"])?;
     if !remotes.lines().any(|r| r.trim() == "origin") {
@@ -60,13 +58,12 @@ pub fn origin_url(dir: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("no origin remote found"))
 }
 
-/// git.GetRepoShortName
 pub fn repo_short_name(url: &str) -> String {
     let r = url.strip_prefix("https://github.com/").unwrap_or(url);
     r.strip_suffix(".git").unwrap_or(r).to_string()
 }
 
-/// git.GetStatus: `git diff HEAD --name-status`.
+/// `git diff HEAD --name-status`.
 pub fn status(dir: &str) -> Result<NameStatus> {
     let out = git(dir, &["diff", "HEAD", "--name-status"])?;
     let mut s = NameStatus::default();
@@ -92,7 +89,6 @@ fn rev_count(dir: &str, range: &str) -> i64 {
         .unwrap_or(0)
 }
 
-/// git.GetRepo
 pub fn get_repo(dir: &str) -> Result<Repo> {
     let names: Vec<String> = git(
         dir,
@@ -142,7 +138,7 @@ pub fn get_repo(dir: &str) -> Result<Repo> {
         .strip_prefix("refs/heads/")
         .unwrap_or(&head)
         .to_string();
-    // git.GetRepo also reads the remotes and the origin URL and fails without them.
+    // Reading the repo fails without remotes or an origin URL.
     git(dir, &["remote", "show"])?;
     git(dir, &["remote", "get-url", "--all", "origin"])?;
     Ok(Repo {
@@ -152,7 +148,7 @@ pub fn get_repo(dir: &str) -> Result<Repo> {
     })
 }
 
-/// git.FetchRepo: `git fetch --all`, then read.
+/// `git fetch --all`, then read.
 pub fn fetch_repo(dir: &str) -> Result<Repo> {
     git(dir, &["fetch", "--all"])?;
     get_repo(dir)
