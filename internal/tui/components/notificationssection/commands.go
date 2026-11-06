@@ -35,6 +35,9 @@ func (m *Model) markAsDone() tea.Cmd {
 	startCmd := m.Ctx.StartTask(task)
 	return tea.Batch(startCmd, func() tea.Msg {
 		err := data.MarkNotificationDone(notificationId)
+		if err == nil {
+			data.GetBookmarkStore().Remove(notificationId)
+		}
 		return constants.TaskFinishedMsg{
 			SectionId:   m.Id,
 			SectionType: SectionType,
@@ -74,10 +77,13 @@ func (m *Model) markAllAsDone() tea.Cmd {
 	startCmd := m.Ctx.StartTask(task)
 	return tea.Batch(startCmd, func() tea.Msg {
 		// Mark each notification as done (delete it)
+		bookmarkStore := data.GetBookmarkStore()
 		var lastErr error
 		for _, id := range ids {
 			if err := data.MarkNotificationDone(id); err != nil {
 				lastErr = err
+			} else {
+				bookmarkStore.Remove(id)
 			}
 		}
 

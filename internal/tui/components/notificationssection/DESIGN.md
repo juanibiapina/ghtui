@@ -165,6 +165,7 @@ type NotificationIDStore struct {
 - Bookmarked notifications appear in the default inbox view even when read
 - Bookmarked notifications are styled as read (faint text) but show a bookmark indicator
 - When user explicitly searches `is:unread`, bookmarked+read items are excluded
+- Marking a notification Done removes its bookmark, since bookmarked notifications are fetched by thread ID and that response has no Done field
 
 **Done status** comes from GitHub. Marking a notification Done calls `DELETE /notifications/threads/{id}`, and every list request sends `is_done=false`, so the API leaves out Done notifications the same way the github.com inbox does. That covers notifications marked Done on github.com or in other clients too. When a Done thread gets new activity, GitHub returns it to the inbox.
 
@@ -198,8 +199,8 @@ The `UpdateNotificationMsg` and `UpdateNotificationReadStateMsg` types propagate
 Notification commands are organized in `commands.go`, following the pattern established by `prssection` (which has `checkout.go`, `diff.go`). Commands fall into two categories:
 
 **Section methods** — Commands that operate on section state and are invoked via key handling in the section's `Update` method:
-- `markAsDone()` — Marks the current notification as Done. Important: This captures the notification ID _by value before_ the closure — because `GetCurrNotification()` returns a pointer into the `Notifications` slice, which may shift when other notifications are removed concurrently.
-- `markAllAsDone()` — Marks all visible notifications as Done
+- `markAsDone()` — Marks the current notification as Done and removes its bookmark. Important: This captures the notification ID _by value before_ the closure — because `GetCurrNotification()` returns a pointer into the `Notifications` slice, which may shift when other notifications are removed concurrently.
+- `markAllAsDone()` — Marks all visible notifications as Done and removes their bookmarks
 - `markAsRead()` — Marks the current notification as read
 - `markAllAsRead()` — Marks all notifications as read
 - `unsubscribe()` — Unsubscribes from the current thread
