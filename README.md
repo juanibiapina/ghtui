@@ -16,7 +16,6 @@
   <br />
   <br />
   <a href="https://github.com/dlvhdr/gh-dash/releases"><img src="https://img.shields.io/github/release/dlvhdr/gh-dash.svg" alt="Latest Release"></a>
-  <a href="https://discord.gg/SXNXp9NctV"><img src="https://img.shields.io/discord/1413193703476035755?label=discord" alt="Discord"/></a>
   <a href="https://www.jetify.com/docs/devbox" alt="Built with Devbox"><img src="https://www.jetify.com/img/devbox/shield_moon.svg" /></a>
 </p>
 
@@ -37,10 +36,6 @@ If you like quickly navigating with your keyboard, seeing the PRs and issues you
 ## 📃 Docs
 
 `DASH` has an extensive docs site at [gh-dash.dev/getting-started](https://gh-dash.dev/getting-started).
-
-## 👥 Discord
-
-Have questions? Join our [Discord community](https://discord.gg/SXNXp9NctV)!
 
 ## 🙏 Contributing
 
