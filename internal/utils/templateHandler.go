@@ -18,7 +18,7 @@ func NewRegistry() *TemplateRegistry {
 }
 
 func (or *TemplateRegistry) UID() string {
-	return "dlvhdr/gh-dash.registry"
+	return "juanibiapina/gh-dash.registry"
 }
 
 func (or *TemplateRegistry) LinkHandler(fh sprout.Handler) error {

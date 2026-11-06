@@ -8,7 +8,7 @@ import (
 	_ "net/http/pprof"
 
 	"charm.land/log/v2"
-	"github.com/dlvhdr/gh-dash/v4/cmd"
+	"github.com/juanibiapina/gh-dash/v4/cmd"
 )
 
 func main() {

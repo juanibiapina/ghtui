@@ -21,7 +21,7 @@ import (
 	"github.com/knadh/koanf/v2"
 	yamlmarshaller "gopkg.in/yaml.v3"
 
-	"github.com/dlvhdr/gh-dash/v4/internal/utils"
+	"github.com/juanibiapina/gh-dash/v4/internal/utils"
 )
 
 var hexColorRegex = regexp.MustCompile(`^#([a-fA-F0-9]{6}|[a-fA-F0-9]{3})$`)
@@ -528,7 +528,7 @@ Create one under: %s
 Example of a config.yml file:
 %s
 
-For more info, go to https://github.com/dlvhdr/gh-dash
+For more info, go to https://github.com/juanibiapina/gh-dash
 press q to exit.
 
 Original error: %v`,

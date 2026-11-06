@@ -11,11 +11,11 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/dlvhdr/gh-dash/v4/internal/data"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/fuzzyselect"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/inputbox"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/context"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/keys"
+	"github.com/juanibiapina/gh-dash/v4/internal/data"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/components/fuzzyselect"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/components/inputbox"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/context"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/keys"
 )
 
 type Mode int

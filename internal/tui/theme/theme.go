@@ -5,8 +5,8 @@ import (
 	"charm.land/lipgloss/v2/compat"
 	"charm.land/log/v2"
 
-	"github.com/dlvhdr/gh-dash/v4/internal/config"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/constants"
+	"github.com/juanibiapina/gh-dash/v4/internal/config"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/constants"
 )
 
 type Theme struct {

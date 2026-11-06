@@ -23,11 +23,11 @@ import (
 	"github.com/spf13/cobra"
 
 	gitm "github.com/aymanbagabas/git-module"
-	"github.com/dlvhdr/gh-dash/v4/internal/config"
-	"github.com/dlvhdr/gh-dash/v4/internal/git"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/constants"
-	dctx "github.com/dlvhdr/gh-dash/v4/internal/tui/context"
+	"github.com/juanibiapina/gh-dash/v4/internal/config"
+	"github.com/juanibiapina/gh-dash/v4/internal/git"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/constants"
+	dctx "github.com/juanibiapina/gh-dash/v4/internal/tui/context"
 )
 
 var (
@@ -52,7 +52,7 @@ var (
 			lipgloss.NewStyle().
 				Faint(true).
 				Italic(true).
-				Render("Visit https://gh-dash.dev for the docs."),
+				Render("Visit https://github.com/juanibiapina/gh-dash for the docs."),
 		),
 		Short:   "A rich terminal UI for GitHub that doesn't break your flow.",
 		Version: "",

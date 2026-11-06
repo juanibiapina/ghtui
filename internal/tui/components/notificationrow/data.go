@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dlvhdr/gh-dash/v4/internal/data"
+	"github.com/juanibiapina/gh-dash/v4/internal/data"
 )
 
 // PR/Issue state constants from GitHub API

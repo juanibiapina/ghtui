@@ -5,10 +5,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/dlvhdr/gh-dash/v4/internal/config"
-	"github.com/dlvhdr/gh-dash/v4/internal/data"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/context"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/theme"
+	"github.com/juanibiapina/gh-dash/v4/internal/config"
+	"github.com/juanibiapina/gh-dash/v4/internal/data"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/context"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/theme"
 )
 
 func newTestContext(t *testing.T) *context.ProgramContext {

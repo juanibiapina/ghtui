@@ -5,7 +5,7 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	log "charm.land/log/v2"
-	"github.com/dlvhdr/gh-dash/v4/internal/config"
+	"github.com/juanibiapina/gh-dash/v4/internal/config"
 )
 
 type CmpKeyMap struct {

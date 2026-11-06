@@ -9,10 +9,10 @@ import (
 	"charm.land/log/v2"
 	"github.com/gen2brain/beeep"
 
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/prrow"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/tasks"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/constants"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/context"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/components/prrow"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/components/tasks"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/constants"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/context"
 )
 
 func (m *Model) watchChecks() tea.Cmd {

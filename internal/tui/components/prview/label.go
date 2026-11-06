@@ -6,11 +6,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/dlvhdr/gh-dash/v4/internal/data"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/prssection"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/tasks"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/constants"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/context"
+	"github.com/juanibiapina/gh-dash/v4/internal/data"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/components/prssection"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/components/tasks"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/constants"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/context"
 )
 
 func (m *Model) label(labels []string) tea.Cmd {

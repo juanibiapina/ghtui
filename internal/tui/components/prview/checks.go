@@ -7,9 +7,9 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/dlvhdr/gh-dash/v4/internal/data"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/keys"
 	ghchecks "github.com/dlvhdr/x/gh-checks"
+	"github.com/juanibiapina/gh-dash/v4/internal/data"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/keys"
 )
 
 type checkSectionStatus int

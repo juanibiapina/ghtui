@@ -9,11 +9,11 @@ import (
 	"charm.land/log/v2"
 	gitm "github.com/aymanbagabas/git-module"
 
-	"github.com/dlvhdr/gh-dash/v4/internal/data"
-	"github.com/dlvhdr/gh-dash/v4/internal/git"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/tasks"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/constants"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/context"
+	"github.com/juanibiapina/gh-dash/v4/internal/data"
+	"github.com/juanibiapina/gh-dash/v4/internal/git"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/components/tasks"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/constants"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/context"
 )
 
 type UpdatePRMsg struct {

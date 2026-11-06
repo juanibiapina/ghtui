@@ -5,10 +5,10 @@ import (
 
 	// "charm.land/x/exp/teatest"
 
-	"github.com/dlvhdr/gh-dash/v4/internal/config"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/section"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/tabs/testdata"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/context"
+	"github.com/juanibiapina/gh-dash/v4/internal/config"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/components/section"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/components/tabs/testdata"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/context"
 )
 
 // func TestTabs(t *testing.T) {

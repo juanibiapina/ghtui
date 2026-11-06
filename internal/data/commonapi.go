@@ -25,7 +25,7 @@ func FetchLatestVersion() (VersionResponse, error) {
 	}
 
 	variables := map[string]any{
-		"owner": graphql.String("dlvhdr"),
+		"owner": graphql.String("juanibiapina"),
 		"name":  graphql.String("gh-dash"),
 	}
 

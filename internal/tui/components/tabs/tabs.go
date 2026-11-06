@@ -7,13 +7,13 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/dlvhdr/gh-dash/v4/internal/data"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/common"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/carousel"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/section"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/context"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/keys"
-	"github.com/dlvhdr/gh-dash/v4/internal/utils"
+	"github.com/juanibiapina/gh-dash/v4/internal/data"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/common"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/components/carousel"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/components/section"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/context"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/keys"
+	"github.com/juanibiapina/gh-dash/v4/internal/utils"
 )
 
 type SectionTab struct {

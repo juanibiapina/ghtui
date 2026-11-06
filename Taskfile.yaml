@@ -29,13 +29,6 @@ tasks:
       - echo "🕐 Installing local build..." && gh ext install .
       - gh dash --version
 
-  install:prod:
-    desc: Install the latest available version as a gh extension
-    cmds:
-      - task: uninstall
-      - echo "🕐 Installing latest version..." && gh ext install dlvhdr/gh-dash
-      - gh dash --version
-
   debug:
     desc: Run in debug mode. Run `task logs` to watch the logs.
     env:

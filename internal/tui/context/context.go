@@ -7,9 +7,9 @@ import (
 
 	gitm "github.com/aymanbagabas/git-module"
 	"github.com/cli/go-gh/v2/pkg/repository"
-	"github.com/dlvhdr/gh-dash/v4/internal/config"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/theme"
-	"github.com/dlvhdr/gh-dash/v4/internal/utils"
+	"github.com/juanibiapina/gh-dash/v4/internal/config"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/theme"
+	"github.com/juanibiapina/gh-dash/v4/internal/utils"
 )
 
 type State = int

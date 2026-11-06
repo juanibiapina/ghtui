@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/dlvhdr/gh-dash/v4/internal/data"
+	"github.com/juanibiapina/gh-dash/v4/internal/data"
 )
 
 // LabelInfo contains information about a label at a specific cursor position

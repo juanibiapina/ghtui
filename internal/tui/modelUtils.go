@@ -13,16 +13,16 @@ import (
 	"charm.land/lipgloss/v2"
 	log "charm.land/log/v2"
 
-	"github.com/dlvhdr/gh-dash/v4/internal/config"
-	"github.com/dlvhdr/gh-dash/v4/internal/data"
-	"github.com/dlvhdr/gh-dash/v4/internal/shell"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/common"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/notificationrow"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/prrow"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/section"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/constants"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/context"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/markdown"
+	"github.com/juanibiapina/gh-dash/v4/internal/config"
+	"github.com/juanibiapina/gh-dash/v4/internal/data"
+	"github.com/juanibiapina/gh-dash/v4/internal/shell"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/common"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/components/notificationrow"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/components/prrow"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/components/section"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/constants"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/context"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/markdown"
 )
 
 func (m *Model) getCurrSection() section.Section {

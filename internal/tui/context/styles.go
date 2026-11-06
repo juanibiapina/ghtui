@@ -5,8 +5,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/compat"
 
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/common"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/theme"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/common"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/theme"
 )
 
 type SelectStyles struct {

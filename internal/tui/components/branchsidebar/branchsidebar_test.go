@@ -6,11 +6,11 @@ import (
 	gitm "github.com/aymanbagabas/git-module"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dlvhdr/gh-dash/v4/internal/data"
-	"github.com/dlvhdr/gh-dash/v4/internal/git"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/branch"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/context"
-	"github.com/dlvhdr/gh-dash/v4/internal/tui/theme"
+	"github.com/juanibiapina/gh-dash/v4/internal/data"
+	"github.com/juanibiapina/gh-dash/v4/internal/git"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/components/branch"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/context"
+	"github.com/juanibiapina/gh-dash/v4/internal/tui/theme"
 )
 
 func testCtx() *context.ProgramContext {

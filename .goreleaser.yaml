@@ -9,7 +9,7 @@ gomod:
   env:
     - GOPROXY=https://proxy.golang.org,direct
     - GOSUMDB=sum.golang.org
-    - GOPRIVATE=github.com/dlvhdr/gh-dash
+    - GOPRIVATE=github.com/juanibiapina/gh-dash
   mod: mod
 
 builds:
@@ -32,10 +32,10 @@ builds:
       - "7"
     ldflags:
       - -s -w
-      - -X github.com/dlvhdr/gh-dash/cmd.Version={{.Version}}
-      - -X github.com/dlvhdr/gh-dash/cmd.Commit={{.Commit}}
-      - -X github.com/dlvhdr/gh-dash/cmd.Date={{.CommitDate}}
-      - -X github.com/dlvhdr/gh-dash/cmd.BuiltBy=goreleaser
+      - -X github.com/juanibiapina/gh-dash/v4/cmd.Version={{.Version}}
+      - -X github.com/juanibiapina/gh-dash/v4/cmd.Commit={{.Commit}}
+      - -X github.com/juanibiapina/gh-dash/v4/cmd.Date={{.CommitDate}}
+      - -X github.com/juanibiapina/gh-dash/v4/cmd.BuiltBy=goreleaser
     # Skipping builds for Android non-ARM64 architectures as they need CGO enabled
     # https://goreleaser.com/limitations/cgo/
     ignore:
