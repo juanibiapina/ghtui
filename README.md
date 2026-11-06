@@ -1,10 +1,4 @@
-<br />
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./docs/public/logo.png">
-    <img alt="DASH logo" width="600" src="./docs/public/logo-light.png">
-  </picture>
-</p>
+<h1 align="center">ghtui</h1>
 
 <p align="center">
   A rich terminal UI for GitHub that doesn't break your flow.
@@ -24,21 +18,21 @@
 - Everything you can do on GitHub - diff, comment, checkout, push, update etc.
 - Control every setting with a YAML config file
 
-If you like quickly navigating with your keyboard, seeing the PRs and issues you need and you <strong>love the terminal</strong> - <code>DASH</code> is for you! 🫵🏽
+If you like quickly navigating with your keyboard, seeing the PRs and issues you need and you <strong>love the terminal</strong> - <code>ghtui</code> is for you! 🫵🏽
 
 ## 📦 Install
 
 ```sh
-brew install juanibiapina/taps/gh-dash
+brew install juanibiapina/taps/ghtui
 ```
 
 Or install from source with [cargo](https://rustup.rs):
 
 ```sh
-cargo install --git https://github.com/juanibiapina/gh-dash
+cargo install --git https://github.com/juanibiapina/ghtui
 ```
 
-Then run `gh-dash`.
+Then run `ghtui`.
 
 It authenticates like `gh`: `$GH_TOKEN` or `$GITHUB_TOKEN` when set, otherwise
 `gh auth token`. Mutations (merge, comment, label, checkout, ...) run through the
@@ -54,7 +48,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## 🛞 Under the hood
 
-`DASH` uses:
+`ghtui` uses:
 
 - [ratatui](https://ratatui.rs) for the TUI
 - [pulldown-cmark](https://github.com/pulldown-cmark/pulldown-cmark) for parsing markdown

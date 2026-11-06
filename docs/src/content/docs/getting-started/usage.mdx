@@ -3,27 +3,27 @@ title: Usage
 linkTitle: >-
   ![icon:terminal](lucide)&nbsp;Usage
 summary: >-
-  Get started using `dash`.
+  Get started using `ghtui`.
 sidebar:
   order: 2
 ---
 
-To use `dash`, follow these steps after you've [installed it][01]:
+To use `ghtui`, follow these steps after you've [installed it][01]:
 
 1. Run
 
    ```bash
-   gh-dash
+   ghtui
    ```
 
 2. Press <kbd>?</kbd> for help.
-3. Run `gh-dash --help` for more info:
+3. Run `ghtui --help` for more info:
 
    ```bash
-   Usage: gh-dash [OPTIONS]
+   Usage: ghtui [OPTIONS]
 
    Options:
-     -c, --config <FILE>  Use this configuration file instead of a .gh-dash.yml in the git repo, $GH_DASH_CONFIG, or $XDG_CONFIG_HOME/gh-dash/config.yml
+     -c, --config <FILE>  Use this configuration file instead of a .ghtui.yml in the git repo, $GHTUI_CONFIG, or $XDG_CONFIG_HOME/ghtui/config.yml
          --debug          Write debug output to debug.log
      -v, --version        Print version and exit
      -h, --help           Print help
@@ -34,55 +34,58 @@ To use `dash`, follow these steps after you've [installed it][01]:
 ### `--config`
 
 Specify the path to a configuration file to use for the dashboard. If the configuration file
-doesn't exist or is invalid, `dash` returns an error.
+doesn't exist or is invalid, `ghtui` returns an error.
 
 ```bash
-gh-dash --config path/to/configuration/file.yml
+ghtui --config path/to/configuration/file.yml
 ```
 
 | Aliases |  Type  | Default                                                                                                                   |
 | :------ | :----: | :------------------------------------------------------------------------------------------------------------------------ |
-| `-c`    | String | `.gh-dash.yml` file if inside a git repo, `$GH_DASH_CONFIG` env var, or if not set, `$XDG_CONFIG_HOME/gh-dash/config.yml` |
+| `-c`    | String | `.ghtui.yml` file if inside a git repo, `$GHTUI_CONFIG` env var, or if not set, `$XDG_CONFIG_HOME/ghtui/config.yml` |
 
-If you don't specify this flag, `dash` uses the default configuration.
-If the file doesn't exist, `dash` will create it.
+If you don't specify this flag, `ghtui` uses the default configuration.
+If the file doesn't exist, `ghtui` will create it.
 
 The location of the default configuration file depends on your system:
 
-1. If `$GH_DASH_CONFIG` is a non-empty string, `dash` will use this file for
+1. If `$GHTUI_CONFIG` is a non-empty string, `ghtui` will use this file for
    its configuration.
-2. If `$GH_DASH_CONFIG` isn't set and you're in a git repository, it will look for `.gh-dash.yml` or `.gh-dash.yaml`
+2. If `$GHTUI_CONFIG` isn't set and you're in a git repository, it will look for `.ghtui.yml` or `.ghtui.yaml`
    in the repository root.
 3. If neither of the above applies, then:
-   - If `$XDG_CONFIG_HOME` is a non-empty string, the default path is `$XDG_CONFIG_HOME/gh-dash/config.yml`.
+   - If `$XDG_CONFIG_HOME` is a non-empty string, the default path is `$XDG_CONFIG_HOME/ghtui/config.yml`.
    - If `$XDG_CONFIG_HOME` isn't set, then:
-     - On Linux and macOS systems, the default path is `$HOME/.config/gh-dash/config.yml`.
-     - On Windows systems, the default path is `%USERPROFILE%\.config\gh-dash\config.yml`.
+     - On Linux and macOS systems, the default path is `$HOME/.config/ghtui/config.yml`.
+     - On Windows systems, the default path is `%USERPROFILE%\.config\ghtui\config.yml`.
+
+Configs from gh-dash keep working: when the `ghtui` file or variable is missing, `ghtui` reads
+`$GH_DASH_CONFIG`, `.gh-dash.yml` or `.gh-dash.yaml`, and `gh-dash/config.yml` instead.
 
 For more information about authoring configurations, see [Configuration][02].
 
 ### `--debug`
 
-Specify whether `dash` should write logs to the `debug.log` file in the current directory. By
-default, `dash` doesn't output debug information.
+Specify whether `ghtui` should write logs to the `debug.log` file in the current directory. By
+default, `ghtui` doesn't output debug information.
 
 ```bash
-gh-dash --debug
+ghtui --debug
 ```
 
 | Aliases |  Type   | Default |
 | :------ | :-----: | :------ |
 | (None)  | Boolean | `false` |
 
-When you use this flag, `dash` creates the `debug.log` file in the current directory if it doesn't exist. If the file does exist, `dash` appends new log entries to it.
+When you use this flag, `ghtui` creates the `debug.log` file in the current directory if it doesn't exist. If the file does exist, `ghtui` appends new log entries to it.
 
 ### `--help`
 
-Use this flag to display the help information for `dash` in the terminal. If you specify this
-flag, `dash` ignores all other flags. It only displays the help information.
+Use this flag to display the help information for `ghtui` in the terminal. If you specify this
+flag, `ghtui` ignores all other flags. It only displays the help information.
 
 ```bash
-gh-dash --help
+ghtui --help
 ```
 
 | Aliases |  Type   | Default |
@@ -91,27 +94,27 @@ gh-dash --help
 
 ### `--version`
 
-Use this flag to display the version information for `dash` in the terminal. If you specify this
-flag with the `--config` or `--debug` flags, `dash` ignores them. It only displays the version
+Use this flag to display the version information for `ghtui` in the terminal. If you specify this
+flag with the `--config` or `--debug` flags, `ghtui` ignores them. It only displays the version
 information.
 
 ```bash
-gh-dash --version
+ghtui --version
 ```
 
 | Aliases |  Type   | Default |
 | :------ | :-----: | :------ |
 | `-v`    | Boolean | `false` |
 
-When you use this flag, `dash` prints its name and version:
+When you use this flag, `ghtui` prints its name and version:
 
 ```text
-gh-dash 0.1.0
+ghtui 0.1.0
 ```
 
 ## Default Keybindings
 
-When you use `dash`, it displays the dashboard as a terminal UI (TUI). In the TUI, you can use
+When you use `ghtui`, it displays the dashboard as a terminal UI (TUI). In the TUI, you can use
 several commands by pressing key combinations to navigate and interact with the dashboard.
 
 You can press the <kbd>?</kbd> key to toggle the help menu in the UI. The help menu lists the available

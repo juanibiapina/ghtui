@@ -1,6 +1,6 @@
 # Agent Instructions
 
-gh-dash is a terminal UI for GitHub (PRs, issues, notifications, local branches), a single Rust
+ghtui is a terminal UI for GitHub (PRs, issues, notifications, local branches), a single Rust
 binary built on ratatui.
 
 ## Build & Test
@@ -11,7 +11,7 @@ cargo test
 cargo clippy --all-targets
 cargo fmt --all -- --check
 cargo deny check bans licenses sources
-make install  # installs gh-dash to ~/.cargo/bin
+make install  # installs ghtui to ~/.cargo/bin
 ```
 
 Rust warnings and `clippy::all` are denied in `Cargo.toml`.
@@ -27,7 +27,7 @@ Rust warnings and `clippy::all` are denied in `Cargo.toml`.
 
 In a single `release: X.Y.Z` commit:
 
-1. Bump `version` in `Cargo.toml` and run `cargo update -p gh-dash`.
+1. Bump `version` in `Cargo.toml` and run `cargo update -p ghtui`.
 2. Cut a new dated section under `[Unreleased]` in `CHANGELOG.md`.
 
 Then push `main` and push a `vX.Y.Z` tag. The tag triggers `release.yml`, which runs cargo-dist:

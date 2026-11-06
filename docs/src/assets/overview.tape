@@ -11,7 +11,7 @@ Set Width 1600
 Set Height 800
 
 Hide
-Type "gh dash --config demo.yml"
+Type "ghtui --config demo.yml"
 
 Enter
 Sleep 8s

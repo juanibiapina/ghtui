@@ -1,12 +1,12 @@
 [package]
-name = "gh-dash"
+name = "ghtui"
 version = "0.1.0"
 edition = "2024"
 description = "A rich terminal UI for GitHub that doesn't break your flow"
 authors = ["Juan Ibiapina <juanibiapina@gmail.com>"]
 license = "MIT"
-repository = "https://github.com/juanibiapina/gh-dash"
-homepage = "https://github.com/juanibiapina/gh-dash"
+repository = "https://github.com/juanibiapina/ghtui"
+homepage = "https://github.com/juanibiapina/ghtui"
 
 [dependencies]
 anyhow = "1.0.104"

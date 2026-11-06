@@ -148,7 +148,7 @@ fn tabs_line(app: &App) -> Line<'static> {
     let logo = Line::from(vec![
         raw("  "),
         span(
-            " DASH ",
+            " GHTUI ",
             Style::default()
                 .fg(theme::LOGO)
                 .bg(theme::LOGO_BG)

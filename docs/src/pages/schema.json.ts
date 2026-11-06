@@ -2,7 +2,7 @@ export function GET() {
   return new Response(
     JSON.stringify({
       $schema: "https://json-schema.org/draft/2020-12/schema",
-      $id: "gh-dash.schema.json",
+      $id: "ghtui.schema.json",
       title: "Dashboard Configuration",
       description: "Settings for the GitHub Dashboard.",
       type: "object",
@@ -71,7 +71,7 @@ export function GET() {
           examples: [
             {
               "juanibiapina/*": "~/code/repos/*",
-              "juanibiapina/gh-dash": "~/code/gh-dash",
+              "juanibiapina/ghtui": "~/code/ghtui",
             },
           ],
           patternProperties: {
@@ -173,13 +173,13 @@ export function GET() {
         smartFilteringAtLaunch: {
           title: "Smart Filtering At Launch",
           description:
-            "Set this to `false` to disable [Smart Filtering](/getting-started/smartfiltering) at `gh-dash` launch.\n",
+            "Set this to `false` to disable [Smart Filtering](/getting-started/smartfiltering) at `ghtui` launch.\n",
           type: "boolean",
         },
         confirmQuit: {
           title: "Confirm Quit",
           description:
-            "Specifies whether the user needs to confirm when quitting `gh-dash`",
+            "Specifies whether the user needs to confirm when quitting `ghtui`",
           type: "boolean",
           default: "false",
         },

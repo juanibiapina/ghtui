@@ -2,7 +2,7 @@
 title: Custom Keybindings
 ---
 
-`dash` allows you to override existing keybindings as well as add custom ones.
+`ghtui` allows you to override existing keybindings as well as add custom ones.
 
 Every valid entry for the configuration options must have a `key` and `command`.
 When a user presses the key or key combination the dashboard shells out and executes the command.
@@ -14,7 +14,7 @@ There are 3 types of keybindings: `universal`, `prs` and `issues`.
 ## Key Values
 
 The `key` value must match one of the [Ultraviolet key strings][ultraviolet-key-strings].
-`dash` does not translate alternate key names or terminal labels before matching a keybinding.
+`ghtui` does not translate alternate key names or terminal labels before matching a keybinding.
 
 For example, Page Down is emitted as `pgdown`, not `pgdn`:
 
@@ -67,7 +67,7 @@ The following built-in universal commands can be overridden with custom keybinds
 | `copyurl`       | copy the URL of the selected row                |
 | `copyNumber`    | copy the number of the selected row             |
 | `help`          | toggle the help menu                            |
-| `quit`          | quit gh-dash                                    |
+| `quit`          | quit ghtui                                      |
 
 See [global keys](../../getting-started/keybindings/global/) and [navigation keys](../../getting-started/keybindings/navigation/) for more details.
 
@@ -98,7 +98,7 @@ keybindings:
 
 | Argument      | Description                                                                     |
 | ------------- | ------------------------------------------------------------------------------- |
-| `RepoName`    | The full name of the repo (e.g. `juanibiapina/gh-dash`)                               |
+| `RepoName`    | The full name of the repo (e.g. `juanibiapina/ghtui`)                               |
 | `RepoPath`    | The path to the Repo, using the `config.yml` `repoPaths` key to get the mapping |
 | `PrNumber`    | The PR number                                                                   |
 | `HeadRefName` | The PR's head branch name                                                       |
@@ -149,7 +149,7 @@ keybindings:
 
 | Argument      | Description                                                                     |
 | ------------- | ------------------------------------------------------------------------------- |
-| `RepoName`    | The full name of the repo (e.g. `juanibiapina/gh-dash`)                               |
+| `RepoName`    | The full name of the repo (e.g. `juanibiapina/ghtui`)                               |
 | `RepoPath`    | The path to the Repo, using the `config.yml` `repoPaths` key to get the mapping |
 | `IssueNumber` | The issue number                                                                |
 | `IssueTitle`  | The issue title                                                                 |

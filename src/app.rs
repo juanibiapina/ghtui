@@ -2759,7 +2759,7 @@ impl App {
                 _ => &format!("{} Checks are pending", crate::icons::PENDING_CHECKS),
             };
             tasks::desktop_notify(
-                &format!("gh-dash: {title}"),
+                &format!("ghtui: {title}"),
                 &format!("PR #{n} in {repo}\n{status}"),
             );
             None

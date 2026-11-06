@@ -1,4 +1,4 @@
-//! gh-dash: a rich terminal UI for GitHub.
+//! ghtui: a rich terminal UI for GitHub.
 
 mod app;
 mod bookmarks;
@@ -44,14 +44,14 @@ use crate::config::Location;
 /// A rich terminal UI for GitHub that doesn't break your flow.
 #[derive(Debug, Parser)]
 #[command(
-    name = "gh-dash",
+    name = "ghtui",
     version,
     disable_version_flag = true,
-    after_help = "Docs: https://github.com/juanibiapina/gh-dash"
+    after_help = "Docs: https://github.com/juanibiapina/ghtui"
 )]
 struct Args {
-    /// Use this configuration file instead of a .gh-dash.yml in the git repo,
-    /// $GH_DASH_CONFIG, or $XDG_CONFIG_HOME/gh-dash/config.yml
+    /// Use this configuration file instead of a .ghtui.yml in the git repo,
+    /// $GHTUI_CONFIG, or $XDG_CONFIG_HOME/ghtui/config.yml
     #[arg(short, long, value_name = "FILE")]
     config: Option<String>,
 

@@ -1,4 +1,4 @@
-# Contributing To `gh-dash`
+# Contributing To `ghtui`
 
 ## Working on the Code
 
@@ -10,7 +10,7 @@ cargo build
 cargo test
 cargo clippy --all-targets
 cargo fmt --all -- --check
-make install  # installs gh-dash to ~/.cargo/bin
+make install  # installs ghtui to ~/.cargo/bin
 ```
 
 Warnings and clippy lints fail the build.
@@ -21,7 +21,7 @@ The UI is built on [ratatui](https://ratatui.rs).
 
 - Log with the `crate::debug!`, `crate::info!`, `crate::warn!` and `crate::error!` macros
 - Tail the log by running `task logs`
-- Run `gh-dash --debug` in another terminal window / pane; `LOG_LEVEL` sets the level
+- Run `ghtui --debug` in another terminal window / pane; `LOG_LEVEL` sets the level
 
 ### Running the Docs Locally
 

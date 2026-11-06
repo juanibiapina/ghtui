@@ -1,5 +1,5 @@
 //! Notification bookmarks persisted as a JSON list of thread ids at
-//! $XDG_STATE_HOME/gh-dash/bookmarks.json.
+//! $XDG_STATE_HOME/ghtui/bookmarks.json.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -15,7 +15,14 @@ fn state_path() -> Option<PathBuf> {
         Ok(d) if !d.is_empty() => PathBuf::from(d),
         _ => dirs::home_dir()?.join(".local/state"),
     };
-    Some(dir.join("gh-dash").join("bookmarks.json"))
+    Some(dir.join("ghtui").join("bookmarks.json"))
+}
+
+/// Bookmarks saved under the gh-dash name, read until the first save.
+fn legacy_state_path() -> std::io::Result<PathBuf> {
+    let path = state_path()
+        .and_then(|p| Some(p.parent()?.parent()?.join("gh-dash").join("bookmarks.json")));
+    path.ok_or_else(|| std::io::Error::other("no state dir"))
 }
 
 impl Store {
@@ -23,7 +30,11 @@ impl Store {
         let path = state_path();
         let ids = path
             .as_ref()
-            .and_then(|p| std::fs::read_to_string(p).ok())
+            .and_then(|p| {
+                std::fs::read_to_string(p)
+                    .or_else(|_| std::fs::read_to_string(legacy_state_path()?))
+                    .ok()
+            })
             .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
             .unwrap_or_default();
         Store {

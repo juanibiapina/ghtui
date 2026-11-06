@@ -1,5 +1,5 @@
 //! Code block highlighting the way glamour does it: Chroma tokens (see
-//! chroma.rs), colored by the gh-dash markdown theme's Chroma entries, reduced
+//! chroma.rs), colored by the ghtui markdown theme's Chroma entries, reduced
 //! to the xterm 256 palette by Chroma's terminal256 formatter.
 
 use ratatui::style::{Color, Modifier, Style};

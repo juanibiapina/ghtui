@@ -1,4 +1,4 @@
-//! The subset of Go text/template used by gh-dash: `{{ .Field }}` in custom
+//! The subset of Go text/template used by ghtui: `{{ .Field }}` in custom
 //! keybinding commands (missing fields are errors) and `{{ nowModify "-2w" }}`
 //! in section filters.
 

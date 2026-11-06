@@ -19,5 +19,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Browse local branches and their PRs in the branches view, enabled with `FF_REPO_VIEW`.
 - Install with Homebrew or a shell installer.
 
-[Unreleased]: https://github.com/juanibiapina/gh-dash/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/juanibiapina/gh-dash/releases/tag/v0.1.0
+[Unreleased]: https://github.com/juanibiapina/ghtui/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/juanibiapina/ghtui/releases/tag/v0.1.0

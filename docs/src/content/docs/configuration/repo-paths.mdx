@@ -21,7 +21,7 @@ command.
 ```yaml
 repoPaths:
   juanibiapina/*: ~/code/repos/*
-  juanibiapina/gh-dash: ~/code/gh-dash
+  juanibiapina/ghtui: ~/code/ghtui
 ```
 
 In this example, the first key is defined with a wildcard (`*`) as `juanibiapina/*`, so the
@@ -34,9 +34,9 @@ folder, the dashboard will be able to checkout PRs for that repository locally.
 
 If the repository isn't found, the checkout command raises an error.
 
-The second key defines an exact mapping between the `juanibiapina/gh-dash` repository and the
-`~/code/gh-dash` folder. Because this is a non-wildcard mapping, the dashboard will use
-this value to resolve the repository path for `juanibiapina/gh-dash` even though there's also
+The second key defines an exact mapping between the `juanibiapina/ghtui` repository and the
+`~/code/ghtui` folder. Because this is a non-wildcard mapping, the dashboard will use
+this value to resolve the repository path for `juanibiapina/ghtui` even though there's also
 an entry for `juanibiapina/*`.
 
 ## Pattern Properties
@@ -44,11 +44,11 @@ an entry for `juanibiapina/*`.
 ### With a Wildcard
 
 If the key for an `repoPath` entry ends with a wildcard (`*`), its value must also have
-a wildcard. If a key ends with a wildcard but the value doesn't, `gh-dash` won't be
+a wildcard. If a key ends with a wildcard but the value doesn't, `ghtui` won't be
 able to correctly map repositories to folders.
 
 ### Without a Wildcard
 
 If the key for an `repoPath` entry doesn't have a wildcard (`*`), its value must not
-have a wildcard. If a key ends without a wildcard but the value does, `gh-dash` won't
+have a wildcard. If a key ends without a wildcard but the value does, `ghtui` won't
 be able to correctly map repositories to folders.

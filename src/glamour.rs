@@ -1,5 +1,5 @@
 //! A port of glamour v2's ANSI renderer (charm.land/glamour/v2/ansi) with the
-//! gh-dash Tokyo Night style. Markdown is parsed with pulldown-cmark into a
+//! ghtui Tokyo Night style. Markdown is parsed with pulldown-cmark into a
 //! tree shaped like goldmark's AST (including GFM linkify), then rendered with
 //! glamour's block stack, margin/indent/padding writers and wrapping passes.
 

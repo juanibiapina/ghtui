@@ -2,9 +2,9 @@
 title: Schema
 ---
 
-The `dash` configuration schema is published here:
+The `ghtui` configuration schema is published here:
 
-[`https://gh-dash.dev/schema.json`][02]
+[`https://juanibiapina.github.io/ghtui/schema.json`][02]
 
 ## Using the Schema in Neovim
 
@@ -13,7 +13,7 @@ The `dash` configuration schema is published here:
 3. Add the following line to the top of your configuration file:
 
    ```
-   # yaml-language-server: $schema=https://gh-dash.dev/schema.json
+   # yaml-language-server: $schema=https://juanibiapina.github.io/ghtui/schema.json
    ```
 
 With the directive comment at the top of your configuration or the VS Code settings file, you can
@@ -27,20 +27,20 @@ You can get edit-time feedback, validation, and IntelliSense for your configurat
 following these steps:
 
 1. Install [Red Hat's YAML extension for VS Code][03].
-1. Open your `dash` configuration file.
+1. Open your `ghtui` configuration file.
 1. Add the following line to the top of your configuration file:
 
    ```
-   # yaml-language-server: $schema=https://gh-dash.dev/schema.json
+   # yaml-language-server: $schema=https://juanibiapina.github.io/ghtui/schema.json
    ```
 
 1. Instead of adding a comment to your configuration file, you could create the
-   `.vscode/settings.json` file in your `dash` configuration folder and add this setting:
+   `.vscode/settings.json` file in your `ghtui` configuration folder and add this setting:
 
    ```json
    {
      "yaml.schemas": {
-       "https://gh-dash.dev/schema.json": "*.yml"
+       "https://juanibiapina.github.io/ghtui/schema.json": "*.yml"
      }
    }
    ```

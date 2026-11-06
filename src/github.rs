@@ -94,7 +94,7 @@ pub fn client() -> Result<&'static Client> {
             let token = resolve_token(&host).map_err(|e| e.to_string())?;
             let agent: ureq::Agent = ureq::Agent::config_builder()
                 .http_status_as_error(false)
-                .user_agent("gh-dash-rs")
+                .user_agent("ghtui")
                 .build()
                 .into();
             Ok(Client { host, token, agent })
@@ -398,7 +398,7 @@ pub fn latest_version() -> Result<String> {
     }
     let d: Data = client()?.graphql(
         "query LatestVersion($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { latestRelease { tagName } } }",
-        json!({ "owner": "juanibiapina", "name": "gh-dash" }),
+        json!({ "owner": "juanibiapina", "name": "ghtui" }),
     )?;
     Ok(d.repository
         .and_then(|r| r.latest_release)

@@ -10,7 +10,7 @@ Set Width 1400
 Set Height 600
 
 Hide
-Type "gh dash --config custom-commands.yml"
+Type "ghtui --config custom-commands.yml"
 
 Enter
 Sleep 8s
