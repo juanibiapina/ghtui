@@ -1,0 +1,1342 @@
+//! A section is one tab of a view: a search query, its fetched rows and the
+//! table that shows them. Mirrors components/section, prssection,
+//! issuessection, notificationssection, table and listviewport.
+
+use std::collections::HashSet;
+use std::time::Instant;
+
+use chrono::{DateTime, Local};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+
+use crate::config::{Config, IssuesLayoutConfig, PrsLayoutConfig};
+use crate::icons;
+use crate::input::TextInput;
+use crate::model::*;
+use crate::text::*;
+use crate::theme::{self, Theme};
+use crate::util::{format_number, time_elapsed};
+
+pub const SPINNER: [&str; 8] = ["⣾ ", "⣽ ", "⣻ ", "⢿ ", "⡿ ", "⣟ ", "⣯ ", "⣷ "];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Kind {
+    Pr,
+    Issue,
+    Notification,
+}
+
+impl Kind {
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Kind::Pr => "pr",
+            Kind::Issue => "issue",
+            Kind::Notification => "notification",
+        }
+    }
+    pub fn singular(&self) -> &'static str {
+        match self {
+            Kind::Pr => "PR",
+            Kind::Issue => "Issue",
+            Kind::Notification => "Notification",
+        }
+    }
+    pub fn plural(&self) -> &'static str {
+        match self {
+            Kind::Pr => "PRs",
+            Kind::Issue => "Issues",
+            Kind::Notification => "Notifications",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PrRow {
+    pub primary: PullRequest,
+    pub enriched: Option<EnrichedPullRequest>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct NotifRow {
+    pub n: Notification,
+    pub new_comments: i64,
+    pub subject_state: String,
+    pub is_draft: bool,
+    pub actor: String,
+    pub activity: String,
+    pub resolved_url: String,
+}
+
+fn last_segment(url: &str) -> &str {
+    url.rsplit('/').next().unwrap_or("")
+}
+
+impl NotifRow {
+    pub fn new(n: Notification) -> Self {
+        let activity = activity_description(&n.reason, &n.subject.kind, "");
+        NotifRow {
+            n,
+            activity,
+            ..Default::default()
+        }
+    }
+    pub fn id(&self) -> &str {
+        &self.n.id
+    }
+    pub fn subject_type(&self) -> &str {
+        &self.n.subject.kind
+    }
+    pub fn title(&self) -> String {
+        self.n
+            .subject
+            .title
+            .replace('\r', "")
+            .replace('\n', " ")
+            .trim()
+            .to_string()
+    }
+    pub fn repo(&self) -> &str {
+        &self.n.repository.full_name
+    }
+    pub fn number(&self) -> i64 {
+        match self.subject_type() {
+            "PullRequest" | "Issue" => last_segment(&self.n.subject.url).parse().unwrap_or(0),
+            _ => 0,
+        }
+    }
+    fn base_url(&self) -> String {
+        if !self.n.repository.html_url.is_empty() {
+            self.n.repository.html_url.trim_end_matches('/').to_string()
+        } else {
+            format!("https://github.com/{}", self.n.repository.full_name)
+        }
+    }
+    /// notificationrow.Data.GetUrl
+    pub fn url(&self) -> String {
+        let base = self.base_url();
+        let num = last_segment(&self.n.subject.url);
+        match self.subject_type() {
+            "PullRequest" => format!("{base}/pull/{num}"),
+            "Issue" => format!("{base}/issues/{num}"),
+            "Discussion" if !num.is_empty() => format!("{base}/discussions/{num}"),
+            "Discussion" => format!("{base}/discussions"),
+            "Release" => format!("{base}/releases"),
+            "Commit" => format!("{base}/commits"),
+            "CheckSuite" if !self.resolved_url.is_empty() => self.resolved_url.clone(),
+            "CheckSuite" => format!("{base}/actions"),
+            _ => base,
+        }
+    }
+}
+
+/// notificationrow.GenerateActivityDescription
+pub fn activity_description(reason: &str, subject_type: &str, actor: &str) -> String {
+    let has = !actor.is_empty();
+    match reason {
+        "comment" if has => match subject_type {
+            "PullRequest" => format!("@{actor} commented on this pull request"),
+            "Issue" => format!("@{actor} commented on this issue"),
+            _ => format!("@{actor} commented"),
+        },
+        "comment" => "New comment".into(),
+        "review_requested" if has => format!("@{actor} requested your review"),
+        "review_requested" => "Review requested".into(),
+        "mention" if has => format!("@{actor} mentioned you"),
+        "mention" => "You were mentioned".into(),
+        "author" => "Activity on your thread".into(),
+        "assign" => "You were assigned".into(),
+        "state_change" => match subject_type {
+            "PullRequest" => "Pull request state changed".into(),
+            "Issue" => "Issue state changed".into(),
+            _ => "State changed".into(),
+        },
+        "ci_activity" => "CI activity".into(),
+        "subscribed" if has => match subject_type {
+            "PullRequest" => format!("@{actor} commented on this pull request"),
+            "Issue" => format!("@{actor} commented on this issue"),
+            _ => "Activity on subscribed thread".into(),
+        },
+        "subscribed" => "Activity on subscribed thread".into(),
+        "team_mention" => "Your team was mentioned".into(),
+        "security_alert" => "Security vulnerability detected".into(),
+        _ if has => format!("@{actor} triggered this notification"),
+        _ => String::new(),
+    }
+}
+
+/// Selected row data, handed to the preview and to actions.
+#[derive(Clone, Debug)]
+pub enum RowRef {
+    Pr(PrRow),
+    Issue(Issue),
+    Notification(NotifRow),
+}
+
+impl RowRef {
+    pub fn number(&self) -> i64 {
+        match self {
+            RowRef::Pr(p) => p.primary.number,
+            RowRef::Issue(i) => i.number,
+            RowRef::Notification(n) => n.number(),
+        }
+    }
+    pub fn url(&self) -> String {
+        match self {
+            RowRef::Pr(p) => p.primary.url.clone(),
+            RowRef::Issue(i) => i.url.clone(),
+            RowRef::Notification(n) => n.url(),
+        }
+    }
+    pub fn repo(&self) -> String {
+        match self {
+            RowRef::Pr(p) => p.primary.repository.name_with_owner.clone(),
+            RowRef::Issue(i) => i.repository.name_with_owner.clone(),
+            RowRef::Notification(n) => n.repo().to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Column {
+    pub title: String,
+    pub width: Option<usize>,
+    pub grow: bool,
+    pub hidden: bool,
+    pub align: Option<Align>,
+}
+
+fn col(title: &str, width: Option<usize>, hidden: bool) -> Column {
+    Column {
+        title: title.into(),
+        width,
+        grow: false,
+        hidden,
+        align: None,
+    }
+}
+
+pub fn pr_columns(cfg: &Config, section_layout: &PrsLayoutConfig) -> Vec<Column> {
+    let d = &cfg.defaults.layout.prs;
+    let s = section_layout;
+    let m = |a: &crate::config::ColumnConfig, b: &crate::config::ColumnConfig| a.merged(b);
+    let updated = m(&d.updated_at, &s.updated_at);
+    let created = m(&d.created_at, &s.created_at);
+    let repo = m(&d.repo, &s.repo);
+    let title = m(&d.title, &s.title);
+    let author = m(&d.author, &s.author);
+    let assignees = m(&d.assignees, &s.assignees);
+    let base = m(&d.base, &s.base);
+    let comments = m(&d.num_comments, &s.num_comments);
+    let review = m(&d.review_status, &s.review_status);
+    let state = m(&d.state, &s.state);
+    let ci = m(&d.ci, &s.ci);
+    let labels = m(&d.labels, &s.labels);
+    let lines = m(&d.lines, &s.lines);
+    let mut title_col = col("Title", None, title.is_hidden());
+    title_col.grow = true;
+    let compact = cfg.theme.ui.table.compact;
+    let mut cols = vec![col(icons::STATE_COL, Some(3), state.is_hidden())];
+    if compact {
+        cols.push(col(icons::REPO, repo.width, repo.is_hidden()));
+    }
+    cols.push(title_col);
+    if compact {
+        cols.push(col("Author", author.width, author.is_hidden()));
+    }
+    cols.extend([
+        col(icons::LABELS, labels.width, labels.is_hidden()),
+        col("Assignees", assignees.width, assignees.is_hidden()),
+        col("Base", base.width, base.is_hidden()),
+        col(icons::COMMENTS, Some(4), comments.is_hidden()),
+        col(icons::REVIEW_STATUS, Some(4), review.is_hidden()),
+        col(icons::CHECKS, Some(" CI ".len()), ci.is_hidden()),
+        col(icons::LINES, lines.width, lines.is_hidden()),
+        col(icons::UPDATED_AT, updated.width, updated.is_hidden()),
+        col(icons::CREATED_AT, created.width, created.is_hidden()),
+    ]);
+    cols
+}
+
+pub fn issue_columns(cfg: &Config, section_layout: &IssuesLayoutConfig) -> Vec<Column> {
+    let d = &cfg.defaults.layout.issues;
+    let s = section_layout;
+    let state = d.state.merged(&s.state);
+    let repo = d.repo.merged(&s.repo);
+    let title = d.title.merged(&s.title);
+    let creator = d.creator.merged(&s.creator);
+    let assignees = d.assignees.merged(&s.assignees);
+    let comments = d.comments.merged(&s.comments);
+    let reactions = d.reactions.merged(&s.reactions);
+    let updated = d.updated_at.merged(&s.updated_at);
+    let created = d.created_at.merged(&s.created_at);
+    let mut title_col = col("Title", None, title.is_hidden());
+    title_col.grow = true;
+    vec![
+        col(icons::ISSUE_OPEN, state.width, state.is_hidden()),
+        col(icons::REPO, repo.width, repo.is_hidden()),
+        title_col,
+        col("Creator", creator.width, creator.is_hidden()),
+        col("Assignees", assignees.width, assignees.is_hidden()),
+        col(icons::COMMENTS, Some(6), comments.is_hidden()),
+        col(icons::REACTIONS, Some(6), reactions.is_hidden()),
+        col(icons::UPDATED_AT, updated.width, updated.is_hidden()),
+        col(icons::CREATED_AT, created.width, created.is_hidden()),
+    ]
+}
+
+pub fn notification_columns() -> Vec<Column> {
+    vec![
+        Column {
+            title: "Type".into(),
+            width: Some(6),
+            grow: false,
+            hidden: false,
+            align: Some(Align::Center),
+        },
+        Column {
+            title: "Title".into(),
+            width: None,
+            grow: true,
+            hidden: false,
+            align: None,
+        },
+        Column {
+            title: "Activity".into(),
+            width: Some(10),
+            grow: false,
+            hidden: false,
+            align: Some(Align::Right),
+        },
+        Column {
+            title: format!("{}    ", icons::UPDATED_AT),
+            width: Some(12),
+            grow: false,
+            hidden: false,
+            align: Some(Align::Right),
+        },
+    ]
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum SortOrder {
+    #[default]
+    Updated,
+    Repo,
+}
+
+pub struct Section {
+    pub id: usize,
+    pub kind: Kind,
+    pub title: String,
+    pub limit: Option<usize>,
+    pub columns: Vec<Column>,
+    pub search_value: String,
+    pub search: Option<TextInput>,
+    pub search_cmp: Option<crate::complete::Completer>,
+    pub search_bar: TextInput,
+    pub filtered_by_current_remote: bool,
+    pub prs: Vec<PrRow>,
+    pub issues: Vec<Issue>,
+    pub notifs: Vec<NotifRow>,
+    pub total_count: usize,
+    pub page_info: Option<PageInfo>,
+    pub last_fetch_task: String,
+    pub last_fetch_at: Option<Instant>,
+    pub is_loading: bool,
+    pub cursor: usize,
+    pub top: usize,
+    pub prompt: Option<(String, TextInput)>,
+    pub last_updated: DateTime<Local>,
+    pub sort: SortOrder,
+    pub session_read: HashSet<String>,
+    pub session_done: HashSet<String>,
+}
+
+pub struct RenderCtx<'a> {
+    pub cfg: &'a Config,
+    pub theme: &'a Theme,
+    pub spinner: usize,
+    pub width: usize,
+    pub height: usize,
+}
+
+impl Section {
+    pub fn new(
+        id: usize,
+        kind: Kind,
+        title: &str,
+        filters: &str,
+        limit: Option<usize>,
+        columns: Vec<Column>,
+        cfg: &Config,
+        gh_repo: Option<&(String, String)>,
+    ) -> Section {
+        let mut s = Section {
+            id,
+            kind,
+            title: title.to_string(),
+            limit,
+            columns,
+            search_value: filters.to_string(),
+            search: None,
+            search_cmp: None,
+            search_bar: TextInput::new(""),
+            filtered_by_current_remote: false,
+            prs: vec![],
+            issues: vec![],
+            notifs: vec![],
+            total_count: 0,
+            page_info: None,
+            last_fetch_task: String::new(),
+            last_fetch_at: None,
+            is_loading: false,
+            cursor: 0,
+            top: 0,
+            prompt: None,
+            last_updated: Local::now(),
+            sort: SortOrder::Updated,
+            session_read: HashSet::new(),
+            session_done: HashSet::new(),
+        };
+        if kind == Kind::Notification {
+            // notificationssection.NewModel scopes to the current repo when smart filtering is on.
+            s.filtered_by_current_remote = cfg.smart_filtering_at_launch;
+            s.search_value = s.search_value_for_fetch(gh_repo, false);
+        } else {
+            // section.NewModel: GetConfigFiltersWithCurrentRemoteAdded
+            let mut filters = filters.to_string();
+            if cfg.smart_filtering_at_launch
+                && let Some((owner, name)) = gh_repo
+                && !filters.split_whitespace().any(|t| t.starts_with("repo:"))
+            {
+                filters = format!("repo:{owner}/{name} {filters}");
+            }
+            if let Some((owner, name)) = gh_repo {
+                let f = format!("repo:{owner}/{name}");
+                s.filtered_by_current_remote = filters.split_whitespace().any(|t| t == f);
+            }
+            s.search_value = filters;
+        }
+        s.search_bar.set_value(&s.search_value.clone());
+        s
+    }
+
+    pub fn num_rows(&self) -> usize {
+        match self.kind {
+            Kind::Pr => self.prs.len(),
+            Kind::Issue => self.issues.len(),
+            Kind::Notification => self.notifs.len(),
+        }
+    }
+
+    pub fn current(&self) -> Option<RowRef> {
+        match self.kind {
+            Kind::Pr => self.prs.get(self.cursor).cloned().map(RowRef::Pr),
+            Kind::Issue => self.issues.get(self.cursor).cloned().map(RowRef::Issue),
+            Kind::Notification => self
+                .notifs
+                .get(self.cursor)
+                .cloned()
+                .map(RowRef::Notification),
+        }
+    }
+
+    pub fn current_notif(&self) -> Option<&NotifRow> {
+        self.notifs.get(self.cursor)
+    }
+
+    pub fn is_data_stale(&self) -> bool {
+        match self.last_fetch_at {
+            None => true,
+            Some(t) => t.elapsed().as_secs() > 300,
+        }
+    }
+
+    pub fn has_repo_filter(&self) -> bool {
+        self.search_value
+            .split_whitespace()
+            .any(|t| t.starts_with("repo:"))
+    }
+
+    pub fn has_current_repo_filter(&self, gh_repo: Option<&(String, String)>) -> bool {
+        match gh_repo {
+            Some((o, n)) => {
+                let f = format!("repo:{o}/{n}");
+                self.search_value.split_whitespace().any(|t| t == f)
+            }
+            None => false,
+        }
+    }
+
+    /// BaseModel.GetSearchValue: expands templates and adds/removes the current-repo filter.
+    pub fn search_value_for_fetch(
+        &self,
+        gh_repo: Option<&(String, String)>,
+        expand: bool,
+    ) -> String {
+        let value = if expand {
+            crate::template::render(&self.search_value, &Default::default())
+                .unwrap_or_else(|_| self.search_value.clone())
+        } else {
+            self.search_value.clone()
+        };
+        let Some((o, n)) = gh_repo else { return value };
+        let f = format!("repo:{o}/{n}");
+        let rest: Vec<&str> = value.split_whitespace().filter(|t| *t != f).collect();
+        if self.filtered_by_current_remote {
+            format!("{f} {}", rest.join(" "))
+        } else {
+            rest.join(" ")
+        }
+    }
+
+    pub fn reset_rows(&mut self) {
+        self.prs.clear();
+        self.issues.clear();
+        self.notifs.clear();
+        if self.kind == Kind::Notification {
+            self.session_read.clear();
+            self.session_done.clear();
+        }
+        self.page_info = None;
+        self.cursor = 0;
+        self.top = 0;
+    }
+
+    // ---- listviewport ----
+
+    pub fn item_height(&self, cfg: &Config) -> usize {
+        let content = match self.kind {
+            Kind::Notification => 3,
+            _ if cfg.theme.ui.table.compact => 1,
+            _ => 2,
+        };
+        content + usize::from(cfg.theme.ui.table.show_separator)
+    }
+
+    fn per_page(&self, cfg: &Config, body_height: usize) -> usize {
+        let h = self.item_height(cfg);
+        if h == 0 { 0 } else { (body_height / h).max(1) }
+    }
+
+    pub fn clamp_cursor(&mut self) {
+        let n = self.num_rows();
+        if n == 0 {
+            self.cursor = 0;
+            self.top = 0;
+        } else if self.cursor >= n {
+            self.cursor = n - 1;
+        }
+        if self.top > self.cursor {
+            self.top = self.cursor;
+        }
+    }
+
+    pub fn next_row(&mut self, cfg: &Config, body_height: usize) {
+        let n = self.num_rows();
+        if n == 0 {
+            return;
+        }
+        self.cursor = (self.cursor + 1).min(n - 1);
+        let per = self.per_page(cfg, body_height);
+        if self.cursor >= self.top + per {
+            self.top = self.cursor + 1 - per;
+        }
+    }
+
+    pub fn prev_row(&mut self) {
+        self.cursor = self.cursor.saturating_sub(1);
+        if self.cursor < self.top {
+            self.top = self.cursor;
+        }
+    }
+
+    pub fn first_row(&mut self) {
+        self.cursor = 0;
+        self.top = 0;
+    }
+
+    pub fn last_row(&mut self, cfg: &Config, body_height: usize) {
+        let n = self.num_rows();
+        if n == 0 {
+            return;
+        }
+        self.cursor = n - 1;
+        let per = self.per_page(cfg, body_height);
+        self.top = n.saturating_sub(per);
+    }
+
+    // ---- notifications ----
+
+    pub fn sort_notifications(&mut self) {
+        match self.sort {
+            SortOrder::Repo => self.notifs.sort_by(|a, b| {
+                a.repo()
+                    .cmp(b.repo())
+                    .then(b.n.updated_at.cmp(&a.n.updated_at))
+            }),
+            SortOrder::Updated => self
+                .notifs
+                .sort_by(|a, b| b.n.updated_at.cmp(&a.n.updated_at)),
+        }
+    }
+
+    // ---- footer pager ----
+
+    pub fn pager_content(&self) -> String {
+        if self.total_count == 0 {
+            return String::new();
+        }
+        let pos = self.cursor + 1;
+        match self.kind {
+            Kind::Pr => {
+                let el = time_elapsed(self.last_updated.with_timezone(&chrono::Utc));
+                let el = if el == "now" {
+                    "just now".to_string()
+                } else {
+                    format!("~{el} ago")
+                };
+                format!(
+                    "{} Updated {} • {} {}/{} (fetched {})",
+                    icons::WAITING,
+                    el,
+                    self.kind.singular(),
+                    pos,
+                    self.total_count,
+                    self.num_rows()
+                )
+            }
+            Kind::Issue => format!(
+                "{} {} • {} {}/{} • Fetched {}",
+                icons::WAITING,
+                self.last_updated.format("%m/%d %H:%M:%S"),
+                self.kind.singular(),
+                pos,
+                self.total_count,
+                self.num_rows()
+            ),
+            Kind::Notification => format!(
+                "{} {} • {} {}/{}",
+                icons::WAITING,
+                self.last_updated.format("%m/%d %H:%M:%S"),
+                self.kind.singular(),
+                pos,
+                self.total_count
+            ),
+        }
+    }
+
+    /// GetPromptConfirmation text for the current action.
+    pub fn prompt_text(&self) -> Option<String> {
+        let (action, _) = self.prompt.as_ref()?;
+        let what = match self.kind {
+            Kind::Pr => "PR",
+            Kind::Issue => "issue",
+            Kind::Notification => "",
+        };
+        Some(match (self.kind, action.as_str()) {
+            (Kind::Pr | Kind::Issue, "close") => {
+                format!("Are you sure you want to close this {what}? (y/N) ")
+            }
+            (Kind::Pr | Kind::Issue, "reopen") => {
+                format!("Are you sure you want to reopen this {what}? (y/N) ")
+            }
+            (Kind::Pr, "ready") => "Are you sure you want to mark this PR as ready? (y/N) ".into(),
+            (Kind::Pr, "merge") => "Are you sure you want to merge this PR? (y/N) ".into(),
+            (Kind::Pr, "update") => "Are you sure you want to update this PR? (y/N) ".into(),
+            (Kind::Pr, "approveWorkflows") => {
+                "Are you sure you want to approve all workflows? (y/N) ".into()
+            }
+            (Kind::Notification, "done_all") => {
+                "Are you sure you want to mark all as done? (y/N) ".into()
+            }
+            _ => String::new(),
+        })
+    }
+
+    // ---- rendering ----
+
+    /// Section View: search box followed by the table, inside 1 cell of horizontal padding.
+    pub fn view(&self, rc: &RenderCtx) -> Block {
+        let t = rc.theme;
+        let inner = rc.width.saturating_sub(4);
+        let focused = self.search.is_some();
+        let border = Style::default().fg(if focused {
+            theme::OPEN_ISSUE
+        } else {
+            t.primary_border
+        });
+        let prompt = format!("{} is:{} ", icons::SEARCH, self.kind.type_name());
+        let prompt_w = str_width(&prompt);
+        let input = self.search.as_ref().unwrap_or(&self.search_bar);
+        let value_line = input.view(inner.saturating_sub(prompt_w), t.primary(), focused);
+        let mut content = vec![Span::styled(prompt, t.secondary())];
+        content.extend(value_line.spans);
+        let content = fit_line(&Line::from(content), inner, Style::default());
+        let popup = self.search_cmp.as_ref().map(|c| c.visible).unwrap_or(false);
+        let (bl, br) = if popup {
+            ("├", "┤")
+        } else {
+            ("╰", "╯")
+        };
+        let mut out: Block = vec![
+            Line::from(vec![
+                raw(" "),
+                span(format!("╭{}╮", "─".repeat(inner)), border),
+            ]),
+            Line::from(
+                [
+                    vec![raw(" "), span("│", border)],
+                    content.spans,
+                    vec![span("│", border)],
+                ]
+                .concat(),
+            ),
+            Line::from(vec![
+                raw(" "),
+                span(format!("{bl}{}{br}", "─".repeat(inner)), border),
+            ]),
+        ];
+        let table_h = rc.height.saturating_sub(3);
+        let table = self.table_view(rc, rc.width.saturating_sub(2), table_h);
+        out.extend(indent(table, 1));
+        out
+    }
+
+    fn computed_widths(&self, rc: &RenderCtx, width: usize) -> Vec<(usize, Line<'static>)> {
+        let t = rc.theme;
+        let title_style = Style::default()
+            .fg(t.primary_text)
+            .add_modifier(Modifier::BOLD);
+        let shown: Vec<&Column> = self.columns.iter().filter(|c| !c.hidden).collect();
+        let mut taken = 0;
+        let mut grow = 0;
+        let mut cells: Vec<Option<(usize, Line<'static>)>> = vec![];
+        for c in &shown {
+            if c.grow {
+                grow += 1;
+                cells.push(None);
+                continue;
+            }
+            if let Some(w) = c.width {
+                let l = if c.align == Some(Align::Right) {
+                    let a = if str_width(&c.title) <= 2 {
+                        Align::Center
+                    } else {
+                        Align::Right
+                    };
+                    align_line(
+                        Line::from(span(c.title.clone(), title_style)),
+                        w,
+                        a,
+                        Style::default(),
+                    )
+                } else {
+                    let inner = fit_line(
+                        &Line::from(span(c.title.clone(), title_style)),
+                        w.saturating_sub(2),
+                        Style::default(),
+                    );
+                    concat(vec![Line::from(raw(" ")), inner, Line::from(raw(" "))])
+                };
+                let l = fit_line(&l, w, Style::default());
+                taken += w;
+                cells.push(Some((w, l)));
+                continue;
+            }
+            let l = Line::from(vec![raw(" "), span(c.title.clone(), title_style), raw(" ")]);
+            let w = line_width(&l);
+            taken += w;
+            cells.push(Some((w, l)));
+        }
+        let grow_w = if grow > 0 {
+            width.saturating_sub(taken) / grow
+        } else {
+            0
+        };
+        shown
+            .iter()
+            .zip(cells)
+            .map(|(c, cell)| match cell {
+                Some(x) => x,
+                None => {
+                    let inner = fit_line(
+                        &Line::from(span(c.title.clone(), title_style)),
+                        grow_w.saturating_sub(2),
+                        Style::default(),
+                    );
+                    (
+                        grow_w,
+                        fit_line(
+                            &concat(vec![Line::from(raw(" ")), inner, Line::from(raw(" "))]),
+                            grow_w,
+                            Style::default(),
+                        ),
+                    )
+                }
+            })
+            .collect()
+    }
+
+    fn table_view(&self, rc: &RenderCtx, width: usize, height: usize) -> Block {
+        let t = rc.theme;
+        let cols = self.computed_widths(rc, width);
+        let header = truncate_line(
+            &concat(cols.iter().map(|(_, l)| l.clone()).collect()),
+            width,
+            icons::ELLIPSIS,
+        );
+        let mut out: Block = vec![header, Line::default()];
+        let body_h = height.saturating_sub(2);
+        if body_h == 0 {
+            // An empty viewport still joins as one blank line under the header.
+            out.push(Line::default());
+            return out;
+        }
+
+        if self.is_loading && self.num_rows() == 0 {
+            let msg = Line::from(vec![
+                span(SPINNER[rc.spinner % SPINNER.len()], t.secondary()),
+                raw("Loading..."),
+            ]);
+            for i in 0..body_h {
+                if i == body_h / 2 {
+                    out.push(align_line(
+                        msg.clone(),
+                        width,
+                        Align::Center,
+                        Style::default(),
+                    ));
+                } else {
+                    out.push(Line::default());
+                }
+            }
+            return out;
+        }
+        if self.num_rows() == 0 {
+            if self.last_fetch_at.is_some() {
+                out.push(Line::from(vec![
+                    raw(" "),
+                    span(
+                        format!(
+                            "No {} were found that match the given filters",
+                            self.kind.plural()
+                        ),
+                        Style::default().add_modifier(Modifier::DIM),
+                    ),
+                ]));
+            }
+            return out;
+        }
+
+        let widths: Vec<usize> = cols.iter().map(|(w, _)| *w).collect();
+        let item_h = self.item_height(rc.cfg);
+        let per = if item_h == 0 {
+            0
+        } else {
+            (body_h / item_h).max(1)
+        };
+        let content_h = match self.kind {
+            Kind::Notification => 3,
+            _ if rc.cfg.theme.ui.table.compact => 1,
+            _ => 2,
+        };
+        let end = (self.top + per + 1).min(self.num_rows());
+        let mut body: Block = vec![];
+        for i in self.top..end {
+            let selected = i == self.cursor;
+            let cells = self.row_cells(i, rc, &widths, selected);
+            let row = self.render_row(cells, &widths, content_h, selected, rc);
+            body.extend(row);
+            if rc.cfg.theme.ui.table.show_separator {
+                let total: usize = widths.iter().sum();
+                body.push(Line::from(span(
+                    "─".repeat(total.min(width)),
+                    Style::default().fg(t.faint_border),
+                )));
+            }
+        }
+        body.truncate(body_h);
+        out.extend(body);
+        out
+    }
+
+    fn render_row(
+        &self,
+        cells: Vec<Block>,
+        widths: &[usize],
+        content_h: usize,
+        selected: bool,
+        rc: &RenderCtx,
+    ) -> Block {
+        let bg = if selected {
+            Some(rc.theme.selected_background)
+        } else {
+            None
+        };
+        let pad_style = bg.map(|b| Style::default().bg(b)).unwrap_or_default();
+        let shown: Vec<&Column> = self.columns.iter().filter(|c| !c.hidden).collect();
+        let mut rendered: Vec<Block> = vec![];
+        for ((cell, w), c) in cells.into_iter().zip(widths).zip(shown) {
+            let inner_w = w.saturating_sub(2).max(1);
+            let multiline = cell.len() > 1;
+            let lines: Block = if multiline {
+                cell.into_iter()
+                    .map(|l| truncate_line(&l, inner_w, ""))
+                    .collect()
+            } else {
+                let spans = cell.into_iter().next().map(|l| l.spans).unwrap_or_default();
+                wrap_spans(&spans, inner_w)
+            };
+            let mut col_block: Block = vec![];
+            for i in 0..content_h {
+                let l = lines.get(i).cloned().unwrap_or_default();
+                let l = with_bg(l, bg);
+                let body = align_line(l, inner_w, c.align.unwrap_or(Align::Left), pad_style);
+                let full = concat(vec![
+                    Line::from(span(" ", pad_style)),
+                    body,
+                    Line::from(span(" ", pad_style)),
+                ]);
+                col_block.push(fit_line(&full, *w, pad_style));
+            }
+            rendered.push(col_block);
+        }
+        hjoin(rendered)
+    }
+
+    fn row_cells(&self, i: usize, rc: &RenderCtx, widths: &[usize], selected: bool) -> Vec<Block> {
+        let shown_idx: Vec<usize> = self
+            .columns
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| !c.hidden)
+            .map(|(i, _)| i)
+            .collect();
+        let all = match self.kind {
+            Kind::Pr => pr_row(&self.prs[i], rc, &self.columns, widths, selected),
+            Kind::Issue => issue_row(&self.issues[i], rc),
+            Kind::Notification => notification_row(&self.notifs[i], rc),
+        };
+        shown_idx
+            .into_iter()
+            .map(|i| all.get(i).cloned().unwrap_or_default())
+            .collect()
+    }
+}
+
+/// Patches a background onto every span that has none (selected rows).
+pub fn with_bg(l: Line<'static>, bg: Option<Color>) -> Line<'static> {
+    match bg {
+        None => l,
+        Some(b) => Line::from(
+            l.spans
+                .into_iter()
+                .map(|s| {
+                    let st = if s.style.bg.is_none() {
+                        s.style.bg(b)
+                    } else {
+                        s.style
+                    };
+                    Span::styled(s.content, st)
+                })
+                .collect::<Vec<_>>(),
+        ),
+    }
+}
+
+fn one(spans: Vec<Span<'static>>) -> Block {
+    vec![Line::from(spans)]
+}
+
+fn author_with_icon(login: &str, assoc: &str, t: &Theme, show: bool) -> Vec<Span<'static>> {
+    let mut v = vec![span(login.to_string(), t.primary())];
+    if show {
+        let (icon, color) = t.author_role_icon(assoc);
+        v.push(span(" ", t.primary()));
+        v.push(span(icon, Style::default().fg(color)));
+    }
+    v
+}
+
+fn time_cell(t: chrono::DateTime<chrono::Utc>, cfg: &Config) -> String {
+    let fmt = &cfg.defaults.date_format;
+    if fmt.is_empty() || fmt == "relative" {
+        time_elapsed(t)
+    } else {
+        crate::util_time::go_format(t, fmt)
+    }
+}
+
+/// components.RenderIssueTitle
+fn issue_title(
+    cfg: &Config,
+    t: &Theme,
+    state: &str,
+    title: &str,
+    number: i64,
+) -> Vec<Span<'static>> {
+    let mut v = vec![];
+    if cfg.theme.ui.table.compact {
+        let fg = if state != "OPEN" {
+            t.faint_text
+        } else {
+            t.secondary_text
+        };
+        v.push(span(format!("#{number} "), Style::default().fg(fg)));
+    }
+    v.push(span(
+        title.to_string(),
+        t.primary().add_modifier(Modifier::BOLD),
+    ));
+    v
+}
+
+pub fn pr_state_icon(pr: &PullRequest, t: &Theme) -> Span<'static> {
+    let (icon, color) = match pr.state.as_str() {
+        "OPEN" if pr.is_in_merge_queue => (icons::MERGE_QUEUE, t.warning_text),
+        "OPEN" if pr.is_draft => (icons::DRAFT, t.faint_text),
+        "OPEN" => (icons::OPEN, theme::OPEN_PR),
+        "CLOSED" => (icons::CLOSED, theme::CLOSED_PR),
+        "MERGED" => (icons::MERGED, theme::MERGED_PR),
+        _ => ("-", t.faint_text),
+    };
+    span(icon, Style::default().fg(color))
+}
+
+/// prrow.RenderLines. The Go code pads with "%7s" around strings that already
+/// contain ANSI escapes, so no padding ever happens; "+adds -dels" is left as is.
+pub fn render_lines(pr: &PullRequest, t: &Theme) -> Vec<Span<'static>> {
+    vec![
+        span(
+            format!("+{}", format_number(pr.additions)),
+            Style::default().fg(t.success_text),
+        ),
+        raw(" "),
+        span(
+            format!("-{}", format_number(pr.deletions.max(0))),
+            Style::default().fg(t.error_text),
+        ),
+    ]
+}
+
+fn pr_row(
+    row: &PrRow,
+    rc: &RenderCtx,
+    columns: &[Column],
+    widths: &[usize],
+    selected: bool,
+) -> Vec<Block> {
+    let t = rc.theme;
+    let cfg = rc.cfg;
+    let pr = &row.primary;
+    let show_icon = cfg.show_author_icons;
+
+    let review = if pr.review_decision == "APPROVED" {
+        span(icons::APPROVED, Style::default().fg(t.success_text))
+    } else if pr.review_decision == "CHANGES_REQUESTED" {
+        span(icons::CHANGES_REQUESTED, Style::default().fg(t.error_text))
+    } else if pr.reviews.total_count > 0 {
+        let (g, s) = t.comment_glyph();
+        span(g, s)
+    } else {
+        let (g, s) = t.waiting_glyph();
+        span(g, s)
+    };
+    let rollup = pr
+        .commits
+        .nodes
+        .first()
+        .map(|c| c.commit.status_check_rollup.state.as_str())
+        .unwrap_or("");
+    let ci = match rollup {
+        "SUCCESS" => span(icons::SUCCESS, Style::default().fg(t.success_text)),
+        "EXPECTED" | "PENDING" => {
+            let (g, s) = t.waiting_glyph();
+            span(g, s)
+        }
+        "ERROR" | "FAILURE" => span(icons::FAILURE, Style::default().fg(t.error_text)),
+        _ => span(icons::EMPTY, Style::default().fg(t.faint_text)),
+    };
+    let comments = span(
+        (pr.comments.total_count + pr.review_threads.total_count).to_string(),
+        t.faint(),
+    );
+    let assignees = span(
+        pr.assignees
+            .nodes
+            .iter()
+            .map(|a| a.login.clone())
+            .collect::<Vec<_>>()
+            .join(","),
+        t.primary(),
+    );
+    let labels_w = columns
+        .iter()
+        .filter(|c| !c.hidden)
+        .zip(widths)
+        .find(|(c, _)| c.title == icons::LABELS)
+        .map(|(_, w)| *w)
+        .unwrap_or(0);
+    let max_rows = if cfg.theme.ui.table.compact { 1 } else { 2 };
+    let labels = if labels_w > 2 {
+        crate::views::render_labels(&pr.labels.nodes, labels_w - 2, max_rows)
+    } else {
+        vec![]
+    };
+    let updated = span(time_cell(pr.updated_at, cfg), t.faint());
+    let created = span(time_cell(pr.created_at, cfg), t.faint());
+
+    if !cfg.theme.ui.table.compact {
+        // renderExtendedTitle
+        let title_w = columns
+            .iter()
+            .filter(|c| !c.hidden)
+            .zip(widths)
+            .find(|(c, _)| c.grow)
+            .map(|(_, w)| *w)
+            .unwrap_or(0)
+            .saturating_sub(1);
+        let sec = if selected {
+            t.secondary()
+        } else {
+            Style::default()
+        };
+        let mut top = vec![
+            span(
+                pr.repository.name_with_owner.clone(),
+                Style::default().fg(t.secondary_text),
+            ),
+            span(
+                format!(" #{} by ", pr.number),
+                Style::default().fg(t.secondary_text),
+            ),
+            span("@", sec.add_modifier(Modifier::BOLD)),
+        ];
+        for s in author_with_icon(&pr.author.login, &pr.author_association, t, show_icon) {
+            top.push(Span::styled(
+                s.content,
+                s.style.add_modifier(Modifier::BOLD),
+            ));
+        }
+        if !cfg.defaults.layout.prs.base.is_hidden() {
+            top.push(span(" · ", sec));
+            top.push(span(pr.head_ref_name.clone(), sec));
+        }
+        let top = fit_line(&Line::from(top), title_w, Style::default());
+        let title = truncate_line(
+            &Line::from(span(
+                pr.title.clone(),
+                t.primary().add_modifier(Modifier::BOLD),
+            )),
+            title_w.saturating_sub(1),
+            icons::ELLIPSIS,
+        );
+        return vec![
+            one(vec![pr_state_icon(pr, t)]),
+            vec![top, title],
+            labels,
+            one(vec![assignees]),
+            one(vec![span(pr.base_ref_name.clone(), t.primary())]),
+            one(vec![comments]),
+            one(vec![review]),
+            one(vec![ci]),
+            one(render_lines(pr, t)),
+            one(vec![updated]),
+            one(vec![created]),
+        ];
+    }
+
+    vec![
+        one(vec![pr_state_icon(pr, t)]),
+        one(vec![span(pr.head_repository.name.clone(), t.faint())]),
+        one(issue_title(cfg, t, &pr.state, &pr.title, pr.number)),
+        one(author_with_icon(
+            &pr.author.login,
+            &pr.author_association,
+            t,
+            show_icon,
+        )),
+        labels,
+        one(vec![assignees]),
+        one(vec![span(pr.base_ref_name.clone(), t.primary())]),
+        one(vec![comments]),
+        one(vec![review]),
+        one(vec![ci]),
+        one(render_lines(pr, t)),
+        one(vec![updated]),
+        one(vec![created]),
+    ]
+}
+
+fn issue_row(issue: &Issue, rc: &RenderCtx) -> Vec<Block> {
+    let t = rc.theme;
+    let cfg = rc.cfg;
+    let status = if issue.state == "OPEN" {
+        span(icons::ISSUE_OPEN, Style::default().fg(theme::OPEN_ISSUE))
+    } else {
+        span(icons::ISSUE_CLOSED, t.primary())
+    };
+    vec![
+        one(vec![status]),
+        one(vec![span(issue.repository.name.clone(), t.primary())]),
+        one(issue_title(
+            cfg,
+            t,
+            &issue.state,
+            &issue.title,
+            issue.number,
+        )),
+        one(author_with_icon(
+            &issue.author.login,
+            &issue.author_association,
+            t,
+            cfg.show_author_icons,
+        )),
+        one(vec![span(
+            issue
+                .assignees
+                .nodes
+                .iter()
+                .map(|a| a.login.clone())
+                .collect::<Vec<_>>()
+                .join(","),
+            t.primary(),
+        )]),
+        one(vec![span(
+            issue.comments.total_count.to_string(),
+            t.primary(),
+        )]),
+        one(vec![span(
+            issue.reactions.total_count.to_string(),
+            t.primary(),
+        )]),
+        one(vec![span(time_cell(issue.updated_at, cfg), t.primary())]),
+        one(vec![span(time_cell(issue.created_at, cfg), t.primary())]),
+    ]
+}
+
+fn reason_description(reason: &str, subject_type: &str) -> String {
+    match reason {
+        "review_requested" => "Review requested".into(),
+        "subscribed" => "Activity on subscribed thread".into(),
+        "mention" => "You were mentioned".into(),
+        "author" => "Activity on your thread".into(),
+        "comment" => match subject_type {
+            "PullRequest" => "New comment on pull request".into(),
+            "Issue" => "New comment on issue".into(),
+            _ => "New comment".into(),
+        },
+        "assign" => "You were assigned".into(),
+        "state_change" => "State changed".into(),
+        "ci_activity" => "CI activity".into(),
+        _ => String::new(),
+    }
+}
+
+fn notification_row(row: &NotifRow, rc: &RenderCtx) -> Vec<Block> {
+    let t = rc.theme;
+    let cfg = rc.cfg;
+    let fg = |c: Color| Style::default().fg(c);
+    let (icon, style) = match row.subject_type() {
+        "PullRequest" => match row.subject_state.as_str() {
+            "MERGED" => (icons::MERGED.to_string(), fg(theme::MERGED_PR)),
+            "CLOSED" => (icons::CLOSED.to_string(), fg(theme::CLOSED_PR)),
+            _ if row.is_draft => (icons::DRAFT.to_string(), fg(t.faint_text)),
+            _ => (icons::OPEN.to_string(), fg(theme::OPEN_PR)),
+        },
+        "Issue" if row.subject_state == "CLOSED" => {
+            (icons::ISSUE_CLOSED.to_string(), fg(theme::CLOSED_PR))
+        }
+        "Issue" => (icons::ISSUE_OPEN.to_string(), fg(theme::OPEN_ISSUE)),
+        "Discussion" => (icons::DISCUSSION.to_string(), fg(Color::Rgb(255, 255, 255))),
+        "Release" => (icons::RELEASE.to_string(), fg(Color::Rgb(0x58, 0xa6, 0xff))),
+        "Commit" => (icons::COMMIT_TYPE.to_string(), fg(t.secondary_text)),
+        "CheckSuite" => {
+            let title = row.title().to_lowercase();
+            if title.contains("failed") {
+                (icons::FAILURE.to_string(), fg(t.error_text))
+            } else if title.contains("succeeded") {
+                (icons::SUCCESS.to_string(), fg(t.success_text))
+            } else if title.contains("cancelled")
+                || title.contains("canceled")
+                || title.contains("skipped")
+            {
+                (icons::WORKFLOW_RUN.to_string(), fg(t.faint_text))
+            } else {
+                (icons::WORKFLOW_RUN.to_string(), fg(t.warning_text))
+            }
+        }
+        "RepositoryVulnerabilityAlert" => (icons::SECURITY.to_string(), fg(t.error_text)),
+        _ => (icons::NOTIFICATION.to_string(), fg(t.secondary_text)),
+    };
+    let type_cell = vec![
+        Line::from(span(icon, style)),
+        if row.n.unread {
+            Line::from(span(icons::DOT, fg(Color::Indexed(33))))
+        } else {
+            Line::default()
+        },
+        Line::default(),
+    ];
+
+    let mut line1 = row.repo().to_string();
+    if row.number() > 0 {
+        line1 = format!("{line1} #{}", row.number());
+    }
+    let mut l1 = vec![span(line1, t.secondary())];
+    if crate::bookmarks::store().has(row.id()) {
+        l1.push(span(" ", t.secondary()));
+        l1.push(span(icons::BOOKMARK, fg(t.warning_text)));
+    }
+    let mut title_style = t.primary();
+    if row.n.unread {
+        title_style = title_style.add_modifier(Modifier::BOLD);
+    }
+    let activity = if row.activity.is_empty() {
+        reason_description(&row.n.reason, row.subject_type())
+    } else {
+        row.activity.clone()
+    };
+    let l3 = if activity.starts_with('@') {
+        match activity.find(' ') {
+            Some(idx) => vec![
+                span(activity[..idx].to_string(), fg(t.actor_text)),
+                span(activity[idx..].to_string(), t.faint()),
+            ],
+            None => vec![span(activity, fg(t.actor_text))],
+        }
+    } else {
+        vec![span(activity, t.faint())]
+    };
+    let title_cell = vec![
+        Line::from(l1),
+        Line::from(span(row.title(), title_style)),
+        Line::from(l3),
+    ];
+
+    let activity_cell = if row.new_comments > 0 {
+        vec![
+            Line::from(vec![
+                span(format!("+{} ", row.new_comments), fg(Color::Indexed(15))),
+                span(icons::COMMENTS, fg(Color::Indexed(2))),
+            ]),
+            Line::default(),
+            Line::default(),
+        ]
+    } else {
+        vec![Line::default(), Line::default(), Line::default()]
+    };
+    let fmt = &cfg.defaults.date_format;
+    let updated = if fmt.is_empty() || fmt == "relative" {
+        format!("{}\u{a0}ago", time_elapsed(row.n.updated_at))
+    } else {
+        crate::util_time::go_format(row.n.updated_at, fmt)
+    };
+    let updated_cell = vec![
+        Line::from(span(updated, t.primary())),
+        Line::default(),
+        Line::default(),
+    ];
+    vec![type_cell, title_cell, activity_cell, updated_cell]
+}

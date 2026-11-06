@@ -1,0 +1,660 @@
+//! Autocomplete for the search bar and the input box. Mirrors
+//! components/fuzzyselect (sources, fuzzy filter, popup) and the parts of
+//! cmpcontroller/inputbox that route keys to it.
+
+use ratatui::style::{Modifier, Style};
+use ratatui::text::Line;
+
+use crate::icons;
+use crate::input::Editable;
+use crate::model::Label;
+use crate::section::SPINNER;
+use crate::text::*;
+use crate::theme::{self, Theme};
+
+const MAX_VISIBLE: usize = 4;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceKind {
+    Search,
+    Mention { with_at: bool },
+    Labels,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Suggestion {
+    pub value: String,
+    pub detail: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct Ctx {
+    pub start: (usize, usize),
+    pub end: (usize, usize),
+    pub content: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FetchState {
+    Idle,
+    Loading,
+    Success,
+    Error(String),
+}
+
+#[derive(Clone, Debug)]
+pub struct Completer {
+    pub kind: SourceKind,
+    pub users: Vec<(String, String)>,
+    pub labels: Vec<Label>,
+    pub filtered: Vec<Suggestion>,
+    pub selected: usize,
+    pub visible: bool,
+    pub hidden_by_user: bool,
+    pub hide_on_empty: bool,
+    pub fetch: FetchState,
+    pub repo: Option<(String, String)>,
+}
+
+fn is_ws(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\n' | '\r')
+}
+
+fn is_boundary(c: char) -> bool {
+    is_ws(c) || ",.!?;:()[]{}<>\"'`".contains(c)
+}
+
+fn line_chars(input: &str, y: usize) -> Vec<char> {
+    input.split('\n').nth(y).unwrap_or("").chars().collect()
+}
+
+/// fuzzyselect.ExtractWordAtCursor
+pub fn word_at(input: &str, (x, y): (usize, usize)) -> Ctx {
+    let runes = line_chars(input, y);
+    let x = x.min(runes.len());
+    let mut start = 0;
+    for i in (0..x).rev() {
+        if is_ws(runes[i]) {
+            start = i + 1;
+            break;
+        }
+        start = i;
+    }
+    let mut end = runes.len();
+    for (i, c) in runes.iter().enumerate().skip(x) {
+        if is_ws(*c) {
+            end = i;
+            break;
+        }
+    }
+    Ctx {
+        start: (start, y),
+        end: (end, y),
+        content: runes[start..end]
+            .iter()
+            .collect::<String>()
+            .trim()
+            .to_string(),
+    }
+}
+
+/// fuzzyselect.ExtractLabelAtCursor: the comma-separated item around the cursor.
+fn label_at(input: &str, (x, y): (usize, usize)) -> (Ctx, bool) {
+    let runes = line_chars(input, y);
+    let x = x.min(runes.len());
+    let start = (0..x)
+        .rev()
+        .find(|i| runes[*i] == ',')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let end = (x..runes.len())
+        .find(|i| runes[*i] == ',')
+        .unwrap_or(runes.len());
+    let content = runes[start..end]
+        .iter()
+        .collect::<String>()
+        .trim()
+        .to_string();
+    (
+        Ctx {
+            start: (start, y),
+            end: (end, y),
+            content,
+        },
+        start == 0,
+    )
+}
+
+fn prefix_of(word: &str, names: [&'static str; 2]) -> Option<&'static str> {
+    names.into_iter().find(|p| word.starts_with(p))
+}
+
+fn fold_eq(a: char, b: char) -> bool {
+    a == b || a.to_lowercase().eq(b.to_lowercase())
+}
+
+/// sahilm/fuzzy FindFromNoSort scoring for one candidate; None when not all
+/// pattern characters match in order.
+pub fn fuzzy_score(pattern: &str, target: &str) -> Option<i64> {
+    const FIRST_CHAR: i64 = 10;
+    const AFTER_SEPARATOR: i64 = 20;
+    const CAMEL_CASE: i64 = 20;
+    const ADJACENT: i64 = 5;
+    const LEADING_PENALTY: i64 = -5;
+    const MAX_LEADING_PENALTY: i64 = -15;
+    let p: Vec<char> = pattern.chars().collect();
+    let t: Vec<char> = target.chars().collect();
+    if p.is_empty() {
+        return None;
+    }
+    let is_sep = |c: char| "/-_ .\\".contains(c);
+    let mut total = 0i64;
+    let mut matched: Vec<usize> = vec![];
+    let mut pi = 0;
+    let mut best = -1i64;
+    let mut best_idx: i64 = -1;
+    let mut adjacent_bonus = 0i64;
+    let mut last = '\0';
+    let mut last_index = 0usize;
+    for j in 0..t.len() {
+        if pi >= p.len() {
+            break;
+        }
+        let c = t[j];
+        if fold_eq(c, p[pi]) {
+            let mut score = 0;
+            if j == 0 {
+                score += FIRST_CHAR;
+            }
+            if last.is_lowercase() && c.is_uppercase() {
+                score += CAMEL_CASE;
+            }
+            if j != 0 && is_sep(last) {
+                score += AFTER_SEPARATOR;
+            }
+            if let Some(&lm) = matched.last() {
+                let bonus = if lm == last_index {
+                    adjacent_bonus * 2 + ADJACENT
+                } else {
+                    0
+                };
+                score += bonus;
+                adjacent_bonus += bonus;
+            }
+            if score > best {
+                best = score;
+                best_idx = j as i64;
+            }
+        }
+        let next_p = p.get(pi + 1).copied().unwrap_or('\0');
+        let next_c = t.get(j + 1).copied().unwrap_or('\0');
+        if (fold_eq(next_p, next_c) || next_c == '\0') && best_idx > -1 {
+            if matched.is_empty() {
+                best += (best_idx * LEADING_PENALTY).max(MAX_LEADING_PENALTY);
+            }
+            total += best;
+            matched.push(best_idx as usize);
+            best = -1;
+            best_idx = -1;
+            pi += 1;
+        }
+        last_index = j;
+        last = c;
+    }
+    if matched.len() != p.len() {
+        return None;
+    }
+    Some(total + matched.len() as i64 - t.len() as i64)
+}
+
+impl Completer {
+    pub fn new(kind: SourceKind, repo: Option<(String, String)>, hide_on_empty: bool) -> Completer {
+        Completer {
+            kind,
+            users: vec![],
+            labels: vec![],
+            filtered: vec![],
+            selected: 0,
+            visible: false,
+            hidden_by_user: false,
+            hide_on_empty,
+            fetch: FetchState::Idle,
+            repo,
+        }
+    }
+
+    pub fn context(&self, input: &str, pos: (usize, usize)) -> Ctx {
+        match self.kind {
+            SourceKind::Search => {
+                let w = word_at(input, pos);
+                if let Some(p) = prefix_of(&w.content, ["author:", "-author:"])
+                    .or(prefix_of(&w.content, ["label:", "-label:"]))
+                {
+                    let plen = p.chars().count();
+                    return Ctx {
+                        start: (w.start.0 + plen, w.start.1),
+                        end: w.end,
+                        content: w.content[p.len()..].to_string(),
+                    };
+                }
+                w
+            }
+            SourceKind::Labels => label_at(input, pos).0,
+            SourceKind::Mention { with_at } => {
+                if input.is_empty() {
+                    return Ctx::default();
+                }
+                let runes = line_chars(input, pos.1);
+                let x = pos.0.min(runes.len());
+                let mut start = 0;
+                for i in (0..x).rev() {
+                    if is_boundary(runes[i]) {
+                        start = i + 1;
+                        break;
+                    }
+                    start = i;
+                }
+                if with_at {
+                    start += 1;
+                }
+                if start > runes.len()
+                    || (start > 0 && start < runes.len() && with_at && runes[start - 1] != '@')
+                {
+                    return Ctx::default();
+                }
+                let end = (x..runes.len())
+                    .find(|i| is_boundary(runes[*i]))
+                    .unwrap_or(runes.len());
+                let end = end.max(start.min(runes.len()));
+                Ctx {
+                    start: (start.min(runes.len()), pos.1),
+                    end: (end, pos.1),
+                    content: runes[start.min(runes.len())..end].iter().collect(),
+                }
+            }
+        }
+    }
+
+    fn suggestions(&self, input: &str, pos: (usize, usize)) -> Vec<Suggestion> {
+        let users = || {
+            self.users.iter().map(|(l, n)| Suggestion {
+                value: l.clone(),
+                detail: n.clone(),
+            })
+        };
+        let labels = || {
+            self.labels.iter().map(|l| Suggestion {
+                value: l.name.clone(),
+                detail: l.description.trim().to_string(),
+            })
+        };
+        match self.kind {
+            SourceKind::Search => {
+                let w = word_at(input, pos);
+                if prefix_of(&w.content, ["author:", "-author:"]).is_some() {
+                    let mut v = vec![Suggestion {
+                        value: "@me".into(),
+                        detail: "Signed-in user".into(),
+                    }];
+                    v.extend(users().filter(|s| !s.value.is_empty()));
+                    v
+                } else if prefix_of(&w.content, ["label:", "-label:"]).is_some() {
+                    labels().collect()
+                } else {
+                    vec![]
+                }
+            }
+            SourceKind::Labels => labels().collect(),
+            SourceKind::Mention { .. } => users().collect(),
+        }
+    }
+
+    fn excluded(&self, input: &str, pos: (usize, usize)) -> Vec<String> {
+        if input.trim().is_empty() {
+            return vec![];
+        }
+        match self.kind {
+            SourceKind::Search => vec![],
+            SourceKind::Labels => {
+                let current = label_at(input, pos).0.content;
+                input
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty() && *s != current)
+                    .collect()
+            }
+            SourceKind::Mention { .. } => {
+                let current = word_at(input, pos).content;
+                input
+                    .split_whitespace()
+                    .map(String::from)
+                    .filter(|w| *w != current)
+                    .collect()
+            }
+        }
+    }
+
+    /// fuzzyselect.Filter
+    pub fn filter(&mut self, input: &str, pos: (usize, usize)) {
+        let ctx = self.context(input, pos);
+        let ex: Vec<String> = self
+            .excluded(input, pos)
+            .iter()
+            .map(|s| s.trim().to_lowercase())
+            .collect();
+        let items: Vec<Suggestion> = self
+            .suggestions(input, ctx.start)
+            .into_iter()
+            .filter(|s| !ex.contains(&s.value.trim().to_lowercase()))
+            .collect();
+        if ctx.content.is_empty() || items.is_empty() {
+            self.filtered = items.into_iter().take(MAX_VISIBLE).collect();
+        } else {
+            let mut scored: Vec<(i64, usize, Suggestion)> = items
+                .into_iter()
+                .enumerate()
+                .filter_map(|(i, s)| fuzzy_score(&ctx.content, &s.value).map(|sc| (sc, i, s)))
+                .collect();
+            scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+            self.filtered = scored
+                .into_iter()
+                .take(MAX_VISIBLE)
+                .map(|(_, _, s)| s)
+                .collect();
+        }
+        if self.selected >= self.filtered.len() {
+            self.selected = 0;
+        }
+    }
+
+    fn show(&mut self) {
+        self.selected = 0;
+        self.visible = true;
+    }
+
+    /// cmpcontroller.ShowCompletions
+    pub fn show_completions(&mut self, input: &str, pos: (usize, usize)) {
+        let ctx = self.context(input, pos);
+        if self.hide_on_empty && self.filtered.is_empty() {
+            return;
+        }
+        match self.kind {
+            SourceKind::Mention { with_at: true } => {
+                let line = line_chars(input, ctx.start.1);
+                if ctx.start.0 >= 1 && line.get(ctx.start.0 - 1) == Some(&'@') {
+                    self.show();
+                }
+            }
+            _ => self.show(),
+        }
+    }
+
+    pub fn selected_value(&self) -> Option<String> {
+        if !self.visible {
+            return None;
+        }
+        self.filtered.get(self.selected).map(|s| s.value.clone())
+    }
+
+    fn insert(&self, input: &str, value: &str, ctx: &Ctx) -> (String, (usize, usize)) {
+        let lines: Vec<&str> = input.split('\n').collect();
+        let y = ctx.start.1;
+        let runes: Vec<char> = lines.get(y).unwrap_or(&"").chars().collect();
+        let join = |ls: &[&str]| ls.join("\n");
+        let (new_line, cursor) = match self.kind {
+            SourceKind::Labels => {
+                let (info, first) = label_at(input, ctx.end);
+                let replacement = if first {
+                    format!("{value}, ")
+                } else {
+                    format!(" {value}, ")
+                };
+                let rest: String = runes[info.end.0.min(runes.len())..].iter().collect();
+                let rest = rest
+                    .strip_prefix(',')
+                    .unwrap_or(&rest)
+                    .trim_start_matches([' ', '\t'])
+                    .to_string();
+                let before: String = runes[..info.start.0.min(runes.len())].iter().collect();
+                (
+                    format!("{before}{replacement}{rest}"),
+                    info.start.0 + replacement.chars().count(),
+                )
+            }
+            _ => {
+                let replacement = format!("{value} ");
+                let before: String = runes[..ctx.start.0.min(runes.len())].iter().collect();
+                let after: String = runes[ctx.end.0.min(runes.len())..].iter().collect();
+                (
+                    format!("{before}{replacement}{after}"),
+                    ctx.start.0 + replacement.chars().count(),
+                )
+            }
+        };
+        let mut parts: Vec<String> = vec![];
+        if y > 0 {
+            parts.push(join(&lines[..y]));
+        }
+        parts.push(new_line);
+        if y + 1 < lines.len() {
+            parts.push(join(&lines[y + 1..]));
+        }
+        (parts.join("\n"), (cursor, y))
+    }
+
+    /// inputbox.Update + cmpcontroller key handling. Returns true when the key was consumed.
+    pub fn handle_key<E: Editable>(&mut self, key: &str, input: &mut E) -> bool {
+        if key == "ctrl+h" {
+            if self.visible {
+                self.hidden_by_user = true;
+                self.visible = false;
+            } else {
+                self.hidden_by_user = false;
+                self.filter(&input.text(), input.cursor_pos());
+                self.show();
+            }
+            return true;
+        }
+        if self.visible || !self.filtered.is_empty() {
+            match key {
+                "up" | "ctrl+p" => {
+                    if !self.filtered.is_empty() {
+                        self.selected =
+                            (self.selected + self.filtered.len() - 1) % self.filtered.len();
+                    }
+                    return true;
+                }
+                "down" | "ctrl+n" => {
+                    if !self.filtered.is_empty() {
+                        self.selected = (self.selected + 1) % self.filtered.len();
+                    }
+                    return true;
+                }
+                "ctrl+y" => {
+                    if let Some(v) = self.selected_value() {
+                        let text = input.text();
+                        let ctx = self.context(&text, input.cursor_pos());
+                        let (nv, pos) = self.insert(&text, &v, &ctx);
+                        input.set_text(&nv, pos);
+                        if !matches!(self.kind, SourceKind::Search) {
+                            self.filter(&input.text(), input.cursor_pos());
+                            self.show();
+                        }
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let before = self.context(&input.text(), input.cursor_pos());
+        let consumed = input.key(key);
+        let text = input.text();
+        let pos = input.cursor_pos();
+        self.filter(&text, pos);
+        let after = self.context(&text, pos);
+        if after != before {
+            if self.hide_on_empty && after == Ctx::default() {
+                self.visible = false;
+            } else if !self.hidden_by_user {
+                self.show_completions(&text, pos);
+            }
+        }
+        consumed
+    }
+
+    /// fuzzyselect.View: rows, status and help inside a rounded popup.
+    pub fn view(&self, t: &Theme, width: usize, spinner: usize, top_border: bool) -> Block {
+        if !self.visible {
+            return vec![];
+        }
+        let border = Style::default().fg(theme::OPEN_ISSUE);
+        let sel_bg = Style::default().bg(t.selected_background);
+        let mut rows: Block = vec![];
+        for (i, s) in self.filtered.iter().take(MAX_VISIBLE).enumerate() {
+            let selected = i == self.selected;
+            let bg = if selected { sel_bg } else { Style::default() };
+            let mut spans = vec![if selected {
+                span(
+                    format!("{} ", icons::SELECTION),
+                    Style::default()
+                        .fg(t.success_text)
+                        .bg(t.selected_background),
+                )
+            } else {
+                raw("  ")
+            }];
+            spans.push(span(
+                s.value.clone(),
+                t.primary().add_modifier(Modifier::BOLD).patch(bg),
+            ));
+            spans.push(span(" ", bg));
+            spans.push(span(s.detail.clone(), t.faint().patch(bg)));
+            let l = Line::from(spans);
+            rows.push(if selected {
+                fit_line(&l, width, sel_bg)
+            } else {
+                fit_line(&l, width, Style::default())
+            });
+        }
+        let mut parts: Block = rows;
+        if parts.is_empty() && matches!(self.fetch, FetchState::Idle | FetchState::Success) {
+            parts.push(Line::from(span(
+                format!(" no results{}", icons::ELLIPSIS),
+                t.faint().add_modifier(Modifier::ITALIC),
+            )));
+        }
+        match &self.fetch {
+            FetchState::Loading => parts.push(Line::from(vec![
+                raw(" "),
+                span(SPINNER[spinner % SPINNER.len()], t.secondary()),
+                span(
+                    format!("fetching suggestions{}", icons::ELLIPSIS),
+                    t.faint().add_modifier(Modifier::ITALIC),
+                ),
+            ])),
+            FetchState::Error(e) => parts.push(Line::from(vec![
+                raw(" "),
+                span(icons::FAILURE, Style::default().fg(t.error_text)),
+                span(format!(" {e}"), t.faint().add_modifier(Modifier::ITALIC)),
+            ])),
+            _ => {}
+        }
+        parts.push(Line::from(span(
+            "─".repeat(width),
+            Style::default().fg(t.faint_border),
+        )));
+        let sep = || span(" • ", Style::default().fg(t.secondary_border));
+        let mut help = vec![raw(" ")];
+        for (i, (k, d)) in [
+            ("↓/ctrl+n", "next"),
+            ("↑/ctrl+p", "previous"),
+            ("ctrl+y", "select"),
+            ("ctrl+f", "refresh"),
+            ("ctrl+h", "toggle"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if i > 0 {
+                help.push(sep());
+            }
+            help.push(span(k, t.primary()));
+            help.push(span(format!(" {d}"), t.faint()));
+        }
+        parts.push(truncate_line(&Line::from(help), width, icons::ELLIPSIS));
+
+        let mut out: Block = vec![];
+        if top_border {
+            out.push(Line::from(span(format!("╭{}╮", "─".repeat(width)), border)));
+        }
+        for l in parts {
+            out.push(concat(vec![
+                Line::from(span("│", border)),
+                fit_line(&l, width, Style::default()),
+                Line::from(span("│", border)),
+            ]));
+        }
+        out.push(Line::from(span(format!("╰{}╯", "─".repeat(width)), border)));
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::input::{TextArea, TextInput};
+
+    #[test]
+    fn search_context_strips_prefixes() {
+        let c = Completer::new(SourceKind::Search, None, false);
+        let ctx = c.context("is:open author:jua", (18, 0));
+        assert_eq!(ctx.content, "jua");
+        assert_eq!(ctx.start, (15, 0));
+    }
+
+    #[test]
+    fn selecting_a_label_rewrites_the_list() {
+        let mut c = Completer::new(SourceKind::Labels, None, false);
+        c.labels = vec![
+            Label {
+                name: "bug".into(),
+                ..Default::default()
+            },
+            Label {
+                name: "docs".into(),
+                ..Default::default()
+            },
+        ];
+        let mut input = TextArea::new("bug, do");
+        c.handle_key("c", &mut input);
+        c.visible = true;
+        assert_eq!(c.filtered.first().map(|s| s.value.as_str()), Some("docs"));
+        c.handle_key("ctrl+y", &mut input);
+        assert_eq!(input.value(), "bug, docs, ");
+    }
+
+    #[test]
+    fn mention_requires_at_sign() {
+        let mut c = Completer::new(SourceKind::Mention { with_at: true }, None, true);
+        c.users = vec![("juanibiapina".into(), "Juan".into())];
+        let mut input = TextArea::new("hi ");
+        c.handle_key("@", &mut input);
+        c.handle_key("j", &mut input);
+        assert!(c.visible);
+        c.handle_key("ctrl+y", &mut input);
+        assert_eq!(input.value(), "hi @juanibiapina ");
+
+        let mut plain = TextInput::new("");
+        let mut s = Completer::new(SourceKind::Search, None, false);
+        s.handle_key("x", &mut plain);
+        assert!(s.filtered.is_empty());
+    }
+
+    #[test]
+    fn fuzzy_matches_sahilm_scores() {
+        // first char +10, then adjacent +5 and +15, minus 1 unmatched char
+        assert_eq!(fuzzy_score("doc", "docs"), Some(29));
+        assert!(fuzzy_score("doc", "docs").unwrap() > fuzzy_score("doc", "undocumented").unwrap());
+        assert!(fuzzy_score("xyz", "docs").is_none());
+    }
+}
