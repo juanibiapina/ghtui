@@ -29,11 +29,15 @@ If you like quickly navigating with your keyboard, seeing the PRs and issues you
 ```sh
 git clone https://github.com/juanibiapina/gh-dash
 cd gh-dash
-cargo install --path rust
+cargo install --path .
 ```
 
 This installs `gh-dash` to `~/.cargo/bin`. To update, run `git pull` and
-`cargo install --path rust` again.
+`cargo install --path .` again.
+
+It authenticates like `gh`: `$GH_TOKEN` or `$GITHUB_TOKEN` when set, otherwise
+`gh auth token`. Mutations (merge, comment, label, checkout, ...) run through the
+`gh` CLI, which must be on `PATH`.
 
 ## 📃 Docs
 
@@ -52,6 +56,17 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md).
 - [Chroma](https://github.com/alecthomas/chroma) lexers for syntax highlighting
 - [gh](https://github.com/cli/cli) for the GitHub functionality
 - [delta](https://github.com/dandavison/delta) for viewing PR diffs
+
+## Differences from upstream
+
+These fix bugs in the Go version:
+
+- A new section shows an empty preview instead of the previous section's PR.
+- Switching into the branches view (`FF_REPO_VIEW`) with `s` loads the branches;
+  Go shows "No sections defined".
+- The branches view renders branches without a PR in the compact table; Go panics.
+- The branch preview follows the selection after searching or checking out.
+- Custom branch keybindings run their command.
 
 ## Credits
 

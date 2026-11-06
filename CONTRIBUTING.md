@@ -2,11 +2,10 @@
 
 ## Working on the Code
 
-The app is a Rust crate in [rust/](./rust). Install Rust with
-[rustup](https://rustup.rs), then build and test from that directory:
+The app is a Rust crate. Install Rust with [rustup](https://rustup.rs), then
+build and test:
 
 ```sh
-cd rust
 cargo build
 cargo test
 cargo clippy
