@@ -2,7 +2,7 @@
 
 A port of gh-dash to Rust with [ratatui](https://ratatui.rs). It reads the same
 config files, uses the same keybindings, and draws the same screens as the Go
-version in the repository root.
+version it was ported from.
 
 ## Build
 
@@ -11,9 +11,8 @@ cd rust
 cargo build --release
 ```
 
-The binary is `target/release/gh-dash`. To use it as the `gh dash` extension,
-copy it over the Go build in the repository root and run `gh extension install .`
-from there.
+The binary is `target/release/gh-dash`. `cargo install --path rust` from the
+repository root installs it to `~/.cargo/bin`.
 
 It authenticates like `gh`: `$GH_TOKEN` or `$GITHUB_TOKEN` when set, otherwise
 `gh auth token`. Mutations (merge, comment, label, checkout, ...) run through the

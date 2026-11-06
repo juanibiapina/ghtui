@@ -8,9 +8,6 @@
 
 <p align="center">
   A rich terminal UI for GitHub that doesn't break your flow.
-  <br />
-  <br />
-  <a href="https://www.jetify.com/docs/devbox" alt="Built with Devbox"><img src="https://www.jetify.com/img/devbox/shield_moon.svg" /></a>
 </p>
 
 <br />
@@ -32,11 +29,11 @@ If you like quickly navigating with your keyboard, seeing the PRs and issues you
 ```sh
 git clone https://github.com/juanibiapina/gh-dash
 cd gh-dash
-go build -o gh-dash .
-gh extension install .
+cargo install --path rust
 ```
 
-To update, run `git pull` and `go build -o gh-dash .` again.
+This installs `gh-dash` to `~/.cargo/bin`. To update, run `git pull` and
+`cargo install --path rust` again.
 
 ## 📃 Docs
 
@@ -50,14 +47,13 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 `DASH` uses:
 
-- [bubbletea](https://github.com/charmbracelet/bubbletea) for the TUI
-- [lipgloss](https://github.com/charmbracelet/lipgloss) for the styling
-- [glamour](https://github.com/charmbracelet/glamour) for rendering markdown
-- [vhs](https://github.com/charmbracelet/vhs) for generating the GIF
-- [cobra](https://github.com/spf13/cobra) for the CLI
+- [ratatui](https://ratatui.rs) for the TUI
+- [pulldown-cmark](https://github.com/pulldown-cmark/pulldown-cmark) for parsing markdown
+- [Chroma](https://github.com/alecthomas/chroma) lexers for syntax highlighting
 - [gh](https://github.com/cli/cli) for the GitHub functionality
 - [delta](https://github.com/dandavison/delta) for viewing PR diffs
 
 ## Credits
 
-Forked from [dlvhdr/gh-dash](https://github.com/dlvhdr/gh-dash) by Dolev Hadar, MIT licensed.
+Forked from [dlvhdr/gh-dash](https://github.com/dlvhdr/gh-dash) by Dolev Hadar, MIT licensed, and
+ported from Go to Rust.
