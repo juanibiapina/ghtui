@@ -1,6 +1,7 @@
 //! Drawing: tabs, sections, preview, footer and popups.
 
 use ratatui::Frame;
+use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
@@ -198,11 +199,7 @@ fn tabs_line(app: &App) -> Line<'static> {
         .collect();
     // The carousel can overflow its width by a cell; the screen edge clips the logo instead.
     let car = carousel(&titles, app.curr, cw, app);
-    fit_line(
-        &concat(vec![car, button, logo]),
-        app.width,
-        Style::default(),
-    )
+    Line::from_iter([car, button, logo].into_iter().flat_map(|l| l.spans))
 }
 
 fn view_button(app: &App, view: ViewType) -> Vec<Span<'static>> {
@@ -331,17 +328,19 @@ fn running_task(app: &App) -> Option<Line<'static>> {
     Some(Line::from(spans))
 }
 
-fn footer_line(app: &App) -> Line<'static> {
+fn render_footer(app: &App, area: Rect, buf: &mut Buffer) {
     let t = &app.theme;
     if let Some(e) = &app.error {
         let first = e.lines().next().unwrap_or_default().to_string();
-        return Line::from(vec![span(
+        return span(
             format!("{} {first}", icons::FAILURE),
             Style::default().fg(t.error_text),
-        )]);
+        )
+        .render(area, buf);
     }
     if app.confirm_quit_shown {
-        return Line::from("Really quit? (Press y/enter to confirm, any other key to cancel)");
+        return Line::from("Really quit? (Press y/enter to confirm, any other key to cancel)")
+            .render(area, buf);
     }
     let pager_style = Style::default().bg(t.selected_background).fg(t.faint_text);
     let left_text = if let Some(p) = &app.notif_prompt {
@@ -387,16 +386,16 @@ fn footer_line(app: &App) -> Line<'static> {
     ));
     let switcher = view_switcher(app);
     let right = running_task(app).unwrap_or_default();
-    let used = line_width(&switcher) + line_width(&left) + line_width(&right) + line_width(&help);
-    let spacing = Line::from(span(
-        " ".repeat(app.width.saturating_sub(used)),
-        Style::default().bg(t.selected_background),
-    ));
-    fit_line(
-        &concat(vec![switcher, left, spacing, right, help]),
-        app.width,
-        Style::default().bg(t.selected_background),
-    )
+    let left = Line::from_iter(switcher.spans.into_iter().chain(left.spans));
+    let right = Line::from_iter(right.spans.into_iter().chain(help.spans));
+    let [left_area, right_area] = Layout::horizontal([
+        Constraint::Fill(1),
+        Constraint::Length(right.width() as u16),
+    ])
+    .areas(area);
+    buf.set_style(left_area, Style::default().bg(t.selected_background));
+    left.render(left_area, buf);
+    right.render(right_area, buf);
 }
 
 /// One row in the middle of `area`.
@@ -524,7 +523,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Text::from(popup).render(rect.intersection(area), buf);
     }
 
-    footer_line(app).render(areas.footer, buf);
+    render_footer(app, areas.footer, buf);
     if let Some(help) = &app.help {
         help.render(area, buf, t);
     }
