@@ -1,8 +1,14 @@
 ---
-const { icon } = Astro.props;
 import "../styles/nerd-font.css";
+const { icon } = Astro.props;
 ---
 
-<code class="rounded bg-blue-950 text-xl text-blue-200"
-  ><i class={`nf ${icon}`}></i></code
->
+<code><i class={`nf ${icon}`}></i></code>
+
+<style>
+  code {
+    background: var(--sl-color-black);
+    color: var(--sl-color-accent-high);
+    font-size: var(--sl-text-xl);
+  }
+</style>

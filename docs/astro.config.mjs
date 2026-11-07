@@ -1,11 +1,10 @@
 // @ts-check
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
-import tailwindcss from "@tailwindcss/vite";
 import starlightLinksValidator from "starlight-links-validator";
 
 const ogUrl = new URL("og.png", "https://juanm.dev/ghtui/").href;
-const ogImageAlt = "ghtui: Your GitHub in the Terminal";
+const ogImageAlt = "ghtui: GitHub in the terminal";
 
 // https://astro.build/config
 export default defineConfig({
@@ -15,7 +14,7 @@ export default defineConfig({
     starlight({
       title: "ghtui",
       plugins: [starlightLinksValidator()],
-      favicon: "/favicon.png",
+      favicon: "/favicon.svg",
       customCss: ["./src/styles/custom.css", "./src/fonts/font-face.css"],
       head: [
         {
@@ -36,7 +35,7 @@ export default defineConfig({
         },
       ],
       components: {
-        Header: "./src/components/Header.astro",
+        ThemeSelect: "./src/components/ThemeSelect.astro",
       },
       social: [
         {
@@ -57,7 +56,9 @@ export default defineConfig({
         {
           label: "Keybindings",
           collapsed: true,
-          items: [{ autogenerate: { directory: "getting-started/keybindings" } }],
+          items: [
+            { autogenerate: { directory: "getting-started/keybindings" } },
+          ],
         },
         {
           label: "Configuration",
@@ -88,8 +89,4 @@ export default defineConfig({
       ],
     }),
   ],
-
-  vite: {
-    plugins: [tailwindcss()],
-  },
 });
