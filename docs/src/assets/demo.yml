@@ -1,19 +1,15 @@
 prSections:
   - title: My Pull Requests
-    filters: is:open author:@me owner:charmbracelet
-  - title: Review Requested
-    filters: review-requested:@me owner:charmbraclet
-  - title: My Team
-    filters: is:open owner:neovim author:gpanders author:tjdevries
-  - title: Open Source
-    filters: is:open repo:ghostty-org/ghostty repo:neovim/neovim
+    filters: is:open is:public author:@me
+  - title: Ratatui
+    filters: is:open repo:ratatui/ratatui
+  - title: GitHub CLI
+    filters: is:open repo:cli/cli
 issuesSections:
-  - title: Ghostty
-    filters: is:open ghostty-org/ghostty
-  - title: Neovim
-    filters: is:open neovim/neovim
-  - title: Bubbletea
-    filters: repo:charmbracelet/bubbletea
+  - title: Ratatui
+    filters: is:open repo:ratatui/ratatui
+  - title: GitHub CLI
+    filters: is:open repo:cli/cli
 
 defaults:
   preview:
@@ -21,12 +17,10 @@ defaults:
     width: 40
   prsLimit: 20
   issuesLimit: 20
-  view: repo
+  view: prs
 keybindings:
   prs: []
 repoPaths: {}
-pager:
-  diff: diffnav
 theme:
   colors:
     text:

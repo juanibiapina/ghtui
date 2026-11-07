@@ -1,13 +1,15 @@
 prSections:
   - title: My Pull Requests
-    filters: is:open author:@me owner:juanibiapina
-  - title: Needs My Review
-    filters: review-requested:@me owner:juanibiapina
+    filters: is:open is:public author:@me
+  - title: Ratatui
+    filters: is:open repo:ratatui/ratatui
+  - title: GitHub CLI
+    filters: is:open repo:cli/cli
 issuesSections:
-  - title: Ghostty
-    filters: is:open ghostty-org/ghostty
-  - title: Neovim
-    filters: is:open neovim/neovim
+  - title: Ratatui
+    filters: is:open repo:ratatui/ratatui
+  - title: GitHub CLI
+    filters: is:open repo:cli/cli
 
 defaults:
   preview:
@@ -15,7 +17,7 @@ defaults:
     width: 40
   prsLimit: 20
   issuesLimit: 20
-  view: repo
+  view: prs
 keybindings:
   universal:
     - key: g
@@ -29,9 +31,7 @@ keybindings:
         nvim -c ":silent Octo pr edit {{.PrNumber}}"
         '
 repoPaths:
-  juanibiapina/*: ~/code/personal/*
-pager:
-  diff: diffnav
+  juanibiapina/*: ~/workspace/juanibiapina/*
 theme:
   colors:
     text:

@@ -1,20 +1,20 @@
-Output overview.webm
-Output overview.mp4
+Output ../../public/overview.webm
+Output ../../public/overview.mp4
 Output overview.gif
 
 Set PlaybackSpeed 1.3
 Set Theme TokyoNight
 Set Padding 0
 Set FontSize 24
-Set FontFamily "CommitMono Nerd Font"
+Set FontFamily "CommitMono Nerd Font Mono"
 Set Width 1600
 Set Height 800
 
 Hide
-Type "ghtui --config demo.yml"
+Type "DEMO=$PWD; cd $(mktemp -d) && git clone -q https://github.com/juanibiapina/ghtui && cd ghtui && clear && ghtui --config $DEMO/demo.yml"
 
 Enter
-Sleep 8s
+Sleep 15s
 Show
 
 Set TypingSpeed 600ms

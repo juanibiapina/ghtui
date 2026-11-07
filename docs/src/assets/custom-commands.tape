@@ -1,19 +1,18 @@
-Output custom-commands.webm
-Output custom-commands.mp4
-Output custom-commands.gif
+Output ../../public/custom-commands.webm
+Output ../../public/custom-commands.mp4
 
 Set Theme TokyoNight
 Set Padding 0
 Set FontSize 24
-Set FontFamily "CommitMono Nerd Font"
+Set FontFamily "CommitMono Nerd Font Mono"
 Set Width 1400
 Set Height 600
 
 Hide
-Type "ghtui --config custom-commands.yml"
+Type "DEMO=$PWD; cd $(mktemp -d) && git clone -q https://github.com/juanibiapina/ghtui && cd ghtui && clear && ghtui --config $DEMO/custom-commands.yml"
 
 Enter
-Sleep 8s
+Sleep 15s
 Show
 
 Sleep 1000ms
