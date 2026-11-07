@@ -1,7 +1,4 @@
 debug.log
 .DS_Store
-docs/broken-links.log
-testdata/gh-schema.graphql
-.task/
 resterm.env.json
 /target

@@ -40,7 +40,7 @@ It authenticates like `gh`: `$GH_TOKEN` or `$GITHUB_TOKEN` when set, otherwise
 
 ## 📃 Docs
 
-The docs live in [docs/src/content/docs](./docs/src/content/docs).
+Read the docs at [juanm.dev/ghtui](https://juanm.dev/ghtui/).
 
 ## 🙏 Contributing
 

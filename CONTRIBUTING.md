@@ -20,11 +20,15 @@ The UI is built on [ratatui](https://ratatui.rs).
 ### Debugging
 
 - Log with the `crate::debug!`, `crate::info!`, `crate::warn!` and `crate::error!` macros
-- Tail the log by running `task logs`
-- Run `ghtui --debug` in another terminal window / pane; `LOG_LEVEL` sets the level
+- Run `ghtui --debug` in one terminal pane; `LOG_LEVEL` sets the level
+- Run `tail -f debug.log` in another pane, in the same directory
 
-### Running the Docs Locally
+## Docs
 
-- Run the docs site by running `task docs`
+The docs site lives in `docs/` and deploys to <https://juanm.dev/ghtui/> on every push to
+`main`. Run it locally with `make docs`, then open `localhost:4321/ghtui/`.
 
-* Go to `localhost:4321` to view them
+`make media` re-records the videos and screenshots with [vhs](https://github.com/charmbracelet/vhs).
+It needs `vhs`, `ffmpeg` and ImageMagick, plus the font in
+`docs/src/fonts/CommitMonoNerdFontMono-Regular.otf` installed on your system. The recordings use
+your GitHub account, so their filters only show public repositories.

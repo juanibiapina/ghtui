@@ -1,5 +1,3 @@
-# Records the screenshot scenes; take the stills with:
-# ffmpeg -ss 1 -i /tmp/ghtui-screenshots.mp4 -frames:v 1 tokyo.png (help at 4.5s, catpuccin at 6s, gruv at 8s)
 Output "/tmp/ghtui-screenshots.mp4"
 
 Set Theme TokyoNight
