@@ -7,6 +7,7 @@ use std::process::{Command, ExitStatus};
 use std::time::{Duration, Instant};
 
 use chrono::Local;
+use ratatui::layout::{Constraint, Layout, Rect};
 
 use crate::bookmarks;
 use crate::complete::{Completer, FetchState, SourceKind};
@@ -60,13 +61,33 @@ pub enum Position {
     Bottom,
 }
 
+/// The screen regions, in cells.
 #[derive(Clone, Copy, Debug)]
-pub struct Layout {
+pub struct Areas {
     pub position: Position,
-    pub main_w: usize,
-    pub main_h: usize,
-    pub preview_w: usize,
-    pub preview_h: usize,
+    pub tabs: Rect,
+    pub sections: Rect,
+    pub preview: Option<PreviewAreas>,
+    pub footer: Rect,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PreviewAreas {
+    /// The rule above a bottom preview, or the column left of a right preview.
+    pub rule: Rect,
+    pub content: Rect,
+    pub pager: Rect,
+}
+
+impl PreviewAreas {
+    /// The preview without its rule.
+    pub fn body(&self) -> Rect {
+        self.content.union(self.pager)
+    }
+
+    pub fn outer(&self) -> Rect {
+        self.rule.union(self.body())
+    }
 }
 
 pub struct App {
@@ -116,6 +137,16 @@ pub struct App {
     pub last_refresh: Instant,
     pub version: String,
     pub latest_version: String,
+}
+
+/// A config size: a fraction of `total` when between 0 and 1, otherwise cells, capped at `total`.
+fn fraction_of(size: f64, total: usize) -> usize {
+    let cells = if size > 0.0 && size < 1.0 {
+        size * total as f64
+    } else {
+        size
+    };
+    (cells as usize).min(total)
 }
 
 fn task_id(prefix: &str) -> String {
@@ -327,89 +358,81 @@ impl App {
 
     // ---------------- layout ----------------
 
-    pub fn layout(&self) -> Layout {
-        let base = self
-            .height
-            .saturating_sub(self.tabs_height() + FOOTER_HEIGHT);
+    fn preview_position(&self) -> Position {
         let preview = &self.cfg.defaults.preview;
-        let position = self
-            .position_override
+        self.position_override
             .unwrap_or_else(|| match preview.position.as_str() {
                 "right" => Position::Right,
                 "bottom" => Position::Bottom,
                 _ => {
-                    let mut w = preview.width;
-                    if w > 0.0 && w < 1.0 {
-                        w *= self.width as f64;
-                    }
-                    let pw = (w as usize).min(self.width);
+                    let pw = fraction_of(preview.width, self.width);
                     if self.width.saturating_sub(pw) < MIN_TABLE_WIDTH_FOR_RIGHT_PREVIEW {
                         Position::Bottom
                     } else {
                         Position::Right
                     }
                 }
-            });
+            })
+    }
+
+    pub fn areas(&self) -> Areas {
+        use Constraint::{Fill, Length};
+        let screen = Rect::new(0, 0, self.width as u16, self.height as u16);
+        let [tabs, main, footer] = Layout::vertical([
+            Length(self.tabs_height() as u16),
+            Fill(1),
+            Length(FOOTER_HEIGHT as u16),
+        ])
+        .areas(screen);
+        let position = self.preview_position();
+        let mut areas = Areas {
+            position,
+            tabs,
+            sections: main,
+            preview: None,
+            footer,
+        };
         if !self.sidebar_open {
-            return Layout {
-                position,
-                main_w: self.width,
-                main_h: base,
-                preview_w: 0,
-                preview_h: 0,
-            };
+            return areas;
         }
-        match position {
+        let preview = &self.cfg.defaults.preview;
+        let (sections, rule, body) = match position {
             Position::Bottom => {
-                let avail = base.saturating_sub(1);
-                let mut h = preview.height;
-                if h > 0.0 && h < 1.0 {
-                    h *= avail as f64;
-                }
-                let ph = (h as usize).min(avail);
-                Layout {
-                    position,
-                    main_w: self.width,
-                    main_h: avail - ph,
-                    preview_w: self.width,
-                    preview_h: ph,
-                }
+                let avail = main.height.saturating_sub(1);
+                let ph = fraction_of(preview.height, avail as usize) as u16;
+                let [sections, rule, body] =
+                    Layout::vertical([Fill(1), Length(1), Length(ph)]).areas(main);
+                (sections, rule, body)
             }
             Position::Right => {
-                let mut w = preview.width;
-                if w > 0.0 && w < 1.0 {
-                    w *= self.width as f64;
-                }
-                let pw = (w as usize).min(self.width);
-                Layout {
-                    position,
-                    main_w: self.width - pw,
-                    main_h: base,
-                    preview_w: pw,
-                    preview_h: 0,
-                }
+                let pw = fraction_of(preview.width, self.width) as u16;
+                let [sections, outer] = Layout::horizontal([Fill(1), Length(pw)]).areas(main);
+                let [rule, body] = Layout::horizontal([Length(1), Fill(1)]).areas(outer);
+                (sections, rule, body)
             }
-        }
+        };
+        let [content, pager] = Layout::vertical([Fill(1), Length(1)]).areas(body);
+        areas.sections = sections;
+        areas.preview = Some(PreviewAreas {
+            rule,
+            content,
+            pager,
+        });
+        areas
     }
 
     pub fn sidebar_content_width(&self) -> usize {
-        let l = self.layout();
-        match l.position {
-            Position::Bottom => l.preview_w,
-            Position::Right => l.preview_w.saturating_sub(1),
-        }
+        self.areas().preview.map_or(0, |p| p.content.width as usize)
     }
 
     pub fn sidebar_viewport_height(&self) -> usize {
-        let l = self.layout();
-        match l.position {
-            Position::Bottom => l.preview_h.saturating_sub(1),
-            Position::Right => l.main_h.saturating_sub(1),
-        }
+        self.areas()
+            .preview
+            .map_or(0, |p| p.content.height as usize)
     }
 
     fn body_height(&self) -> usize {
-        self.layout().main_h.saturating_sub(5)
+        (self.areas().sections.height as usize).saturating_sub(5)
     }
 
     /// Rows above the sections: the tabs, or one empty row in the repo view, which has none.
@@ -1412,7 +1435,7 @@ impl App {
             self.schedule_notification_preview();
         } else if u.toggle_preview_position.matches(key) {
             if self.sidebar_open {
-                self.position_override = Some(if self.layout().position == Position::Right {
+                self.position_override = Some(if self.areas().position == Position::Right {
                     Position::Bottom
                 } else {
                     Position::Right
@@ -2822,7 +2845,8 @@ impl App {
                 }
             }
             RowRef::Branch(b) => {
-                let rule_w = self.layout().preview_w.saturating_sub(5);
+                let preview_w = self.areas().preview.map_or(0, |p| p.outer().width);
+                let rule_w = (preview_w as usize).saturating_sub(5);
                 views::branch_view(t, &b, self.branch_status.as_ref(), rule_w)
             }
         }

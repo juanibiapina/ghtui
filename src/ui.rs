@@ -1,9 +1,10 @@
 //! Drawing: tabs, sections, preview, footer and popups.
 
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui::text::{Line, Span, Text};
+use ratatui::widgets::{Block, BorderType, Borders, Widget};
 use unicode_width::UnicodeWidthChar;
 
 use crate::app::{App, Position, TaskState};
@@ -398,160 +399,111 @@ fn footer_line(app: &App) -> Line<'static> {
     )
 }
 
+/// One row in the middle of `area`.
+fn middle_row(area: Rect) -> Rect {
+    Rect {
+        y: area.y + area.height / 2,
+        height: area.height.min(1),
+        ..area
+    }
+}
+
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
     let buf = f.buffer_mut();
     let t = &app.theme;
-    let w = area.width as usize;
+    let areas = app.areas();
+    let border = Style::default().fg(t.primary_border);
+    let thick_rule = Block::new()
+        .borders(Borders::TOP)
+        .border_type(BorderType::Thick)
+        .border_style(border);
 
     // The repo view has no tabs, leaving one empty line.
-    let repo_view = app.view == crate::config::ViewType::Repo;
-    if !repo_view {
-        draw_block(buf, Rect::new(0, 0, area.width, 1), &[tabs_line(app)]);
-        draw_block(
-            buf,
-            Rect::new(0, 1, area.width, 1),
-            &[Line::from(span(
-                "━".repeat(w),
-                Style::default().fg(t.primary_border),
-            ))],
-        );
+    if app.view != ViewType::Repo {
+        let [tabs, rule] = Layout::vertical([Constraint::Length(1); 2]).areas(areas.tabs);
+        tabs_line(app).render(tabs, buf);
+        thick_rule.clone().render(rule, buf);
     }
 
-    let l = app.layout();
-    let top = app.tabs_height() as u16;
-    let mut sec_h = l.main_h;
     match app.section() {
         Some(s) => {
             let rc = RenderCtx {
                 cfg: &app.cfg,
                 theme: t,
                 spinner: app.spinner,
-                width: l.main_w,
-                height: l.main_h,
+                width: areas.sections.width as usize,
+                height: areas.sections.height as usize,
             };
-            let block = s.view(&rc);
-            sec_h = sec_h.max(block.len());
-            draw_block(
-                buf,
-                Rect::new(0, top, l.main_w as u16, sec_h as u16),
-                &block,
-            );
+            Text::from(s.view(&rc)).render(areas.sections, buf);
         }
-        None => {
-            let msg = align_line(
-                Line::from("No sections defined"),
-                l.main_w,
-                Align::Center,
-                Style::default(),
-            );
-            draw_block(
-                buf,
-                Rect::new(0, top + (l.main_h / 2) as u16, l.main_w as u16, 1),
-                &[msg],
-            );
-        }
+        None => Line::from("No sections defined")
+            .centered()
+            .render(middle_row(areas.sections), buf),
     }
 
-    if app.sidebar_open {
+    if let Some(p) = areas.preview {
         let content = app
             .sidebar_cache
             .as_ref()
-            .map(|(_, b)| b.clone())
+            .map(|(_, b)| b.as_slice())
             .unwrap_or_default();
-        let vh = app.sidebar_viewport_height();
+        let vh = p.content.height as usize;
         let scroll = app.sidebar_scroll.min(content.len().saturating_sub(vh));
-        let visible: Block = content.iter().skip(scroll).take(vh).cloned().collect();
-        let percent = if content.len() <= vh {
-            100
+        match areas.position {
+            Position::Bottom => thick_rule.render(p.rule, buf),
+            Position::Right => Block::new()
+                .borders(Borders::LEFT)
+                .border_style(border)
+                .render(p.rule, buf),
+        }
+        if content.is_empty() {
+            Line::from("Nothing selected...")
+                .centered()
+                .render(middle_row(p.body()), buf);
         } else {
-            (scroll as f64 / (content.len() - vh) as f64 * 100.0) as usize
-        };
-        let pager = Line::from(span(
-            format!("{percent}%"),
-            t.faint().add_modifier(Modifier::BOLD),
-        ));
-        let empty = content.is_empty();
-        match l.position {
-            Position::Bottom => {
-                let y = top + sec_h as u16;
-                draw_block(
-                    buf,
-                    Rect::new(0, y, area.width, 1),
-                    &[Line::from(span(
-                        "━".repeat(w),
-                        Style::default().fg(t.primary_border),
-                    ))],
-                );
-                let rect = Rect::new(0, y + 1, l.preview_w as u16, vh as u16);
-                if empty {
-                    let msg = align_line(
-                        Line::from("Nothing selected..."),
-                        l.preview_w,
-                        Align::Center,
-                        Style::default(),
-                    );
-                    draw_block(
-                        buf,
-                        Rect::new(0, y + 1 + (l.preview_h / 2) as u16, l.preview_w as u16, 1),
-                        &[msg],
-                    );
-                } else {
-                    draw_block(buf, rect, &visible);
-                    draw_block(
-                        buf,
-                        Rect::new(0, y + 1 + vh as u16, l.preview_w as u16, 1),
-                        &[pager],
-                    );
-                }
-            }
-            Position::Right => {
-                let x = l.main_w as u16;
-                let border = Style::default().fg(t.primary_border);
-                for i in 0..l.main_h {
-                    draw_block(
-                        buf,
-                        Rect::new(x, top + i as u16, 1, 1),
-                        &[Line::from(span("│", border))],
-                    );
-                }
-                let cw = l.preview_w.saturating_sub(1) as u16;
-                if empty {
-                    let msg = align_line(
-                        Line::from("Nothing selected..."),
-                        cw as usize,
-                        Align::Center,
-                        Style::default(),
-                    );
-                    draw_block(
-                        buf,
-                        Rect::new(x + 1, top + (l.main_h / 2) as u16, cw, 1),
-                        &[msg],
-                    );
-                } else {
-                    draw_block(buf, Rect::new(x + 1, top, cw, vh as u16), &visible);
-                    draw_block(buf, Rect::new(x + 1, top + vh as u16, cw, 1), &[pager]);
-                }
-            }
+            let percent = if content.len() <= vh {
+                100
+            } else {
+                (scroll as f64 / (content.len() - vh) as f64 * 100.0) as usize
+            };
+            Text::from(
+                content[scroll..]
+                    .iter()
+                    .take(vh)
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            )
+            .render(p.content, buf);
+            Line::from(span(
+                format!("{percent}%"),
+                t.faint().add_modifier(Modifier::BOLD),
+            ))
+            .render(p.pager, buf);
         }
     }
 
     // Autocomplete popups are layers over the content, like lipgloss.NewLayer in ui.View.
+    let sections = areas.sections;
     if let Some(c) = app.section().and_then(|s| s.search_cmp.as_ref()) {
-        let popup = c.view(t, l.main_w.saturating_sub(4), app.spinner, false);
-        draw_block(
-            buf,
+        let popup = c.view(
+            t,
+            (sections.width as usize).saturating_sub(4),
+            app.spinner,
+            false,
+        );
+        Text::from(popup).render(
             Rect::new(
-                1,
-                top + 3,
-                l.main_w.saturating_sub(2) as u16,
-                popup.len() as u16,
+                sections.x + 1,
+                sections.y + 3,
+                sections.width.saturating_sub(2),
+                sections.height.saturating_sub(3),
             ),
-            &popup,
+            buf,
         );
     }
     let editor = app.pr_editor.as_ref().or(app.issue_editor.as_ref());
-    if let (true, Some(ed)) = (app.sidebar_open, editor)
+    if let (Some(p), Some(ed)) = (areas.preview, editor)
         && let Some(c) = ed.cmp.as_ref().filter(|c| c.visible)
     {
         // y = ScreenHeight - FooterHeight - LineFromBottom - InputBoxHeight - 6, x = preview x + 3.
@@ -564,33 +516,15 @@ pub fn draw(f: &mut Frame, app: &App) {
         } else {
             lines - cur - 1
         };
-        let py = app.height.saturating_sub(1 + from_bottom + 8 + 6);
-        let px = match l.position {
-            Position::Bottom => 3,
-            Position::Right => l.main_w + 3,
-        };
+        let py = app.height.saturating_sub(1 + from_bottom + 8 + 6) as u16;
+        let px = p.outer().x + 3;
         let inner = app.sidebar_content_width().saturating_sub(6);
         let popup = c.view(t, inner, app.spinner, true);
-        draw_block(
-            buf,
-            Rect::new(px as u16, py as u16, (inner + 2) as u16, popup.len() as u16),
-            &popup,
-        );
+        let rect = Rect::new(px, py, (inner + 2) as u16, popup.len() as u16);
+        Text::from(popup).render(rect.intersection(area), buf);
     }
 
-    let stacked = top as usize
-        + sec_h
-        + if app.sidebar_open && l.position == Position::Bottom {
-            1 + l.preview_h
-        } else {
-            0
-        };
-    let footer_y = (stacked as u16).max(area.height.saturating_sub(1));
-    draw_block(
-        buf,
-        Rect::new(0, footer_y, area.width, 1),
-        &[footer_line(app)],
-    );
+    footer_line(app).render(areas.footer, buf);
     if let Some(help) = &app.help {
         help.render(area, buf, t);
     }

@@ -1,8 +1,6 @@
 //! Styled-text helpers: width, joining, truncation, alignment and word wrap,
 //! with lipgloss semantics.
 
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -311,20 +309,6 @@ pub fn indent(block: Block, n: usize) -> Block {
             l
         })
         .collect()
-}
-
-/// Draws a block into the buffer, clipping to the area.
-pub fn draw_block(buf: &mut Buffer, area: Rect, block: &[Line<'static>]) {
-    let area = area.intersection(buf.area);
-    if area.is_empty() {
-        return;
-    }
-    for (i, l) in block.iter().enumerate() {
-        if i as u16 >= area.height {
-            break;
-        }
-        buf.set_line(area.x, area.y + i as u16, l, area.width);
-    }
 }
 
 #[cfg(test)]
