@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Remove support for gh-dash config files, `$GH_DASH_CONFIG` and gh-dash bookmarks.
+
 ### Changed
 
 - Show fetched PRs, issues and notifications up to 100 ms sooner.

@@ -496,7 +496,7 @@ pub fn feature_enabled(name: &str) -> bool {
 const KEYBINDING_UNION_TYPES: [&str; 4] = ["universal", "prs", "issues", "completions"];
 const SECTION_TYPES: [&str; 3] = ["prSections", "issuesSections", "notificationsSections"];
 
-/// `$XDG_CONFIG_HOME/ghtui/config.yml`, or the gh-dash config when only that exists.
+/// `$XDG_CONFIG_HOME/ghtui/config.yml`
 fn global_config_path() -> Result<PathBuf> {
     let dir = match std::env::var("XDG_CONFIG_HOME") {
         Ok(d) if !d.is_empty() => PathBuf::from(d),
@@ -504,13 +504,7 @@ fn global_config_path() -> Result<PathBuf> {
             .ok_or_else(|| anyhow!("no home dir"))?
             .join(".config"),
     };
-    let path = dir.join("ghtui").join("config.yml");
-    let legacy = dir.join("gh-dash").join("config.yml");
-    Ok(if !path.exists() && legacy.exists() {
-        legacy
-    } else {
-        path
-    })
+    Ok(dir.join("ghtui").join("config.yml"))
 }
 
 pub fn default_config_yaml() -> String {
@@ -539,20 +533,16 @@ fn provided_config_path(loc: &Location) -> Option<PathBuf> {
     if let Some(flag) = loc.config_flag.as_ref().filter(|f| !f.is_empty()) {
         return Some(PathBuf::from(flag));
     }
-    for var in ["GHTUI_CONFIG", "GH_DASH_CONFIG"] {
-        if let Ok(env) = std::env::var(var)
-            && !env.is_empty()
-        {
-            return Some(PathBuf::from(env));
-        }
+    if let Ok(env) = std::env::var("GHTUI_CONFIG")
+        && !env.is_empty()
+    {
+        return Some(PathBuf::from(env));
     }
     if let Some(repo) = &loc.repo_path {
-        for name in [".ghtui", ".gh-dash"] {
-            for ext in ["yml", "yaml"] {
-                let p = repo.join(format!("{name}.{ext}"));
-                if p.exists() {
-                    return Some(p);
-                }
+        for ext in ["yml", "yaml"] {
+            let p = repo.join(format!(".ghtui.{ext}"));
+            if p.exists() {
+                return Some(p);
             }
         }
     }
