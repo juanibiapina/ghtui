@@ -595,3 +595,226 @@ pub fn draw(f: &mut Frame, app: &App) {
         help.render(area, buf, t);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use chrono::{Duration, Utc};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    use super::*;
+    use crate::complete::{Completer, FetchState, SourceKind, Suggestion};
+    use crate::config::Config;
+    use crate::input::{TextArea, TextInput};
+    use crate::keys::Keys;
+    use crate::model::{Count, Label, Login, Nodes, Notification, PullRequest, Repository};
+    use crate::section::{NotifRow, PrRow};
+    use crate::views::{Editor, EditorMode};
+
+    fn pr(number: i64, title: &str, author: &str, days: i64) -> PrRow {
+        let repo = Repository {
+            name: "ghtui".into(),
+            name_with_owner: "juanibiapina/ghtui".into(),
+            ..Default::default()
+        };
+        PrRow {
+            primary: PullRequest {
+                number,
+                title: title.into(),
+                author: Login {
+                    login: author.into(),
+                },
+                updated_at: Utc::now() - Duration::days(days),
+                created_at: Utc::now() - Duration::days(days + 2),
+                url: format!("https://github.com/juanibiapina/ghtui/pull/{number}"),
+                state: "OPEN".into(),
+                review_decision: "REVIEW_REQUIRED".into(),
+                additions: 120 * number,
+                deletions: 7 * number,
+                head_ref_name: format!("feature-{number}"),
+                base_ref_name: "main".into(),
+                repository: repo,
+                comments: Count { total_count: 3 },
+                labels: Nodes {
+                    nodes: vec![Label {
+                        color: "a2eeef".into(),
+                        name: "enhancement".into(),
+                        description: String::new(),
+                    }],
+                    total_count: 1,
+                },
+                ..Default::default()
+            },
+            enriched: None,
+        }
+    }
+
+    fn app(width: u16, height: u16, cfg: Config) -> App {
+        let (pool, _rx) = crate::msg::Pool::new(1);
+        let mut app = App::new(
+            cfg,
+            Keys::default(),
+            pool,
+            None,
+            None,
+            width as usize,
+            height as usize,
+        );
+        app.version = "v0.0.0".into();
+        app.user = "juan".into();
+        app
+    }
+
+    fn with_prs(mut app: App) -> App {
+        let rows = vec![
+            pr(1, "Render the dashboard with ratatui widgets", "juan", 1),
+            pr(
+                2,
+                "A pull request with a title long enough to wrap onto a second line in the table",
+                "octocat",
+                3,
+            ),
+            pr(3, "Fix the footer", "dependabot", 9),
+        ];
+        let s = &mut app.prs[0];
+        s.total_count = rows.len();
+        s.prs = rows;
+        s.last_fetch_at = Some(std::time::Instant::now());
+        app
+    }
+
+    fn screen(mut app: App) -> String {
+        let (w, h) = (app.width as u16, app.height as u16);
+        app.ensure_sidebar_cache();
+        let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+        terminal.draw(|f| draw(f, &app)).unwrap();
+        format!("{:?}", terminal.backend().buffer())
+    }
+
+    #[test]
+    fn prs_with_right_preview() {
+        let mut cfg = Config::default();
+        cfg.defaults.preview.position = "right".into();
+        insta::assert_snapshot!(screen(with_prs(app(160, 30, cfg))));
+    }
+
+    #[test]
+    fn prs_with_bottom_preview() {
+        let mut cfg = Config::default();
+        cfg.defaults.preview.position = "bottom".into();
+        insta::assert_snapshot!(screen(with_prs(app(120, 40, cfg))));
+    }
+
+    #[test]
+    fn prs_on_a_narrow_terminal() {
+        insta::assert_snapshot!(screen(with_prs(app(70, 30, Config::default()))));
+    }
+
+    #[test]
+    fn prs_without_preview() {
+        let mut app = with_prs(app(100, 20, Config::default()));
+        app.sidebar_open = false;
+        insta::assert_snapshot!(screen(app));
+    }
+
+    #[test]
+    fn section_loading() {
+        let mut app = app(100, 20, Config::default());
+        app.prs[0].is_loading = true;
+        insta::assert_snapshot!(screen(app));
+    }
+
+    #[test]
+    fn section_with_no_results() {
+        let mut app = app(100, 20, Config::default());
+        app.prs[0].last_fetch_at = Some(std::time::Instant::now());
+        insta::assert_snapshot!(screen(app));
+    }
+
+    #[test]
+    fn search_with_completions() {
+        let mut cfg = Config::default();
+        cfg.defaults.preview.position = "right".into();
+        let mut app = with_prs(app(160, 30, cfg));
+        let s = &mut app.prs[0];
+        s.search = Some(TextInput::new("is:open auth"));
+        let mut c = Completer::new(SourceKind::Search, None, false);
+        c.filtered = vec![
+            Suggestion {
+                value: "author:".into(),
+                detail: "PRs by a user".into(),
+            },
+            Suggestion {
+                value: "assignee:".into(),
+                detail: "PRs assigned to a user".into(),
+            },
+        ];
+        c.visible = true;
+        c.fetch = FetchState::Success;
+        s.search_cmp = Some(c);
+        insta::assert_snapshot!(screen(app));
+    }
+
+    #[test]
+    fn comment_editor_with_mentions() {
+        let mut app = with_prs(app(140, 40, Config::default()));
+        let mut c = Completer::new(SourceKind::Mention { with_at: true }, None, true);
+        c.filtered = vec![Suggestion {
+            value: "octocat".into(),
+            detail: "The Octocat".into(),
+        }];
+        c.visible = true;
+        c.fetch = FetchState::Loading;
+        app.pr_editor = Some(Editor {
+            mode: EditorMode::Comment,
+            prompt: "Leave a comment…".into(),
+            area: TextArea::new("Looks good, thanks @oct"),
+            confirm_discard: true,
+            discarding: false,
+            cmp: Some(c),
+        });
+        insta::assert_snapshot!(screen(app));
+    }
+
+    #[test]
+    fn notifications() {
+        let mut app = app(140, 24, Config::default());
+        app.view = ViewType::Notifications;
+        let n = |id: &str, title: &str, kind: &str, reason: &str| {
+            NotifRow::new(Notification {
+                id: id.into(),
+                unread: true,
+                reason: reason.into(),
+                updated_at: Utc::now() - Duration::hours(5),
+                subject: crate::model::NotificationSubject {
+                    title: title.into(),
+                    url: format!("https://api.github.com/repos/juanibiapina/ghtui/pulls/{id}"),
+                    kind: kind.into(),
+                    ..Default::default()
+                },
+                repository: crate::model::NotificationRepository {
+                    name: "ghtui".into(),
+                    full_name: "juanibiapina/ghtui".into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+        };
+        let rows = vec![
+            n(
+                "7",
+                "Draw tables with ratatui",
+                "PullRequest",
+                "review_requested",
+            ),
+            n("8", "Crash on resize", "Issue", "mention"),
+        ];
+        let s = &mut app.notifs[0];
+        s.total_count = rows.len();
+        s.notifs = rows;
+        s.last_fetch_at = Some(std::time::Instant::now());
+        s.last_updated =
+            chrono::TimeZone::with_ymd_and_hms(&chrono::Local, 2026, 1, 1, 12, 0, 0).unwrap();
+        insta::assert_snapshot!(screen(app));
+    }
+}
