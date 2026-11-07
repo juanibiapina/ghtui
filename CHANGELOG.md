@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix `P` in the branches view moving the preview as well as pushing the branch.
 - Fix the branches view running two rows past the bottom of its area.
 - Fix the search popup in the branches view sitting one row too low.
 - Fix the branches view never refreshing PRs, and finding no PRs for repositories cloned over SSH.

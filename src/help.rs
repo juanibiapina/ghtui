@@ -50,6 +50,11 @@ impl Group {
     }
 }
 
+/// True when every key of `b` is taken by one of `by`, which the dispatcher checks first.
+fn shadowed(b: &Binding, by: &[&Binding]) -> bool {
+    !b.keys.is_empty() && b.keys.iter().all(|k| by.iter().any(|s| s.matches(k)))
+}
+
 struct Placement {
     columns: Vec<Vec<usize>>,
     widths: Vec<u16>,
@@ -187,6 +192,14 @@ impl Help {
                 custom.extend(keys.custom_issue.clone());
             }
             ViewType::Repo => {
+                let branch_keys: Vec<&Binding> = br
+                    .all()
+                    .into_iter()
+                    .filter(|b| !std::ptr::eq(*b, &br.view_prs))
+                    .collect();
+                for g in &mut groups {
+                    g.bindings.retain(|b| !shadowed(b, &branch_keys));
+                }
                 groups.push(Group {
                     title: "Branch",
                     bindings: vec![
@@ -210,12 +223,8 @@ impl Help {
                     NotificationSubject::Issue => vec![issue_group()],
                     NotificationSubject::None => vec![],
                 };
-                let shadowed = |b: &Binding| {
-                    subject_groups
-                        .iter()
-                        .flat_map(|g| &g.bindings)
-                        .any(|s| b.keys.iter().any(|k| s.matches(k)))
-                };
+                let subject_keys: Vec<&Binding> =
+                    subject_groups.iter().flat_map(|g| &g.bindings).collect();
                 let notification: Vec<Binding> = [
                     &n.view,
                     &n.back_to_notification,
@@ -228,7 +237,7 @@ impl Help {
                     &n.sort_by_repo,
                 ]
                 .into_iter()
-                .filter(|b| !shadowed(b))
+                .filter(|b| !shadowed(b, &subject_keys))
                 .cloned()
                 .collect();
                 groups.push(Group {
@@ -510,6 +519,15 @@ mod tests {
         assert!(!has_key(&h, "Notification", "m"));
         assert!(!has_key(&h, "Notification", "u"));
         assert!(has_key(&h, "Notification", "D"));
+    }
+
+    #[test]
+    fn branch_keys_hide_the_universal_keys_they_take_over() {
+        let h = Help::new(&Keys::default(), ViewType::Repo, NotificationSubject::None);
+        assert!(has_key(&h, "Branch", "P"));
+        assert!(!has_key(&h, "Preview", "P"));
+        assert!(has_key(&h, "Preview", "p"));
+        assert!(has_key(&h, "Sections", "s"));
     }
 
     #[test]

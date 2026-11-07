@@ -130,6 +130,26 @@ pub struct BranchKeys {
     pub view_prs: Binding,
 }
 
+impl BranchKeys {
+    pub fn all(&self) -> [&Binding; 9] {
+        [
+            &self.checkout,
+            &self.new,
+            &self.create_pr,
+            &self.fast_forward,
+            &self.push,
+            &self.force_push,
+            &self.delete,
+            &self.update_pr,
+            &self.view_prs,
+        ]
+    }
+
+    pub fn binds(&self, key: &str) -> bool {
+        self.all().iter().any(|b| b.matches(key))
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum NotificationSubject {
     #[default]

@@ -1357,7 +1357,11 @@ impl App {
         let body_h = self.body_height();
         let cfg = self.cfg.clone();
 
-        if u.section_mode.matches(key) {
+        if self.view == ViewType::Repo && k.branch.binds(key) {
+            if self.handle_repo_view_key(key) {
+                return;
+            }
+        } else if u.section_mode.matches(key) {
             self.section_mode = true;
         } else if u.prev_section.matches(key) {
             let prev = self.curr.saturating_sub(1);
