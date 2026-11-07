@@ -1,7 +1,6 @@
-//! A port of glamour v2's ANSI renderer (charm.land/glamour/v2/ansi) with the
-//! ghtui Tokyo Night style. Markdown is parsed with pulldown-cmark into a
-//! tree shaped like goldmark's AST (including GFM linkify), then rendered with
-//! glamour's block stack, margin/indent/padding writers and wrapping passes.
+//! Renders markdown to styled lines in the ghtui Tokyo Night style. Markdown is
+//! parsed with pulldown-cmark into a tree with GFM linkify, then laid out with a
+//! block stack, margin/indent/padding writers and wrapping passes.
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
@@ -1157,7 +1156,7 @@ impl Ctx {
     }
 }
 
-/// lipgloss.Wrap over styled cells, returned as one cell run with newlines.
+/// Wraps styled cells to a width, returned as one cell run with newlines.
 fn join_wrapped(cells: &[Cell], width: usize, breakpoints: &str) -> Vec<Cell> {
     if width < 1 {
         return cells.to_vec();
