@@ -32,8 +32,8 @@ By default, the dashboard is configured to:
 
 For more details on the default layouts, see the documentation for [PR] and [issue] layout definitions.
 
-[PR]: /configuration/layout/pr/
-[issue]: /configuration/layout/issue/
+[PR]: /ghtui/configuration/layout/pr/
+[issue]: /ghtui/configuration/layout/issue/
 
 ### Layout Options (`layout`)
 
@@ -42,8 +42,8 @@ these settings in any section you define in the [`prSections`] or [`issueSection
 
 They determine which columns are displayed and how.
 
-[`prSections`]: /configuration/pr-section
-[`issueSections`]: /configuration/issue-section
+[`prSections`]: /ghtui/configuration/pr-section
+[`issueSections`]: /ghtui/configuration/issue-section
 
 #### PR Section Layout
 
@@ -57,10 +57,10 @@ the width is `6`, `my-repo` displays as `my-r`.
 
 Column headings have their color defined by the [`theme.colors.text.primary`] setting.
 
-For more information, see [PR Section Layout](/configuration/layout/pr).
+For more information, see [PR Section Layout](/ghtui/configuration/layout/pr).
 
-[`width`]: /configuration/layout/options
-[`theme.colors.text.primary`]: /configuration/theme
+[`width`]: /ghtui/configuration/layout/options
+[`theme.colors.text.primary`]: /ghtui/configuration/theme
 
 #### Issue Section Layout (`issues`)
 
@@ -74,10 +74,10 @@ the width is `6`, `my-repo` displays as `my-r`.
 
 Column headings have their color defined by the [`theme.colors.text.primary`] setting.
 
-For more information, see [Issue Section Layout](/configuration/layout/issue).
+For more information, see [Issue Section Layout](/ghtui/configuration/layout/issue).
 
-[`width`]: layout.options.width
-[`theme.colors.text.primary`]: theme.colors.text.primary
+[`width`]: /ghtui/configuration/layout/options/#column-width
+[`theme.colors.text.primary`]: /ghtui/configuration/theme
 
 ### PR Fetch Limit
 
@@ -93,8 +93,8 @@ This setting defines how many PRs the dashboard should fetch for each section wh
 - You use the [refresh current section] or [refresh all sections] commands.
 
 [fetch interval]: #refetch-interval-in-minutes-refetchintervalminutes
-[refresh current section]: /getting-started/keybindings/global/#r---refresh-current-section
-[refresh all sections]: /getting-started/keybindings/global/#r---refresh-all-sections
+[refresh current section]: /ghtui/getting-started/keybindings/global/#r---refresh-current-section
+[refresh all sections]: /ghtui/getting-started/keybindings/global/#r---refresh-all-sections
 
 ### Issue Fetch Limit (`issuesLimit`)
 
@@ -110,8 +110,8 @@ This setting defines how many issues the dashboard should fetch for each section
 - You use the [refresh current section] or [refresh all sections] commands.
 
 [fetch interval]: #refetch-interval-in-minutes-refetchintervalminutes
-[refresh current section]: /getting-started/keybindings/global/#r---refresh-current-section
-[refresh all sections]: /getting-started/keybindings/global/#r---refresh-all-sections
+[refresh current section]: /ghtui/getting-started/keybindings/global/#r---refresh-current-section
+[refresh all sections]: /ghtui/getting-started/keybindings/global/#r---refresh-all-sections
 
 ### Notifications Fetch Limit (`notificationsLimit`)
 
@@ -125,8 +125,8 @@ This setting defines how many notifications the dashboard should fetch when:
 - You navigate to the next notification in a table without another fetched notification to display.
 - You use the [refresh current section] or [refresh all sections] commands.
 
-[refresh current section]: /getting-started/keybindings/global/#r---refresh-current-section
-[refresh all sections]: /getting-started/keybindings/global/#r---refresh-all-sections
+[refresh current section]: /ghtui/getting-started/keybindings/global/#r---refresh-current-section
+[refresh all sections]: /ghtui/getting-started/keybindings/global/#r---refresh-all-sections
 
 ### Preview Pane (`preview`)
 
@@ -146,7 +146,7 @@ toggle the preview pane's visibility.
 
 By default, the dashboard displays the preview pane.
 
-[toggle preview pane]: /getting-started/keybindings/preview/#p---toggle-preview-pane
+[toggle preview pane]: /ghtui/getting-started/keybindings/preview/#p---toggle-preview-pane
 
 #### Preview Pane Width (`width`)
 
@@ -208,8 +208,8 @@ You can always use the [refresh current section] or [refresh all sections] comma
 refetch work items in the current view. If you change the search query for a view, the
 dashboard fetches results for the updated query immediately.
 
-[refresh current section]: /getting-started/keybindings/global/#r---refresh-current-section
-[refresh all sections]: /getting-started/keybindings/global/#r---refresh-all-sections
+[refresh current section]: /ghtui/getting-started/keybindings/global/#r---refresh-current-section
+[refresh all sections]: /ghtui/getting-started/keybindings/global/#r---refresh-all-sections
 
 ### Date format (`dateFormat`)
 
@@ -248,7 +248,7 @@ This can be set as an empty string to not prefill a comment.
 
 By default, the comment is "LGTM".
 
-[approving a PR]: /getting-started/keybindings/selected-pr/#v---approve-pr
+[approving a PR]: /ghtui/getting-started/keybindings/selected-pr/#v---approve-pr
 
 ## Confirm Quit (`confirmQuit`)
 
@@ -262,7 +262,7 @@ Pressing any other key dismisses the message.
 
 By default, ghtui doesn't need a confirmation.
 
-[approving a PR]: /getting-started/keybindings/selected-pr/#v---approve-pr
+[approving a PR]: /ghtui/getting-started/keybindings/selected-pr/#v---approve-pr
 
 
 ## Include Read Notifications (`includeReadNotifications`)

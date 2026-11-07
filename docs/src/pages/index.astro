@@ -13,9 +13,10 @@ import helpSrc from "../assets/help.png";
 import tokyonightSrc from "../assets/tokyo.png";
 import catppuccinSrc from "../assets/catpuccin.png";
 import gruvSrc from "../assets/gruv.png";
-import charmVidPreviewSrc from "../assets/charm-vid-preview.jpg";
-import DashHeroLogo from "../components/DashHeroLogo.astro";
+import HeroLogo from "../components/HeroLogo.astro";
 import Hero from "../components/Hero.astro";
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 ---
 
 <style is:global>
@@ -32,9 +33,9 @@ import Hero from "../components/Hero.astro";
       tagline="A rich terminal UI for GitHub that doesn't break your flow"
       videoUrl="overview"
       githubUrl="https://github.com/juanibiapina/ghtui"
-      getStartedUrl="/getting-started/"
+      getStartedUrl={`${base}/getting-started/`}
     >
-      <DashHeroLogo />
+      <HeroLogo />
     </Hero>
   </div>
   <div class="mt-32 mb-16 text-[var(--sl-color-gray-5)]">──◇──</div>
@@ -71,8 +72,8 @@ issuesSections:
       </Box>
       <Terminal className="w-[95vw] lg:w-[800px]">
         <video autoplay loop muted playsinline>
-          <source src="/sections.webm" type="video/webm" />
-          <source src="/sections.mp4" type="video/mp4" />
+          <source src={`${base}/sections.webm`} type="video/webm" />
+          <source src={`${base}/sections.mp4`} type="video/mp4" />
         </video>
       </Terminal>
     </Showcase>
@@ -124,8 +125,8 @@ issuesSections:
       </Box>
       <Terminal>
         <video autoplay loop muted playsinline class="w-[95vw] lg:w-[800px]">
-          <source src="/custom-commands.webm" type="video/webm" />
-          <source src="/custom-commands.mp4" type="video/mp4" />
+          <source src={`${base}/custom-commands.webm`} type="video/webm" />
+          <source src={`${base}/custom-commands.mp4`} type="video/mp4" />
         </video>
       </Terminal>
     </Showcase>
@@ -159,20 +160,6 @@ colors:
         </FadeImages>
       </Terminal>
     </Showcase>
-  </div>
-  <div class="mt-32 flex flex-col items-center">
-    <h2 class="mb-2">Why use ghtui?</h2>
-    <p class="mb-6 text-center lg:w-[60ch]">
-      Check out this 10/10 video by <a href="https://charm.sh">Charm ✨</a> explaining
-      how ghtui can help you manage your GitHub experience
-    </p>
-    <a href="https://www.youtube.com/watch?v=5omFxcNjBQk&t" target="_blank">
-      <Image
-        src={charmVidPreviewSrc}
-        alt="YouTube video - Manage open source like a boss (in the terminal)"
-        class="w-[95vw] lg:w-[800px]"
-      />
-    </a>
   </div>
   <div class="mt-16 text-[var(--sl-color-gray-5)]">──◇──</div>
   <Footer class="mt-20" />

@@ -57,7 +57,7 @@ The available units are:
 
 By default, if the directory you launch `ghtui` from is a clone of a remote GitHub repo (or if you
 have the `GH_REPO` environment variable set to a particular remote), then for any of your PR
-sections and issue sections with `filters` values in your [configuration](/configuration) that don’t
+sections and issue sections with `filters` values in your [configuration](/ghtui/configuration) that don’t
 have an explicit `repo:` field, `ghtui` adds a `repo:<RepoName>` field to the search-bar value for
 them (where _`<RepoName>`_ is the name of the remote repo).
 
@@ -77,7 +77,7 @@ GitHub remotes configured for that clone in the following order:
 …and, otherwise, if `ghtui` finds no remotes with any of those names, then it uses the repo name
 for the first remote in the output that `git remote` shows.
 
-To disable Smart Filtering at launch, set `smartFilteringAtLaunch` to `false` in your [configuration](/configuration).
+To disable Smart Filtering at launch, set `smartFilteringAtLaunch` to `false` in your [configuration](/ghtui/configuration).
 
 ```yaml
 smartFilteringAtLaunch: false
@@ -85,7 +85,7 @@ smartFilteringAtLaunch: false
 
 To toggle Smart Filtering on or off for the current section you’re currently viewing, either use the
 `t` key — or else use whatever custom keybinding you have set for the `togglesearch` builtin in the
-`keybindings` section of your [configuration](/configuration).
+`keybindings` section of your [configuration](/ghtui/configuration).
 
 You can also manually edit the search bar (press `/`) to remove or replace the `repo:` filter, then
 press Enter. The Smart Filtering state automatically syncs to match your edit — so if you remove the

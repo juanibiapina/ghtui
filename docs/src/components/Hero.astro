@@ -1,35 +1,26 @@
 ---
-import ReleaseVersionButton from "./ReleaseVersionButton.astro";
 import Terminal from "./Terminal.astro";
 import { Icon } from "@astrojs/starlight/components";
 
 const { tagline, githubUrl, videoUrl, getStartedUrl } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 ---
 
 <div class="flex flex-col-reverse items-center gap-16 2xl:flex-row 2xl:gap-6">
   <Terminal>
     <video autoplay loop muted playsinline class="w-[95vw] lg:w-[800px]">
-      <source src={`/${videoUrl}.webm`} type="video/webm" />
-      <source src={`/${videoUrl}.mp4`} type="video/mp4" />
+      <source src={`${base}/${videoUrl}.webm`} type="video/webm" />
+      <source src={`${base}/${videoUrl}.mp4`} type="video/mp4" />
     </video>
   </Terminal>
   <div class="flex w-full shrink-[5] flex-col items-center">
     <slot />
-    <div class="flex flex-row items-center gap-1">
-      <form action={`${githubUrl}/releases`}>
-        <ReleaseVersionButton server:defer githubUrl={githubUrl}>
-          <button
-            slot="fallback"
-            class="m-0 h-7 w-16 animate-pulse rounded-lg bg-[var(--sl-color-black)] px-2 py-2 text-sm text-[var(--sl-color-gray-3)]"
-          ></button>
-        </ReleaseVersionButton>
-      </form>
-      <button
-        class="m-0 rounded-lg bg-[var(--sl-color-black)] px-2 py-1 text-sm text-[var(--sl-color-gray-3)]"
-      >
-        Build: passing
-      </button>
-    </div>
+    <a
+      href={`${githubUrl}/releases`}
+      class="rounded-lg bg-[var(--sl-color-black)] px-2 py-1 text-sm text-[var(--sl-color-gray-3)] no-underline"
+    >
+      Releases
+    </a>
     <h2
       class="text-center !text-xl font-normal text-pretty lg:w-[30ch] lg:!text-2xl"
     >
