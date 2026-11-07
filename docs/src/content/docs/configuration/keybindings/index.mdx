@@ -13,10 +13,16 @@ There are 3 types of keybindings: `universal`, `prs` and `issues`.
 
 ## Key Values
 
-The `key` value must match one of the [Ultraviolet key strings][ultraviolet-key-strings].
-`ghtui` does not translate alternate key names or terminal labels before matching a keybinding.
+The `key` value is a single character (`g`, `G`, `?`) or one of these key names:
 
-For example, Page Down is emitted as `pgdown`, not `pgdn`:
+`enter`, `space`, `tab`, `esc`, `backspace`, `delete`, `up`, `down`, `left`, `right`,
+`home`, `end`, `pgup`, `pgdown` and `f1` to `f12`.
+
+Add modifiers with a prefix: `ctrl+`, `alt+` or `shift+`, as in `ctrl+d`, `alt+enter` or
+`shift+tab`. Uppercase letters need no `shift+`: write `G`, not `shift+g`.
+`ghtui` does not translate alternate key names before matching a keybinding.
+
+For example, Page Down is `pgdown`, not `pgdn`:
 
 ```yaml
 keybindings:
@@ -201,7 +207,7 @@ The command template receives different fields depending on whether the sidebar 
 | Sidebar not open | `RepoName`, `IssueNumber`, `RepoPath` |
 | Sidebar open     | + `Author`                            |
 
-If a template references a sidebar-only field (e.g., `{{.HeadRefName}}`) before the sidebar is opened, the template engine’s `missingkey=error` option produces an error message. This is intentional — users should open the notification first to populate the full data.
+If a template references a sidebar-only field (e.g., `{{.HeadRefName}}`) before the sidebar is opened, the command fails with an error that names the missing field. Open the notification first to load the full data.
 
 ### Built-in Commands
 
@@ -218,8 +224,6 @@ The following built-in notifications commands can be overridden with custom keyb
 | `toggleBookmark` | toggle bookmark                                    |
 
 See [notification keys](/ghtui/getting-started/keybindings/selected-notification/) for more details.
-
-[ultraviolet-key-strings]: https://github.com/charmbracelet/ultraviolet/blob/main/key.go#L612
 
 ## Completions Keybindings
 
