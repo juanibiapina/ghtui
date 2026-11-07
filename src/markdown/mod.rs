@@ -1,11 +1,8 @@
-//! Markdown for the preview pane: body cleanup and
-//! rendering through the glamour port.
+//! Markdown for the preview pane: body cleanup and rendering to styled lines.
 
-use crate::text::Block;
+mod render;
 
-pub fn render(md: &str, width: usize) -> Block {
-    crate::glamour::render(md, width)
-}
+pub use render::render;
 
 /// Removes HTML comments and table-like lines before rendering.
 pub fn clean_body(body: &str) -> String {
@@ -21,6 +18,7 @@ pub fn clean_body(body: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::text::Block;
 
     fn plain(b: &Block) -> Vec<String> {
         b.iter()

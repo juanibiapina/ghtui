@@ -7,7 +7,6 @@ mod complete;
 mod config;
 mod git;
 mod github;
-mod glamour;
 mod highlight;
 mod icons;
 mod input;
