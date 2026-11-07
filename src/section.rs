@@ -5,8 +5,12 @@ use std::collections::HashSet;
 use std::time::Instant;
 
 use chrono::{DateTime, Local};
+use ratatui::buffer::Buffer;
+use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui::symbols::border;
+use ratatui::text::{Line, Span, Text};
+use ratatui::widgets::{self, Cell, Row, StatefulWidget, Table, TableState, Widget};
 
 use crate::config::{Config, IssuesLayoutConfig, PrsLayoutConfig};
 use crate::icons;
@@ -215,7 +219,7 @@ pub struct Column {
     pub width: Option<usize>,
     pub grow: bool,
     pub hidden: bool,
-    pub align: Option<Align>,
+    pub align: Alignment,
 }
 
 fn col(title: &str, width: Option<usize>, hidden: bool) -> Column {
@@ -224,7 +228,7 @@ fn col(title: &str, width: Option<usize>, hidden: bool) -> Column {
         width,
         grow: false,
         hidden,
-        align: None,
+        align: Alignment::Left,
     }
 }
 
@@ -304,28 +308,28 @@ pub fn notification_columns() -> Vec<Column> {
             width: Some(6),
             grow: false,
             hidden: false,
-            align: Some(Align::Center),
+            align: Alignment::Center,
         },
         Column {
             title: "Title".into(),
             width: None,
             grow: true,
             hidden: false,
-            align: None,
+            align: Alignment::Left,
         },
         Column {
             title: "Activity".into(),
             width: Some(10),
             grow: false,
             hidden: false,
-            align: Some(Align::Right),
+            align: Alignment::Right,
         },
         Column {
             title: format!("{}    ", icons::UPDATED_AT),
             width: Some(12),
             grow: false,
             hidden: false,
-            align: Some(Align::Right),
+            align: Alignment::Right,
         },
     ]
 }
@@ -371,8 +375,6 @@ pub struct RenderCtx<'a> {
     pub cfg: &'a Config,
     pub theme: &'a Theme,
     pub spinner: usize,
-    pub width: usize,
-    pub height: usize,
 }
 
 /// The configured title, filters and page size of a section.
@@ -714,15 +716,40 @@ impl Section {
     // ---- rendering ----
 
     /// Section View: search box followed by the table, inside 1 cell of horizontal padding.
-    pub fn view(&self, rc: &RenderCtx) -> Block {
+    /// Draws the search box and the table of rows.
+    pub fn render(&self, rc: &RenderCtx, area: Rect, buf: &mut Buffer) {
         let t = rc.theme;
-        let inner = rc.width.saturating_sub(4);
+        let [search_area, table_area] =
+            Layout::vertical([Constraint::Length(3), Constraint::Fill(1)])
+                .horizontal_margin(1)
+                .areas(area);
         let focused = self.search.is_some();
-        let border = Style::default().fg(if focused {
-            theme::OPEN_ISSUE
+        let popup = self.search_cmp.as_ref().is_some_and(|c| c.visible);
+        let border_set = if popup {
+            border::Set {
+                bottom_left: "├",
+                bottom_right: "┤",
+                ..border::ROUNDED
+            }
         } else {
-            t.primary_border
-        });
+            border::ROUNDED
+        };
+        let search_box = widgets::Block::bordered()
+            .border_set(border_set)
+            .border_style(Style::default().fg(if focused {
+                theme::OPEN_ISSUE
+            } else {
+                t.primary_border
+            }));
+        let input_area = search_box.inner(search_area);
+        search_box.render(search_area, buf);
+        self.search_line(t, input_area.width as usize)
+            .render(input_area, buf);
+        self.render_table(rc, table_area, buf);
+    }
+
+    fn search_line(&self, t: &Theme, width: usize) -> Line<'static> {
+        let focused = self.search.is_some();
         let prompt = if self.kind == Kind::Branch {
             format!("{}  ", icons::SEARCH)
         } else {
@@ -730,7 +757,7 @@ impl Section {
         };
         let prompt_w = str_width(&prompt);
         let input = self.search.as_ref().unwrap_or(&self.search_bar);
-        let mut value_line = input.view(inner.saturating_sub(prompt_w), t.primary(), focused);
+        let mut value_line = input.view(width.saturating_sub(prompt_w), t.primary(), focused);
         if self.kind == Kind::Branch && input.value().is_empty() {
             // The branch search shows its placeholder while empty.
             let ph = "Search branches...";
@@ -743,148 +770,93 @@ impl Section {
                 Line::from(span(ph, t.faint()))
             };
         }
-        let mut content = vec![Span::styled(prompt, t.secondary())];
-        content.extend(value_line.spans);
-        let content = fit_line(&Line::from(content), inner, Style::default());
-        let popup = self.search_cmp.as_ref().map(|c| c.visible).unwrap_or(false);
-        let (bl, br) = if popup {
-            ("├", "┤")
-        } else {
-            ("╰", "╯")
-        };
-        let mut out: Block = vec![
-            Line::from(vec![
-                raw(" "),
-                span(format!("╭{}╮", "─".repeat(inner)), border),
-            ]),
-            Line::from(
-                [
-                    vec![raw(" "), span("│", border)],
-                    content.spans,
-                    vec![span("│", border)],
-                ]
-                .concat(),
-            ),
-            Line::from(vec![
-                raw(" "),
-                span(format!("{bl}{}{br}", "─".repeat(inner)), border),
-            ]),
-        ];
-        let table_h = rc.height.saturating_sub(3);
-        let table = self.table_view(rc, rc.width.saturating_sub(2), table_h);
-        out.extend(indent(table, 1));
-        out
+        let mut spans = vec![Span::styled(prompt, t.secondary())];
+        spans.extend(value_line.spans);
+        Line::from(spans)
     }
 
-    fn computed_widths(&self, rc: &RenderCtx, width: usize) -> Vec<(usize, Line<'static>)> {
+    /// Each shown column's width and header cell; grow columns share what the others leave.
+    fn header_cells(&self, rc: &RenderCtx, width: usize) -> Vec<(usize, Line<'static>)> {
         let t = rc.theme;
         let title_style = Style::default()
             .fg(t.primary_text)
             .add_modifier(Modifier::BOLD);
+        let padded = |title: &str, w: usize| {
+            Line::from(vec![
+                raw(" "),
+                span(truncate_str(title, w.saturating_sub(2), ""), title_style),
+                raw(" "),
+            ])
+        };
         let shown: Vec<&Column> = self.columns.iter().filter(|c| !c.hidden).collect();
-        let mut taken = 0;
-        let mut grow = 0;
-        let mut cells: Vec<Option<(usize, Line<'static>)>> = vec![];
-        for c in &shown {
-            if c.grow {
-                grow += 1;
-                cells.push(None);
-                continue;
-            }
-            if let Some(w) = c.width {
-                let l = if c.align == Some(Align::Right) {
-                    let a = if str_width(&c.title) <= 2 {
-                        Align::Center
-                    } else {
-                        Align::Right
-                    };
-                    align_line(
-                        Line::from(span(c.title.clone(), title_style)),
-                        w,
-                        a,
-                        Style::default(),
-                    )
+        let fixed = |c: &Column| match c.width {
+            _ if c.grow => None,
+            Some(w) if c.align == Alignment::Right => {
+                let a = if str_width(&c.title) <= 2 {
+                    Alignment::Center
                 } else {
-                    let inner = fit_line(
-                        &Line::from(span(c.title.clone(), title_style)),
-                        w.saturating_sub(2),
-                        Style::default(),
-                    );
-                    concat(vec![Line::from(raw(" ")), inner, Line::from(raw(" "))])
+                    Alignment::Right
                 };
-                let l = fit_line(&l, w, Style::default());
-                taken += w;
-                cells.push(Some((w, l)));
-                continue;
+                Some((
+                    w,
+                    Line::from(span(c.title.clone(), title_style)).alignment(a),
+                ))
             }
-            let l = Line::from(vec![raw(" "), span(c.title.clone(), title_style), raw(" ")]);
-            let w = line_width(&l);
-            taken += w;
-            cells.push(Some((w, l)));
-        }
+            Some(w) => Some((w, padded(&c.title, w))),
+            None => Some((str_width(&c.title) + 2, padded(&c.title, usize::MAX))),
+        };
+        let cells: Vec<_> = shown.iter().map(|c| fixed(c)).collect();
+        let taken: usize = cells.iter().flatten().map(|(w, _)| w).sum();
+        let grow = shown.iter().filter(|c| c.grow).count();
         let grow_w = width.saturating_sub(taken).checked_div(grow).unwrap_or(0);
         shown
             .iter()
             .zip(cells)
-            .map(|(c, cell)| match cell {
-                Some(x) => x,
-                None => {
-                    let inner = fit_line(
-                        &Line::from(span(c.title.clone(), title_style)),
-                        grow_w.saturating_sub(2),
-                        Style::default(),
-                    );
-                    (
-                        grow_w,
-                        fit_line(
-                            &concat(vec![Line::from(raw(" ")), inner, Line::from(raw(" "))]),
-                            grow_w,
-                            Style::default(),
-                        ),
-                    )
-                }
-            })
+            .map(|(c, cell)| cell.unwrap_or_else(|| (grow_w, padded(&c.title, grow_w))))
             .collect()
     }
 
-    fn table_view(&self, rc: &RenderCtx, width: usize, height: usize) -> Block {
+    fn render_table(&self, rc: &RenderCtx, area: Rect, buf: &mut Buffer) {
         let t = rc.theme;
-        let cols = self.computed_widths(rc, width);
-        let header = truncate_line(
-            &concat(cols.iter().map(|(_, l)| l.clone()).collect()),
-            width,
-            icons::ELLIPSIS,
-        );
-        let mut out: Block = vec![header, Line::default()];
-        let body_h = height.saturating_sub(2);
-        if body_h == 0 {
-            // An empty viewport still joins as one blank line under the header.
-            out.push(Line::default());
-            return out;
-        }
+        let (widths, header): (Vec<usize>, Vec<Line<'static>>) = self
+            .header_cells(rc, area.width as usize)
+            .into_iter()
+            .unzip();
+        let total = widths.iter().sum::<usize>().min(area.width as usize) as u16;
+        let header = Row::new(header).bottom_margin(1);
+        let constraints = widths.iter().map(|w| Constraint::Length(*w as u16));
+        let table = Table::default()
+            .widths(constraints)
+            .column_spacing(0)
+            .header(header)
+            .row_highlight_style(Style::default().bg(t.selected_background));
+        let [_, body] = Layout::vertical([Constraint::Length(2), Constraint::Fill(1)]).areas(area);
 
-        if self.is_loading && self.num_rows() == 0 {
-            let msg = Line::from(vec![
-                span(SPINNER[rc.spinner % SPINNER.len()], t.secondary()),
-                raw("Loading..."),
-            ]);
-            for i in 0..body_h {
-                if i == body_h / 2 {
-                    out.push(align_line(
-                        msg.clone(),
-                        width,
-                        Align::Center,
-                        Style::default(),
-                    ));
-                } else {
-                    out.push(Line::default());
-                }
-            }
-            return out;
-        }
         if self.num_rows() == 0 {
-            if self.last_fetch_at.is_some() {
-                out.push(Line::from(vec![
+            Widget::render(
+                table,
+                Rect {
+                    width: total,
+                    ..area
+                },
+                buf,
+            );
+            if self.is_loading {
+                Line::from(vec![
+                    span(SPINNER[rc.spinner % SPINNER.len()], t.secondary()),
+                    raw("Loading..."),
+                ])
+                .centered()
+                .render(
+                    Rect {
+                        y: body.y + body.height / 2,
+                        height: body.height.min(1),
+                        ..body
+                    },
+                    buf,
+                );
+            } else if self.last_fetch_at.is_some() {
+                Line::from(vec![
                     raw(" "),
                     span(
                         format!(
@@ -893,81 +865,76 @@ impl Section {
                         ),
                         Style::default().add_modifier(Modifier::DIM),
                     ),
-                ]));
+                ])
+                .render(body, buf);
             }
-            return out;
+            return;
         }
 
-        let widths: Vec<usize> = cols.iter().map(|(w, _)| *w).collect();
         let item_h = self.item_height(rc.cfg);
-        let per = body_h.checked_div(item_h).map_or(0, |n| n.max(1));
+        let per = (body.height as usize)
+            .checked_div(item_h)
+            .map_or(0, |n| n.max(1));
         let content_h = match self.kind {
             Kind::Notification => 3,
             _ if rc.cfg.theme.ui.table.compact => 1,
             _ => 2,
         };
+        let separator = rc.cfg.theme.ui.table.show_separator;
         let end = (self.top + per + 1).min(self.num_rows());
-        let mut body: Block = vec![];
+        let mut rows = vec![];
+        let mut selected = None;
         for i in self.top..end {
-            let selected = i == self.cursor;
-            let cells = self.row_cells(i, rc, &widths, selected);
-            let row = self.render_row(cells, &widths, content_h, selected, rc);
-            body.extend(row);
-            if rc.cfg.theme.ui.table.show_separator {
-                let total: usize = widths.iter().sum();
-                body.push(Line::from(span(
-                    "─".repeat(total.min(width)),
-                    Style::default().fg(t.faint_border),
-                )));
+            if i == self.cursor {
+                selected = Some(rows.len());
+            }
+            let cells = self.row_cells(i, rc, &widths, i == self.cursor);
+            rows.push(self.table_row(cells, &widths, content_h));
+            if separator {
+                let style = Style::default().fg(t.faint_border);
+                rows.push(Row::new(widths.iter().map(|w| span("─".repeat(*w), style))));
             }
         }
-        body.truncate(body_h);
-        out.extend(body);
-        out
+        let mut state = TableState::default().with_selected(selected);
+        StatefulWidget::render(
+            table.rows(rows),
+            Rect {
+                width: total,
+                ..area
+            },
+            buf,
+            &mut state,
+        );
     }
 
-    fn render_row(
-        &self,
-        cells: Vec<Block>,
-        widths: &[usize],
-        content_h: usize,
-        selected: bool,
-        rc: &RenderCtx,
-    ) -> Block {
-        let bg = if selected {
-            Some(rc.theme.selected_background)
-        } else {
-            None
-        };
-        let pad_style = bg.map(|b| Style::default().bg(b)).unwrap_or_default();
-        let shown: Vec<&Column> = self.columns.iter().filter(|c| !c.hidden).collect();
-        let mut rendered: Vec<Block> = vec![];
-        for ((cell, w), c) in cells.into_iter().zip(widths).zip(shown) {
-            let inner_w = w.saturating_sub(2).max(1);
-            let multiline = cell.len() > 1;
-            let lines: Block = if multiline {
-                cell.into_iter()
-                    .map(|l| truncate_line(&l, inner_w, ""))
-                    .collect()
-            } else {
-                let spans = cell.into_iter().next().map(|l| l.spans).unwrap_or_default();
-                wrap_spans(&spans, inner_w)
-            };
-            let mut col_block: Block = vec![];
-            for i in 0..content_h {
-                let l = lines.get(i).cloned().unwrap_or_default();
-                let l = with_bg(l, bg);
-                let body = align_line(l, inner_w, c.align.unwrap_or(Align::Left), pad_style);
-                let full = concat(vec![
-                    Line::from(span(" ", pad_style)),
-                    body,
-                    Line::from(span(" ", pad_style)),
-                ]);
-                col_block.push(fit_line(&full, *w, pad_style));
-            }
-            rendered.push(col_block);
-        }
-        hjoin(rendered)
+    /// One row of cells, each padded by a space on both sides and cut to `content_h` lines.
+    fn table_row(&self, cells: Vec<Block>, widths: &[usize], content_h: usize) -> Row<'static> {
+        let shown = self.columns.iter().filter(|c| !c.hidden);
+        let cells = cells
+            .into_iter()
+            .zip(widths)
+            .zip(shown)
+            .map(|((cell, w), c)| {
+                let inner_w = w.saturating_sub(2).max(1);
+                let lines: Block = if cell.len() > 1 {
+                    cell.iter().map(|l| truncate_line(l, inner_w, "")).collect()
+                } else {
+                    let spans = cell.into_iter().next().map(|l| l.spans).unwrap_or_default();
+                    wrap_spans(&spans, inner_w)
+                };
+                let lines: Vec<Line<'static>> = lines
+                    .into_iter()
+                    .take(content_h)
+                    .map(|l| {
+                        let mut spans = vec![raw(" ")];
+                        spans.extend(l.spans);
+                        spans.push(raw(" "));
+                        Line::from(spans).alignment(c.align)
+                    })
+                    .collect();
+                Cell::from(Text::from(lines))
+            });
+        Row::new(cells).height(content_h as u16)
     }
 
     fn row_cells(&self, i: usize, rc: &RenderCtx, widths: &[usize], selected: bool) -> Vec<Block> {
@@ -991,26 +958,6 @@ impl Section {
             .into_iter()
             .map(|i| all.get(i).cloned().unwrap_or_default())
             .collect()
-    }
-}
-
-/// Patches a background onto every span that has none (selected rows).
-pub fn with_bg(l: Line<'static>, bg: Option<Color>) -> Line<'static> {
-    match bg {
-        None => l,
-        Some(b) => Line::from(
-            l.spans
-                .into_iter()
-                .map(|s| {
-                    let st = if s.style.bg.is_none() {
-                        s.style.bg(b)
-                    } else {
-                        s.style
-                    };
-                    Span::styled(s.content, st)
-                })
-                .collect::<Vec<_>>(),
-        ),
     }
 }
 

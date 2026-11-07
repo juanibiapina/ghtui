@@ -589,7 +589,12 @@ fn summary(t: &Theme, row: &PrRow, w: usize, more: bool) -> Block {
                 Style::default().add_modifier(Modifier::BOLD | Modifier::ITALIC),
             ),
         ]);
-        rendered.push(align_line(hint, w, Align::Center, Style::default()));
+        rendered.push(align_line(
+            hint,
+            w,
+            ratatui::layout::Alignment::Center,
+            Style::default(),
+        ));
     }
     out.extend(rendered);
     out

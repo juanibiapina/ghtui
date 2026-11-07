@@ -431,10 +431,8 @@ pub fn draw(f: &mut Frame, app: &App) {
                 cfg: &app.cfg,
                 theme: t,
                 spinner: app.spinner,
-                width: areas.sections.width as usize,
-                height: areas.sections.height as usize,
             };
-            Text::from(s.view(&rc)).render(areas.sections, buf);
+            s.render(&rc, areas.sections, buf);
         }
         None => Line::from("No sections defined")
             .centered()

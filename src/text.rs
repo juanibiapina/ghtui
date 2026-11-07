@@ -1,6 +1,7 @@
 //! Styled-text helpers: width, joining, truncation, alignment and word wrap,
 //! with lipgloss semantics.
 
+use ratatui::layout::Alignment;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -21,10 +22,6 @@ pub fn str_width(s: &str) -> usize {
 
 pub fn line_width(l: &Line) -> usize {
     l.spans.iter().map(|s| str_width(&s.content)).sum()
-}
-
-pub fn block_width(b: &Block) -> usize {
-    b.iter().map(line_width).max().unwrap_or(0)
 }
 
 /// Cuts a line to `max` cells, appending `ellipsis` when something was cut.
@@ -80,16 +77,16 @@ pub fn fit_line(l: &Line<'static>, w: usize, pad_style: Style) -> Line<'static> 
     pad_line(truncate_line(l, w, ""), w, pad_style)
 }
 
-pub fn align_line(l: Line<'static>, w: usize, align: Align, pad_style: Style) -> Line<'static> {
+pub fn align_line(l: Line<'static>, w: usize, align: Alignment, pad_style: Style) -> Line<'static> {
     let cur = line_width(&l);
     if cur >= w {
         return truncate_line(&l, w, "");
     }
     let gap = w - cur;
     let (left, right) = match align {
-        Align::Left => (0, gap),
-        Align::Right => (gap, 0),
-        Align::Center => (gap / 2, gap - gap / 2),
+        Alignment::Left => (0, gap),
+        Alignment::Right => (gap, 0),
+        Alignment::Center => (gap / 2, gap - gap / 2),
     };
     let mut spans = vec![];
     if left > 0 {
@@ -100,28 +97,6 @@ pub fn align_line(l: Line<'static>, w: usize, align: Align, pad_style: Style) ->
         spans.push(Span::styled(" ".repeat(right), pad_style));
     }
     Line::from(spans)
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Align {
-    Left,
-    Center,
-    Right,
-}
-
-/// lipgloss.JoinHorizontal(Top, ...): each block is padded to its own width.
-pub fn hjoin(blocks: Vec<Block>) -> Block {
-    let height = blocks.iter().map(|b| b.len()).max().unwrap_or(0);
-    let widths: Vec<usize> = blocks.iter().map(block_width).collect();
-    let mut out: Block = vec![Line::default(); height];
-    for (b, w) in blocks.into_iter().zip(widths) {
-        for (i, row) in out.iter_mut().enumerate() {
-            let l = b.get(i).cloned().unwrap_or_default();
-            let padded = pad_line(l, w, Style::default());
-            row.spans.extend(padded.spans);
-        }
-    }
-    out
 }
 
 /// Concatenates spans of single-line pieces.
@@ -331,12 +306,5 @@ mod tests {
     fn truncates_with_ellipsis() {
         assert_eq!(truncate_str("abcdef", 4, "…"), "abc…");
         assert_eq!(truncate_str("abc", 4, "…"), "abc");
-    }
-
-    #[test]
-    fn hjoin_pads_columns() {
-        let a: Block = vec![Line::from("ab"), Line::from("a")];
-        let b: Block = vec![Line::from("x")];
-        assert_eq!(plain(&hjoin(vec![a, b])), vec!["abx", "a  "]);
     }
 }
