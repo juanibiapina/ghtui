@@ -17,8 +17,8 @@ the width is `6`, `my-repo` displays as `my-r`.
 
 Column headings have their color defined by the [`theme.colors.text.primary`] setting.
 
-[`width`]: /configuration/layout/options#column-width
-[`theme.colors.text.primary`]: /configuration/theme#primary-text-color
+[`width`]: /ghtui/configuration/layout/options#column-width
+[`theme.colors.text.primary`]: /ghtui/configuration/theme#primary-text-color
 
 By default, Issue views display the following columns in the order they're listed:
 
@@ -35,17 +35,17 @@ By default, Issue views display the following columns in the order they're liste
   aren't explicitly defined in your configuration file, they're added to
   the table unless you set their [`hidden`] option to `false`.
 
-[`hidden`]: /configuration/layout/options#hide-column
+[`hidden`]: /ghtui/configuration/layout/options#hide-column
 
 </Aside>
       
-[`updatedAt`]:    #issues-updated-at-column
-[`state`]:        #issues-state-column
-[`repo`]:         #issues-repo-column
-[`title`]:        #issues-title-column
-[`creator`]:       #issues-creator-column
-[`comments`]:           #issues-comments-column
-[`reactions`]:        #issues-reactions-column
+[`updatedAt`]:    #issue-updated-at-column
+[`state`]:        #issue-state-column
+[`repo`]:         #issue-repo-column
+[`title`]:        #issue-title-column
+[`creator`]:       #issue-creator-column
+[`comments`]:           #issue-comments-column
+[`reactions`]:        #issue-reactions-column
 
 ```yaml
 title:
@@ -85,7 +85,7 @@ column displays the icon <NerdFontIcon icon="nf-oct-issue_closed"/> with the col
 
 The heading for this column is <NerdFontIcon icon="nf-oct-issue_opened"/>.
 
-[`theme.colors.text.faint`]: /configuration/theme#faint-text-color
+[`theme.colors.text.faint`]: /ghtui/configuration/theme#faint-text-color
 
 ## Issue Repo Column
 
@@ -99,7 +99,7 @@ name of the repository without the owner, like `ghtui` for the
 
 The heading for this column is <NerdFontIcon icon="nf-oct-repo"/>
 
-[`width`]: /configuration/layout/options#column-width
+[`width`]: /ghtui/configuration/layout/options#column-width
 
 ## Issue Title Column
 
@@ -115,8 +115,8 @@ The heading for this column is `Title`.
 
 The [`theme.colors.text.primary`] setting defines the issue number's color.
 
-[`hidden`]: /configuration/layout/options#hide-column
-[`theme.colors.text.primary`]: /configuration/theme#primary-text-color
+[`hidden`]: /ghtui/configuration/layout/options#hide-column
+[`theme.colors.text.primary`]: /ghtui/configuration/theme#primary-text-color
 
 ## Issue Creator Column
 

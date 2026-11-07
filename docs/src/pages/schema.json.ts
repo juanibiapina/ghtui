@@ -173,7 +173,7 @@ export function GET() {
         smartFilteringAtLaunch: {
           title: "Smart Filtering At Launch",
           description:
-            "Set this to `false` to disable [Smart Filtering](/getting-started/smartfiltering) at `ghtui` launch.\n",
+            "Set this to `false` to disable [Smart Filtering](https://juanm.dev/ghtui/configuration/searching/#smart-filtering) at `ghtui` launch.\n",
           type: "boolean",
         },
         confirmQuit: {

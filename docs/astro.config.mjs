@@ -2,23 +2,19 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import tailwindcss from "@tailwindcss/vite";
-import astroBrokenLinksChecker from "astro-broken-links-checker";
+import starlightLinksValidator from "starlight-links-validator";
 
-import node from "@astrojs/node";
-
-const ogUrl = new URL("og.png", "https://juanibiapina.github.io/ghtui/").href;
+const ogUrl = new URL("og.png", "https://juanm.dev/ghtui/").href;
 const ogImageAlt = "ghtui: Your GitHub in the Terminal";
 
 // https://astro.build/config
 export default defineConfig({
-  site: "https://juanibiapina.github.io/ghtui",
+  site: "https://juanm.dev",
+  base: "/ghtui",
   integrations: [
-    astroBrokenLinksChecker({
-      logFilePath: "broken-links.log",
-      checkExternalLinks: false,
-    }),
     starlight({
       title: "ghtui",
+      plugins: [starlightLinksValidator()],
       favicon: "/favicon.png",
       customCss: ["./src/styles/custom.css", "./src/fonts/font-face.css"],
       head: [
@@ -96,7 +92,4 @@ export default defineConfig({
   vite: {
     plugins: [tailwindcss()],
   },
-  adapter: node({
-    mode: "standalone",
-  }),
 });
