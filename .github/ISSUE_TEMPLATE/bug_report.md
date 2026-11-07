@@ -1,30 +1,27 @@
 ---
 name: Bug report
-about: Create a report to help us improve
-title: "[BUG]"
+about: Something in ghtui doesn't work
+title: ""
 labels: bug
 assignees: ""
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+**What happened**
 
-**To Reproduce**
-Steps to reproduce the behavior:
+**What you expected**
 
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+**Steps to reproduce**
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+1.
+2.
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+**Config**
 
-**Desktop (please complete the following information):**
+The relevant part of your `config.yml` or `.ghtui.yml`, if any.
 
-- OS: [e.g. Mac]
-- Terminal Emulator
-- Using tmux?
+**Environment**
+
+- `ghtui --version`:
+- OS:
+- Terminal:
+- tmux or another multiplexer:
