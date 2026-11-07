@@ -1,5 +1,6 @@
 ---
 source: src/ui.rs
+assertion_line: 698
 expression: screen(app)
 ---
 Buffer {
@@ -173,7 +174,7 @@ Buffer {
         x: 0, y: 19, fg: Reset, bg: Indexed(236), underline: Reset, modifier: NONE,
         x: 1, y: 20, fg: Indexed(15), bg: Indexed(236), underline: Reset, modifier: BOLD,
         x: 42, y: 20, fg: Reset, bg: Indexed(236), underline: Reset, modifier: NONE,
-        x: 3, y: 21, fg: Rgb(66, 160, 250), bg: Indexed(236), underline: Reset, modifier: NONE,
+        x: 3, y: 21, fg: Rgb(66, 160, 250), bg: Reset, underline: Reset, modifier: NONE,
         x: 139, y: 21, fg: Reset, bg: Indexed(236), underline: Reset, modifier: NONE,
         x: 0, y: 22, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 3, y: 22, fg: Rgb(66, 160, 250), bg: Reset, underline: Reset, modifier: NONE,
@@ -186,11 +187,10 @@ Buffer {
         x: 139, y: 22, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 1, y: 23, fg: Rgb(66, 160, 250), bg: Reset, underline: Reset, modifier: NONE,
         x: 2, y: 23, fg: Indexed(236), bg: Rgb(66, 160, 250), underline: Reset, modifier: BOLD,
-        x: 3, y: 23, fg: Rgb(66, 160, 250), bg: Rgb(66, 160, 250), underline: Reset, modifier: BOLD,
-        x: 4, y: 23, fg: Indexed(236), bg: Rgb(66, 160, 250), underline: Reset, modifier: BOLD,
-        x: 5, y: 23, fg: Indexed(251), bg: Rgb(66, 160, 250), underline: Reset, modifier: BOLD,
-        x: 7, y: 23, fg: Indexed(245), bg: Rgb(66, 160, 250), underline: Reset, modifier: BOLD | ITALIC,
-        x: 8, y: 23, fg: Indexed(245), bg: Reset, underline: Reset, modifier: ITALIC,
+        x: 3, y: 23, fg: Rgb(66, 160, 250), bg: Reset, underline: Reset, modifier: NONE,
+        x: 4, y: 23, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 5, y: 23, fg: Indexed(251), bg: Reset, underline: Reset, modifier: NONE,
+        x: 7, y: 23, fg: Indexed(245), bg: Reset, underline: Reset, modifier: ITALIC,
         x: 28, y: 23, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 138, y: 23, fg: Rgb(66, 160, 250), bg: Reset, underline: Reset, modifier: NONE,
         x: 139, y: 23, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
@@ -199,8 +199,8 @@ Buffer {
         x: 138, y: 24, fg: Rgb(66, 160, 250), bg: Reset, underline: Reset, modifier: NONE,
         x: 139, y: 24, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 3, y: 25, fg: Rgb(66, 160, 250), bg: Reset, underline: Reset, modifier: NONE,
-        x: 4, y: 25, fg: Indexed(15), bg: Reset, underline: Reset, modifier: BOLD,
-        x: 9, y: 25, fg: Indexed(15), bg: Reset, underline: Reset, modifier: NONE,
+        x: 4, y: 25, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 5, y: 25, fg: Indexed(15), bg: Reset, underline: Reset, modifier: NONE,
         x: 13, y: 25, fg: Indexed(245), bg: Reset, underline: Reset, modifier: NONE,
         x: 18, y: 25, fg: Indexed(7), bg: Reset, underline: Reset, modifier: NONE,
         x: 21, y: 25, fg: Indexed(15), bg: Reset, underline: Reset, modifier: NONE,

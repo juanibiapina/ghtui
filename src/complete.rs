@@ -1,14 +1,18 @@
 //! Autocomplete for the search bar and the input box: suggestion sources, the
 //! fuzzy filter, the popup and key routing.
 
+use ratatui::buffer::Buffer;
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::Line;
+use ratatui::symbols::merge::MergeStrategy;
+use ratatui::text::{Line, Text};
+use ratatui::widgets::{Block, BorderType, Clear, Widget};
 
 use crate::icons;
 use crate::input::Editable;
 use crate::model::Label;
 use crate::section::SPINNER;
-use crate::text::*;
+use crate::text::{raw, span, truncate_line};
 use crate::theme::{self, Theme};
 
 const MAX_VISIBLE: usize = 4;
@@ -498,49 +502,71 @@ impl Completer {
         consumed
     }
 
-    /// Rows, status and help inside a rounded popup.
-    pub fn view(&self, t: &Theme, width: usize, spinner: usize, top_border: bool) -> Block {
+    /// Rows of the popup including its borders, zero while hidden.
+    pub fn height(&self) -> u16 {
         if !self.visible {
-            return vec![];
+            return 0;
         }
-        let border = Style::default().fg(theme::OPEN_ISSUE);
+        let rows = self.filtered.len().min(MAX_VISIBLE);
+        let no_results = rows == 0 && matches!(self.fetch, FetchState::Idle | FetchState::Success);
+        let status = matches!(self.fetch, FetchState::Loading | FetchState::Error(_));
+        (rows + usize::from(no_results) + usize::from(status) + 4) as u16
+    }
+
+    /// Draws the rows, status and help in a rounded box whose top border joins any
+    /// border already drawn on its first row.
+    pub fn render(&self, t: &Theme, spinner: usize, area: Rect, buf: &mut Buffer) {
+        if !self.visible {
+            return;
+        }
+        let area = Rect {
+            height: area.height.min(self.height()),
+            ..area
+        };
+        let [_, below_top] =
+            Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
+        Clear.render(below_top, buf);
+        let block = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(theme::OPEN_ISSUE))
+            .merge_borders(MergeStrategy::Fuzzy);
+        let inner = block.inner(area);
+        block.render(area, buf);
+        Text::from(self.lines(t, spinner, inner.width as usize)).render(inner, buf);
+    }
+
+    fn lines(&self, t: &Theme, spinner: usize, width: usize) -> Vec<Line<'static>> {
         let sel_bg = Style::default().bg(t.selected_background);
-        let mut rows: Block = vec![];
+        let mut lines = vec![];
         for (i, s) in self.filtered.iter().take(MAX_VISIBLE).enumerate() {
             let selected = i == self.selected;
             let bg = if selected { sel_bg } else { Style::default() };
-            let mut spans = vec![if selected {
+            let marker = if selected {
                 span(
                     format!("{} ", icons::SELECTION),
-                    Style::default()
-                        .fg(t.success_text)
-                        .bg(t.selected_background),
+                    Style::default().fg(t.success_text),
                 )
             } else {
                 raw("  ")
-            }];
-            spans.push(span(
-                s.value.clone(),
-                t.primary().add_modifier(Modifier::BOLD).patch(bg),
-            ));
-            spans.push(span(" ", bg));
-            spans.push(span(s.detail.clone(), t.faint().patch(bg)));
-            let l = Line::from(spans);
-            rows.push(if selected {
-                fit_line(&l, width, sel_bg)
-            } else {
-                fit_line(&l, width, Style::default())
-            });
+            };
+            lines.push(
+                Line::from(vec![
+                    marker,
+                    span(s.value.clone(), t.primary().add_modifier(Modifier::BOLD)),
+                    raw(" "),
+                    span(s.detail.clone(), t.faint()),
+                ])
+                .style(bg),
+            );
         }
-        let mut parts: Block = rows;
-        if parts.is_empty() && matches!(self.fetch, FetchState::Idle | FetchState::Success) {
-            parts.push(Line::from(span(
+        if lines.is_empty() && matches!(self.fetch, FetchState::Idle | FetchState::Success) {
+            lines.push(Line::from(span(
                 format!(" no results{}", icons::ELLIPSIS),
                 t.faint().add_modifier(Modifier::ITALIC),
             )));
         }
         match &self.fetch {
-            FetchState::Loading => parts.push(Line::from(vec![
+            FetchState::Loading => lines.push(Line::from(vec![
                 raw(" "),
                 span(SPINNER[spinner % SPINNER.len()], t.secondary()),
                 span(
@@ -548,14 +574,14 @@ impl Completer {
                     t.faint().add_modifier(Modifier::ITALIC),
                 ),
             ])),
-            FetchState::Error(e) => parts.push(Line::from(vec![
+            FetchState::Error(e) => lines.push(Line::from(vec![
                 raw(" "),
                 span(icons::FAILURE, Style::default().fg(t.error_text)),
                 span(format!(" {e}"), t.faint().add_modifier(Modifier::ITALIC)),
             ])),
             _ => {}
         }
-        parts.push(Line::from(span(
+        lines.push(Line::from(span(
             "─".repeat(width),
             Style::default().fg(t.faint_border),
         )));
@@ -577,21 +603,8 @@ impl Completer {
             help.push(span(k, t.primary()));
             help.push(span(format!(" {d}"), t.faint()));
         }
-        parts.push(truncate_line(&Line::from(help), width, icons::ELLIPSIS));
-
-        let mut out: Block = vec![];
-        if top_border {
-            out.push(Line::from(span(format!("╭{}╮", "─".repeat(width)), border)));
-        }
-        for l in parts {
-            out.push(concat(vec![
-                Line::from(span("│", border)),
-                fit_line(&l, width, Style::default()),
-                Line::from(span("│", border)),
-            ]));
-        }
-        out.push(Line::from(span(format!("╰{}╯", "─".repeat(width)), border)));
-        out
+        lines.push(truncate_line(&Line::from(help), width, icons::ELLIPSIS));
+        lines
     }
 }
 

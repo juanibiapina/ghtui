@@ -8,9 +8,8 @@ use chrono::{DateTime, Local};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::symbols::border;
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{self, Cell, Row, StatefulWidget, Table, TableState, Widget};
+use ratatui::widgets::{self, BorderType, Cell, Row, StatefulWidget, Table, TableState, Widget};
 
 use crate::config::{Config, IssuesLayoutConfig, PrsLayoutConfig};
 use crate::icons;
@@ -724,18 +723,8 @@ impl Section {
                 .horizontal_margin(1)
                 .areas(area);
         let focused = self.search.is_some();
-        let popup = self.search_cmp.as_ref().is_some_and(|c| c.visible);
-        let border_set = if popup {
-            border::Set {
-                bottom_left: "├",
-                bottom_right: "┤",
-                ..border::ROUNDED
-            }
-        } else {
-            border::ROUNDED
-        };
         let search_box = widgets::Block::bordered()
-            .border_set(border_set)
+            .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(if focused {
                 theme::OPEN_ISSUE
             } else {

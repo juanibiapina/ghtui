@@ -5,7 +5,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, BorderType, Borders, Widget};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 use unicode_width::UnicodeWidthChar;
 
 use crate::app::{App, Position, TaskState};
@@ -483,21 +483,13 @@ pub fn draw(f: &mut Frame, app: &App) {
     // Autocomplete popups are layers over the content, like lipgloss.NewLayer in ui.View.
     let sections = areas.sections;
     if let Some(c) = app.section().and_then(|s| s.search_cmp.as_ref()) {
-        let popup = c.view(
-            t,
-            (sections.width as usize).saturating_sub(4),
-            app.spinner,
-            false,
+        let below_search = Rect::new(
+            sections.x + 1,
+            sections.y + 2,
+            sections.width.saturating_sub(2),
+            sections.height.saturating_sub(2),
         );
-        Text::from(popup).render(
-            Rect::new(
-                sections.x + 1,
-                sections.y + 3,
-                sections.width.saturating_sub(2),
-                sections.height.saturating_sub(3),
-            ),
-            buf,
-        );
+        c.render(t, app.spinner, below_search, buf);
     }
     let editor = app.pr_editor.as_ref().or(app.issue_editor.as_ref());
     if let (Some(p), Some(ed)) = (areas.preview, editor)
@@ -514,11 +506,10 @@ pub fn draw(f: &mut Frame, app: &App) {
             lines - cur - 1
         };
         let py = app.height.saturating_sub(1 + from_bottom + 8 + 6) as u16;
-        let px = p.outer().x + 3;
-        let inner = app.sidebar_content_width().saturating_sub(6);
-        let popup = c.view(t, inner, app.spinner, true);
-        let rect = Rect::new(px, py, (inner + 2) as u16, popup.len() as u16);
-        Text::from(popup).render(rect.intersection(area), buf);
+        let width = p.content.width.saturating_sub(4);
+        let rect = Rect::new(p.outer().x + 3, py, width, c.height()).intersection(area);
+        Clear.render(rect, buf);
+        c.render(t, app.spinner, rect, buf);
     }
 
     render_footer(app, areas.footer, buf);
