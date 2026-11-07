@@ -57,7 +57,7 @@ export default defineConfig({
         {
           label: "Keybindings",
           collapsed: true,
-          autogenerate: { directory: "getting-started/keybindings" },
+          items: [{ autogenerate: { directory: "getting-started/keybindings" } }],
         },
         {
           label: "Configuration",
