@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Show help in a popup that groups keys by category and closes with `esc`.
 - Show fetched PRs, issues and notifications up to 100 ms sooner.
 - Stop capturing the mouse, so you can select and copy text in the terminal again.
 

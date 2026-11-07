@@ -4,7 +4,7 @@
 use anyhow::{Result, bail};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::config::{Keybinding, Keybindings, ViewType};
+use crate::config::{Keybinding, Keybindings};
 use crate::icons;
 use crate::util::truncate_command;
 
@@ -167,8 +167,8 @@ impl Default for Keys {
                 refresh: b(&["r"], "r", "refresh"),
                 refresh_all: b(&["R"], "R", "refresh all"),
                 redraw: Binding::default(),
-                page_down: b(&["ctrl+d"], "Ctrl+d", "preview page down"),
-                page_up: b(&["ctrl+u"], "Ctrl+u", "preview page up"),
+                page_down: b(&["ctrl+d"], "ctrl+d", "preview page down"),
+                page_up: b(&["ctrl+u"], "ctrl+u", "preview page up"),
                 next_section: b(
                     &["right", "l"],
                     &format!("{}/l", icons::ARROW_RIGHT),
@@ -197,7 +197,7 @@ impl Default for Keys {
                 label: b(&["L"], "L", "label"),
                 comment: b(&["c"], "c", "comment"),
                 diff: b(&["d"], "d", "diff"),
-                checkout: b(&["C", "space"], "C/Space", "checkout"),
+                checkout: b(&["C", "space"], "C/space", "checkout"),
                 close: b(&["x"], "x", "close"),
                 summary_view_more: b(&["e"], "e", "expand description"),
                 ready: b(&["W"], "W", "ready for review"),
@@ -224,7 +224,7 @@ impl Default for Keys {
                 view: b(&["enter"], "enter", "view notification"),
                 back_to_notification: b(&["esc"], "esc", "back to notification"),
                 mark_as_done: b(&["D"], "D", "mark as done"),
-                mark_all_as_done: b(&["alt+d"], "Alt+d", "mark all as done"),
+                mark_all_as_done: b(&["alt+d"], "alt+d", "mark all as done"),
                 mark_as_read: b(&["m"], "m", "mark as read"),
                 mark_all_as_read: b(&["M"], "M", "mark all as read"),
                 unsubscribe: b(&["u"], "u", "unsubscribe"),
@@ -243,7 +243,7 @@ impl Default for Keys {
                 force_push: b(&["F"], "F", "force-push"),
                 delete: b(&["d", "backspace"], "d/backspace", "delete"),
                 update_pr: b(&["u"], "u", "update PR"),
-                view_prs: b(&["s"], "s", "Switch to PRs"),
+                view_prs: b(&["s"], "s", "switch to PRs"),
             },
             custom_universal: vec![],
             custom_pr: vec![],
@@ -401,140 +401,6 @@ impl Keys {
             target.rebind(kb, false);
         }
         Ok(())
-    }
-
-    fn pr_full_help(&self) -> Vec<Binding> {
-        let p = &self.pr;
-        vec![
-            p.prev_sidebar_tab.clone(),
-            p.next_sidebar_tab.clone(),
-            p.approve.clone(),
-            p.assign.clone(),
-            p.unassign.clone(),
-            p.label.clone(),
-            p.comment.clone(),
-            p.diff.clone(),
-            p.checkout.clone(),
-            p.close.clone(),
-            p.ready.clone(),
-            p.reopen.clone(),
-            p.merge.clone(),
-            p.update.clone(),
-            p.watch_checks.clone(),
-            p.approve_workflows.clone(),
-            p.toggle_smart_filtering.clone(),
-            p.view_issues.clone(),
-        ]
-    }
-
-    fn issue_full_help(&self) -> Vec<Binding> {
-        let i = &self.issue;
-        vec![
-            i.label.clone(),
-            i.assign.clone(),
-            i.unassign.clone(),
-            i.comment.clone(),
-            i.checkout.clone(),
-            i.close.clone(),
-            i.reopen.clone(),
-            i.toggle_smart_filtering.clone(),
-            i.view_prs.clone(),
-        ]
-    }
-
-    fn notification_full_help(&self) -> Vec<Binding> {
-        let n = &self.notif;
-        vec![
-            n.view.clone(),
-            n.back_to_notification.clone(),
-            n.mark_as_done.clone(),
-            n.mark_all_as_done.clone(),
-            n.mark_as_read.clone(),
-            n.mark_all_as_read.clone(),
-            n.unsubscribe.clone(),
-            n.toggle_bookmark.clone(),
-            n.open.clone(),
-            n.sort_by_repo.clone(),
-            n.switch_to_prs.clone(),
-            n.toggle_smart_filtering.clone(),
-        ]
-    }
-
-    /// KeyMap.FullHelp: navigation, app keys, view keys, custom keys, help/quit.
-    pub fn full_help(&self, view: ViewType, subject: NotificationSubject) -> Vec<Vec<Binding>> {
-        let u = &self.u;
-        let mut custom = self.custom_universal.clone();
-        let additional = match view {
-            ViewType::Prs => {
-                custom.extend(self.custom_pr.clone());
-                self.pr_full_help()
-            }
-            ViewType::Repo => {
-                custom.extend(self.custom_branch.clone());
-                let br = &self.branch;
-                vec![
-                    br.checkout.clone(),
-                    br.fast_forward.clone(),
-                    br.push.clone(),
-                    br.force_push.clone(),
-                    br.new.clone(),
-                    br.create_pr.clone(),
-                    br.delete.clone(),
-                    br.update_pr.clone(),
-                    br.view_prs.clone(),
-                ]
-            }
-            ViewType::Notifications => {
-                custom.extend(self.custom_notification.clone());
-                let mut a = self.notification_full_help();
-                match subject {
-                    NotificationSubject::Pr => {
-                        a.extend(self.pr_full_help());
-                        custom.extend(self.custom_pr.clone());
-                    }
-                    NotificationSubject::Issue => {
-                        a.extend(self.issue_full_help());
-                        custom.extend(self.custom_issue.clone());
-                    }
-                    NotificationSubject::None => {}
-                }
-                a
-            }
-            ViewType::Issues => {
-                custom.extend(self.custom_issue.clone());
-                self.issue_full_help()
-            }
-        };
-        let mut sections = vec![
-            vec![
-                u.up.clone(),
-                u.down.clone(),
-                u.prev_section.clone(),
-                u.next_section.clone(),
-                u.first_line.clone(),
-                u.last_line.clone(),
-                u.page_down.clone(),
-                u.page_up.clone(),
-            ],
-            vec![
-                u.refresh.clone(),
-                u.refresh_all.clone(),
-                u.toggle_preview.clone(),
-                u.toggle_preview_position.clone(),
-                u.open_github.clone(),
-                u.copy_number.clone(),
-                u.copy_url.clone(),
-                u.search.clone(),
-                u.new_section.clone(),
-                u.remove_section.clone(),
-            ],
-            additional,
-        ];
-        if !custom.is_empty() {
-            sections.push(custom);
-        }
-        sections.push(vec![u.help.clone(), u.quit.clone()]);
-        sections
     }
 }
 

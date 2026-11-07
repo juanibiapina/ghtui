@@ -12,6 +12,7 @@ use crate::bookmarks;
 use crate::complete::{Completer, FetchState, SourceKind};
 use crate::config::{Config, IssuesSectionConfig, PrsSectionConfig, ViewType};
 use crate::github::{self, ReadState};
+use crate::help::Help;
 use crate::input::{TextArea, TextInput};
 use crate::keys::{Keys, NotificationSubject};
 use crate::model::*;
@@ -88,7 +89,7 @@ pub struct App {
     pub sidebar_scroll: usize,
     pub sidebar_cache: Option<(usize, Block)>,
     pub position_override: Option<Position>,
-    pub show_help: bool,
+    pub help: Option<Help>,
     pub confirm_quit_shown: bool,
     pub error: Option<String>,
     pub tasks: HashMap<String, Task>,
@@ -155,7 +156,7 @@ impl App {
             sidebar_scroll: 0,
             sidebar_cache: None,
             position_override: None,
-            show_help: false,
+            help: None,
             confirm_quit_shown: false,
             error: None,
             tasks: HashMap::new(),
@@ -326,16 +327,10 @@ impl App {
 
     // ---------------- layout ----------------
 
-    pub fn help_height(&self) -> usize {
-        if !self.show_help {
-            return 0;
-        }
-        crate::ui::help_lines(self).len()
-    }
-
     pub fn layout(&self) -> Layout {
-        let footer_h = FOOTER_HEIGHT + self.help_height();
-        let base = self.height.saturating_sub(self.tabs_height() + footer_h);
+        let base = self
+            .height
+            .saturating_sub(self.tabs_height() + FOOTER_HEIGHT);
         let preview = &self.cfg.defaults.preview;
         let position = self
             .position_override
@@ -1335,6 +1330,13 @@ impl App {
             }
             return;
         }
+        if let Some(help) = self.help.as_mut() {
+            let area = ratatui::layout::Rect::new(0, 0, self.width as u16, self.height as u16);
+            if help.handle_key(key, &self.keys, area) {
+                self.help = None;
+            }
+            return;
+        }
         if self.is_user_defined_keybinding(key) {
             self.execute_keybinding(key);
             return;
@@ -1442,7 +1444,11 @@ impl App {
             self.start_search();
             return;
         } else if u.help.matches(key) {
-            self.show_help = !self.show_help;
+            self.help = Some(Help::new(
+                &self.keys,
+                self.view,
+                self.notification_subject(),
+            ));
         } else if u.copy_number.matches(key) {
             match self.current_row() {
                 None => self.notify_err("Current selection isn't associated with a PR/Issue"),

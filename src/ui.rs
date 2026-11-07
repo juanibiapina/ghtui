@@ -398,44 +398,6 @@ fn footer_line(app: &App) -> Line<'static> {
     )
 }
 
-/// bubbles/help FullHelpView: columns of keys and descriptions separated by 4 spaces.
-pub fn help_lines(app: &App) -> Block {
-    let t = &app.theme;
-    let groups = app.keys.full_help(app.view, app.notification_subject());
-    let mut columns: Vec<Block> = vec![];
-    let mut total = 0;
-    for g in groups {
-        let g: Vec<_> = g.into_iter().filter(|b| !b.keys.is_empty()).collect();
-        if g.is_empty() {
-            continue;
-        }
-        let kw = g.iter().map(|b| str_width(&b.help_key)).max().unwrap_or(0);
-        let col: Block = g
-            .iter()
-            .map(|b| {
-                Line::from(vec![
-                    span(
-                        format!("{}{}", b.help_key, " ".repeat(kw - str_width(&b.help_key))),
-                        t.primary(),
-                    ),
-                    span(" ", t.primary()),
-                    span(b.help_desc.clone(), t.faint()),
-                ])
-            })
-            .collect();
-        let w = block_width(&col) + if columns.is_empty() { 0 } else { 4 };
-        if total + w > app.width {
-            break;
-        }
-        total += w;
-        if !columns.is_empty() {
-            columns.push(vec![Line::from(span("    ", t.secondary()))]);
-        }
-        columns.push(col);
-    }
-    hjoin(columns)
-}
-
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
     let buf = f.buffer_mut();
@@ -458,8 +420,6 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     let l = app.layout();
     let top = app.tabs_height() as u16;
-    // lipgloss never shrinks the search box and table header, so a tall help
-    // footer pushes everything down and gets cut at the bottom of the screen.
     let mut sec_h = l.main_h;
     match app.section() {
         Some(s) => {
@@ -618,11 +578,6 @@ pub fn draw(f: &mut Frame, app: &App) {
         );
     }
 
-    let help = if app.show_help {
-        help_lines(app)
-    } else {
-        vec![]
-    };
     let stacked = top as usize
         + sec_h
         + if app.sidebar_open && l.position == Position::Bottom {
@@ -630,17 +585,13 @@ pub fn draw(f: &mut Frame, app: &App) {
         } else {
             0
         };
-    let footer_y = (stacked as u16).max(area.height.saturating_sub(1 + help.len() as u16));
+    let footer_y = (stacked as u16).max(area.height.saturating_sub(1));
     draw_block(
         buf,
         Rect::new(0, footer_y, area.width, 1),
         &[footer_line(app)],
     );
-    if !help.is_empty() {
-        draw_block(
-            buf,
-            Rect::new(0, footer_y + 1, area.width, help.len() as u16),
-            &help,
-        );
+    if let Some(help) = &app.help {
+        help.render(area, buf, t);
     }
 }
