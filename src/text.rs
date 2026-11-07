@@ -20,13 +20,9 @@ pub fn str_width(s: &str) -> usize {
     UnicodeWidthStr::width(s)
 }
 
-pub fn line_width(l: &Line) -> usize {
-    l.spans.iter().map(|s| str_width(&s.content)).sum()
-}
-
 /// Cuts a line to `max` cells, appending `ellipsis` when something was cut.
 pub fn truncate_line(l: &Line<'static>, max: usize, ellipsis: &str) -> Line<'static> {
-    if line_width(l) <= max {
+    if l.width() <= max {
         return l.clone();
     }
     let ell_w = str_width(ellipsis);
@@ -65,7 +61,7 @@ pub fn truncate_str(s: &str, max: usize, ellipsis: &str) -> String {
 }
 
 pub fn pad_line(mut l: Line<'static>, w: usize, style: Style) -> Line<'static> {
-    let cur = line_width(&l);
+    let cur = l.width();
     if cur < w {
         l.spans.push(Span::styled(" ".repeat(w - cur), style));
     }
@@ -78,7 +74,7 @@ pub fn fit_line(l: &Line<'static>, w: usize, pad_style: Style) -> Line<'static> 
 }
 
 pub fn align_line(l: Line<'static>, w: usize, align: Alignment, pad_style: Style) -> Line<'static> {
-    let cur = line_width(&l);
+    let cur = l.width();
     if cur >= w {
         return truncate_line(&l, w, "");
     }

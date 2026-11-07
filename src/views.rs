@@ -2,6 +2,7 @@
 //! the input box).
 
 use ratatui::style::{Color, Modifier, Style};
+use ratatui::symbols::border;
 use ratatui::text::{Line, Span};
 
 use crate::icons;
@@ -200,18 +201,24 @@ fn author_line(
     ])
 }
 
-/// A rounded box whose content is `inner_w` wide.
-fn rounded_box(lines: Block, inner_w: usize, border: Color) -> Block {
+/// Lines framed by `set` in `border`, with content `inner_w` wide.
+fn boxed(lines: Block, inner_w: usize, border: Color, set: border::Set) -> Block {
     let b = Style::default().fg(border);
-    let mut out = vec![Line::from(span(format!("╭{}╮", "─".repeat(inner_w)), b))];
+    let edge = |left: &str, line: &str, right: &str| {
+        Line::from(span(format!("{left}{}{right}", line.repeat(inner_w)), b))
+    };
+    let mut out = vec![edge(set.top_left, set.horizontal_top, set.top_right)];
     for l in lines {
-        out.push(concat(vec![
-            Line::from(span("│", b)),
-            fit_line(&l, inner_w, Style::default()),
-            Line::from(span("│", b)),
-        ]));
+        let mut row = vec![span(set.vertical_left, b)];
+        row.extend(fit_line(&l, inner_w, Style::default()).spans);
+        row.push(span(set.vertical_right, b));
+        out.push(Line::from(row));
     }
-    out.push(Line::from(span(format!("╰{}╯", "─".repeat(inner_w)), b)));
+    out.push(edge(
+        set.bottom_left,
+        set.horizontal_bottom,
+        set.bottom_right,
+    ));
     out
 }
 
@@ -629,7 +636,7 @@ fn changes_overview(t: &Theme, row: &PrRow, w: usize) -> Block {
         span(format!("{} ago", time_elapsed(pr.updated_at)), t.faint()),
     ]));
     lines.push(Line::default());
-    rounded_box(lines, inner, t.faint_border)
+    boxed(lines, inner, t.faint_border, border::ROUNDED)
 }
 
 fn checks_overview(t: &Theme, row: &PrRow, w: usize, approve_key: &str) -> Block {
@@ -644,7 +651,7 @@ fn checks_overview(t: &Theme, row: &PrRow, w: usize, approve_key: &str) -> Block
             true,
             inner,
         );
-        return rounded_box(c, inner, theme::MERGED_PR);
+        return boxed(c, inner, theme::MERGED_PR, border::ROUNDED);
     }
     if pr.state == "CLOSED" {
         let c = check_category(
@@ -655,7 +662,7 @@ fn checks_overview(t: &Theme, row: &PrRow, w: usize, approve_key: &str) -> Block
             true,
             inner,
         );
-        return rounded_box(c, inner, t.faint_border);
+        return boxed(c, inner, t.faint_border, border::ROUNDED);
     }
     let (review, rs) = review_status(t, row, inner);
     let (checks, cs) = checks_status(t, row, inner, approve_key);
@@ -671,7 +678,7 @@ fn checks_overview(t: &Theme, row: &PrRow, w: usize, approve_key: &str) -> Block
     parts.extend(review);
     parts.extend(checks);
     parts.extend(merge);
-    rounded_box(parts, inner, border)
+    boxed(parts, inner, border, border::ROUNDED)
 }
 
 fn num_code_owner_requests(row: &PrRow) -> i64 {
@@ -1032,7 +1039,12 @@ fn pr_activity(t: &Theme, row: &PrRow, w: usize) -> Block {
             raw(" "),
             span(time_elapsed(at), t.faint()),
         ]);
-        rounded_box(vec![content], w.saturating_sub(2), t.faint_border)
+        boxed(
+            vec![content],
+            w.saturating_sub(2),
+            t.faint_border,
+            border::ROUNDED,
+        )
     };
     for th in &e.review_threads.nodes {
         for c in &th.comments.nodes {
@@ -1128,7 +1140,7 @@ fn pr_commits(t: &Theme, row: &PrRow, w: usize) -> Block {
             span(c.message_headline.clone(), t.main_text()),
         ]);
         let left = truncate_line(&left, w.saturating_sub(rw + 1), icons::ELLIPSIS);
-        let dashes = w.saturating_sub(line_width(&left) + rw).max(1) - 1;
+        let dashes = w.saturating_sub(left.width() + rw).max(1) - 1;
         let mut title = left.spans.clone();
         title.push(span(
             format!(" {} ", icons::HORIZONTAL_LINE.repeat(dashes)),
@@ -1237,17 +1249,7 @@ pub fn editor_view(t: &Theme, ed: &Editor, w: usize) -> Block {
         span("ctrl+h", t.primary()),
         span(" toggle", t.faint()),
     ]));
-    let b = Style::default().fg(t.primary_border);
-    let mut out = vec![Line::from(span(format!("┌{}┐", "─".repeat(inner)), b))];
-    for l in lines {
-        out.push(concat(vec![
-            Line::from(span("│", b)),
-            fit_line(&l, inner, Style::default()),
-            Line::from(span("│", b)),
-        ]));
-    }
-    out.push(Line::from(span(format!("└{}┘", "─".repeat(inner)), b)));
-    out
+    boxed(lines, inner, t.primary_border, border::PLAIN)
 }
 
 pub fn issue_view(t: &Theme, issue: &Issue, width: usize, editor: Option<&Editor>) -> Block {
@@ -1307,7 +1309,7 @@ pub fn issue_view(t: &Theme, issue: &Issue, width: usize, editor: Option<&Editor
         )));
     }
     for c in comments {
-        cb.extend(rounded_box(
+        cb.extend(boxed(
             vec![Line::from(vec![
                 span(c.author.login.clone(), t.main_text()),
                 raw(" "),
@@ -1315,6 +1317,7 @@ pub fn issue_view(t: &Theme, issue: &Issue, width: usize, editor: Option<&Editor
             ])],
             cw.saturating_sub(2),
             t.faint_border,
+            border::ROUNDED,
         ));
         cb.extend(markdown::render(&markdown::clean_body(&c.body), cw));
     }

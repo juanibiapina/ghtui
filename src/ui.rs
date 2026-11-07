@@ -70,7 +70,7 @@ fn carousel(items: &[String], cursor: usize, width: usize, app: &App) -> Line<'s
             return Line::from(l);
         }
         let r = Line::from(span(format!("  {}  ", items[i]), item_style));
-        let wants = line_width(&r) as i64 + sep.as_ref().map(|_| 1).unwrap_or(0);
+        let wants = r.width() as i64 + sep.as_ref().map(|_| 1).unwrap_or(0);
         let item = if i < cursor {
             let remove = 1 + wants - max_w;
             if remove > 0 {
@@ -96,7 +96,7 @@ fn carousel(items: &[String], cursor: usize, width: usize, app: &App) -> Line<'s
     while leftover > 0 && (left >= 0 || right < n as i64) {
         if dir < 0 && left >= 0 {
             let it = render_item(left as usize, leftover);
-            leftover -= line_width(&it) as i64;
+            leftover -= it.width() as i64;
             let mut s = it.spans;
             s.extend(content);
             content = s;
@@ -104,7 +104,7 @@ fn carousel(items: &[String], cursor: usize, width: usize, app: &App) -> Line<'s
             left -= 1;
         } else if dir > 0 && right < n as i64 {
             let it = render_item(right as usize, leftover);
-            leftover -= line_width(&it) as i64;
+            leftover -= it.width() as i64;
             content.extend(it.spans);
             last_right = right;
             right += 1;
@@ -129,11 +129,11 @@ fn carousel(items: &[String], cursor: usize, width: usize, app: &App) -> Line<'s
     }
     let mut items_line = Line::from(content);
     if lo.is_some() {
-        let cut = line_width(&items_line) as i64 - leftover + 1;
+        let cut = items_line.width() as i64 - leftover + 1;
         if cut > 0 {
             items_line = truncate_left(&items_line, cut as usize, Some(ellipsis()));
         }
-    } else if line_width(&items_line) as i64 > leftover {
+    } else if items_line.width() as i64 > leftover {
         let mut l = truncate_line(&items_line, leftover.max(0) as usize, "");
         l.spans.push(ellipsis());
         items_line = l;
@@ -177,9 +177,7 @@ fn tabs_line(app: &App) -> Line<'static> {
         raw(" "),
         span("│", Style::default().fg(t.secondary_border)),
     ]);
-    let cw = app
-        .width
-        .saturating_sub(line_width(&logo) + line_width(&button));
+    let cw = app.width.saturating_sub(logo.width() + button.width());
     let titles: Vec<String> = app
         .sections()
         .iter()
