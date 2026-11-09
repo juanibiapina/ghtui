@@ -518,7 +518,8 @@ mod tests {
         assert!(has_key(&h, "Pull request", "m"));
         assert!(!has_key(&h, "Notification", "m"));
         assert!(!has_key(&h, "Notification", "u"));
-        assert!(has_key(&h, "Notification", "D"));
+        assert!(has_key(&h, "Notification", "d"));
+        assert!(has_key(&h, "Review", "D"));
     }
 
     #[test]

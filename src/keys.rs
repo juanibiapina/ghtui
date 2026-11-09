@@ -216,7 +216,7 @@ impl Default for Keys {
                 unassign: b(&["A"], "A", "unassign"),
                 label: b(&["L"], "L", "label"),
                 comment: b(&["c"], "c", "comment"),
-                diff: b(&["d"], "d", "diff"),
+                diff: b(&["D"], "D", "diff"),
                 checkout: b(&["C", "space"], "C/space", "checkout"),
                 close: b(&["x"], "x", "close"),
                 summary_view_more: b(&["e"], "e", "expand description"),
@@ -243,7 +243,7 @@ impl Default for Keys {
             notif: NotificationKeys {
                 view: b(&["enter"], "enter", "view notification"),
                 back_to_notification: b(&["esc"], "esc", "back to notification"),
-                mark_as_done: b(&["D"], "D", "mark as done"),
+                mark_as_done: b(&["d"], "d", "mark as done"),
                 mark_all_as_done: b(&["alt+d"], "alt+d", "mark all as done"),
                 mark_as_read: b(&["m"], "m", "mark as read"),
                 mark_all_as_read: b(&["M"], "M", "mark all as read"),

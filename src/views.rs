@@ -1466,7 +1466,7 @@ pub fn notification_prompt(t: &Theme, row: &NotifRow) -> Block {
     ]));
     b.push(Line::default());
     let actions = [
-        ("D", "mark as done"),
+        ("d", "mark as done"),
         ("m", "mark as read"),
         ("u", "unsubscribe"),
         ("b", "toggle bookmark"),

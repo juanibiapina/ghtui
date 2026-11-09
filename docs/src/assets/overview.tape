@@ -30,7 +30,7 @@ Sleep 1s
 Type "?"
 
 Hide
-Type "d"
+Type "D"
 Sleep 1s
 Type "jjjjjjjjj"
 Show
