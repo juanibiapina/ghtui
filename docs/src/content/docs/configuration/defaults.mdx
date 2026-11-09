@@ -268,6 +268,16 @@ Pressing any other key dismisses the message.
 
 By default, ghtui doesn't need a confirmation.
 
+## Quit On Escape (`quitOnEsc`)
+
+| Type    | Default |
+| :------ | :-----: |
+| Boolean |  false  |
+
+When this is on, pressing <kbd>Esc</kbd> also quits `ghtui`.
+<kbd>Esc</kbd> first closes whatever is open, such as a popup, prompt, search, or an opened notification, and quits only when nothing is left to close.
+If [`confirmQuit`](#confirm-quit-confirmquit) is on, `ghtui` asks for confirmation first.
+
 [approving a PR]: /ghtui/getting-started/keybindings/selected-pr/#v---approve-pr
 
 

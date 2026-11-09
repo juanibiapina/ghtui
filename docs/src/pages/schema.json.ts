@@ -183,6 +183,13 @@ export function GET() {
           type: "boolean",
           default: "false",
         },
+        quitOnEsc: {
+          title: "Quit On Escape",
+          description:
+            "Specifies whether pressing `esc` quits `ghtui` when nothing else on screen uses it",
+          type: "boolean",
+          default: "false",
+        },
       },
     }),
   );

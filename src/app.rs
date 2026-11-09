@@ -803,15 +803,24 @@ impl App {
         }
     }
 
-    fn back_to_notification(&mut self) {
+    fn back_to_notification(&mut self) -> bool {
         if self.subject_pr.is_none() && self.subject_issue.is_none() {
-            return;
+            return false;
         }
         self.subject_pr = None;
         self.subject_issue = None;
         self.subject_id.clear();
         self.scroll_sidebar_top();
         self.invalidate_sidebar();
+        true
+    }
+
+    fn request_quit(&mut self) {
+        if self.cfg.confirm_quit {
+            self.confirm_quit_shown = true;
+        } else {
+            self.quit = true;
+        }
     }
 
     fn mark_notification_read_locally(&mut self, id: &str) {
@@ -1408,11 +1417,8 @@ impl App {
             }
             return;
         } else if u.quit.matches(key) {
-            if !self.cfg.confirm_quit {
-                self.quit = true;
-                return;
-            }
-            self.confirm_quit_shown = true;
+            self.request_quit();
+            return;
         } else {
             let handled = match self.view {
                 ViewType::Prs => self.handle_pr_view_key(key),
@@ -1421,6 +1427,10 @@ impl App {
                 ViewType::Notifications => self.handle_notification_view_key(key),
             };
             if handled {
+                return;
+            }
+            if key == "esc" && self.cfg.quit_on_esc {
+                self.request_quit();
                 return;
             }
         }
@@ -2126,8 +2136,7 @@ impl App {
             self.load_notification_content();
             return false;
         }
-        if k.notif.back_to_notification.matches(key) {
-            self.back_to_notification();
+        if k.notif.back_to_notification.matches(key) && self.back_to_notification() {
             return true;
         }
         if self.subject_pr.is_some() {
@@ -3411,5 +3420,56 @@ mod tests {
         let f = parse_notification_filters("is:unread", true);
         assert_eq!(f.read_state, ReadState::Unread);
         assert!(parse_notification_filters("is:done", true).is_done);
+    }
+
+    fn esc_inbox(quit_on_esc: bool, confirm_quit: bool) -> App {
+        let mut app = inbox(&["a"]);
+        app.cfg.quit_on_esc = quit_on_esc;
+        app.cfg.confirm_quit = confirm_quit;
+        app
+    }
+
+    #[test]
+    fn esc_does_not_quit_by_default() {
+        let mut app = esc_inbox(false, false);
+        app.handle_key("esc");
+        assert!(!app.quit);
+    }
+
+    #[test]
+    fn esc_quits_when_enabled() {
+        let mut app = esc_inbox(true, false);
+        app.view = ViewType::Prs;
+        app.handle_key("esc");
+        assert!(app.quit);
+    }
+
+    #[test]
+    fn esc_asks_to_confirm_when_confirm_quit_is_on() {
+        let mut app = esc_inbox(true, true);
+        app.handle_key("esc");
+        assert!(!app.quit);
+        assert!(app.confirm_quit_shown);
+    }
+
+    #[test]
+    fn esc_leaves_an_open_notification_subject_before_quitting() {
+        let mut app = esc_inbox(true, false);
+        app.subject_issue = Some(Issue::default());
+        app.handle_key("esc");
+        assert!(app.subject_issue.is_none());
+        assert!(!app.quit);
+        app.handle_key("esc");
+        assert!(app.quit);
+    }
+
+    #[test]
+    fn esc_closes_help_before_quitting() {
+        let mut app = esc_inbox(true, false);
+        app.handle_key("?");
+        assert!(app.help.is_some());
+        app.handle_key("esc");
+        assert!(app.help.is_none());
+        assert!(!app.quit);
     }
 }

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add the `quitOnEsc` setting to quit with `esc`.
+
 ### Removed
 
 - Remove support for gh-dash config files, `$GH_DASH_CONFIG` and gh-dash bookmarks.
