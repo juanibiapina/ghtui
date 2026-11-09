@@ -67,7 +67,7 @@ pub enum Payload {
     },
     UpdatePr(UpdatePr),
     UpdateIssue(UpdateIssue),
-    NotificationRemoved(String),
+    NotificationDone(Box<crate::section::NotifRow>),
     NotificationRead(String),
     ClearAllNotifications,
     MarkAllRead,

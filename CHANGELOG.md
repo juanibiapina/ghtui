@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Show fetched PRs, issues and notifications up to 100 ms sooner.
 - Stop capturing the mouse, so you can select and copy text in the terminal again.
 - Mark a notification as done with `d`, and view a PR diff with `D`.
+- Remove a notification from the list as soon as you mark it done, and put it back if GitHub rejects the change.
 
 ### Fixed
 

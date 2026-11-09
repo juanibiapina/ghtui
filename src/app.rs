@@ -981,8 +981,6 @@ impl App {
 
     fn apply_payload(&mut self, key: SectionKey, payload: Payload, failed: bool) {
         let is_current = key.view == self.view && key.id == self.curr;
-        let body_h = self.body_height();
-        let cfg = self.cfg.clone();
         let mut new_notifs: Vec<NotifRow> = vec![];
         let mut row_changed = false;
         let mut refetch = false;
@@ -1053,6 +1051,10 @@ impl App {
                     page_info,
                 } => {
                     if s.last_fetch_task == task_id {
+                        let rows: Vec<NotifRow> = rows
+                            .into_iter()
+                            .filter(|n| !s.session_done.contains(n.id()))
+                            .collect();
                         new_notifs = rows.clone();
                         if s.page_info.is_some() {
                             s.notifs.extend(rows);
@@ -1111,15 +1113,9 @@ impl App {
                     }
                     s.is_loading = false;
                 }
-                Payload::NotificationRemoved(id) => {
-                    if !failed {
-                        s.notifs.retain(|n| n.id() != id);
-                        s.session_done.insert(id.clone());
-                        s.session_read.remove(&id);
-                        s.total_count = s.notifs.len();
-                        if s.total_count > 0 && s.cursor >= s.total_count {
-                            s.last_row(&cfg, body_h);
-                        }
+                Payload::NotificationDone(row) => {
+                    if failed {
+                        s.restore_notification(*row);
                         row_changed = true;
                     }
                 }
@@ -1516,6 +1512,14 @@ impl App {
         let nid = n.id().to_string();
         let key_ = SectionKey { view, id };
         if k.mark_as_done.matches(key) {
+            let Some(row) = self
+                .section_mut()
+                .and_then(|s| s.remove_notification(&nid, &cfg, body_h))
+            else {
+                return;
+            };
+            self.live.dirty = true;
+            self.on_viewed_row_changed();
             let tid = format!("notification_done_{nid}");
             self.start_task(
                 &tid,
@@ -1531,7 +1535,7 @@ impl App {
                     task_id: tid,
                     section: Some(key_),
                     err: r.err().map(|e| e.to_string()),
-                    payload: Payload::NotificationRemoved(nid),
+                    payload: Payload::NotificationDone(Box::new(row)),
                 })
             });
         } else if k.mark_as_read.matches(key) {
@@ -3282,6 +3286,114 @@ pub fn parse_notification_filters(search: &str, include_read: bool) -> Notificat
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{Notification, PageInfo};
+
+    fn notif(id: &str, hours_ago: i64) -> NotifRow {
+        NotifRow::new(Notification {
+            id: id.into(),
+            unread: true,
+            updated_at: chrono::Utc::now() - chrono::Duration::hours(hours_ago),
+            ..Default::default()
+        })
+    }
+
+    fn inbox(ids: &[&str]) -> App {
+        let (pool, _rx) = Pool::new(0);
+        let mut app = App::new(
+            Config::default(),
+            Keys::default(),
+            pool,
+            None,
+            None,
+            120,
+            40,
+        );
+        app.view = ViewType::Notifications;
+        app.curr = 0;
+        let s = &mut app.notifs[0];
+        s.notifs = ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| notif(id, i as i64 + 1))
+            .collect();
+        s.total_count = s.notifs.len();
+        app
+    }
+
+    fn ids(app: &App) -> Vec<String> {
+        app.notifs[0]
+            .notifs
+            .iter()
+            .map(|n| n.id().to_string())
+            .collect()
+    }
+
+    fn selected(app: &App) -> String {
+        app.notifs[0].current_notif().unwrap().id().to_string()
+    }
+
+    fn done_finished(app: &mut App, row: NotifRow, err: Option<&str>) {
+        app.handle_msg(Msg::TaskFinished {
+            task_id: format!("notification_done_{}", row.id()),
+            section: Some(SectionKey {
+                view: ViewType::Notifications,
+                id: 0,
+            }),
+            err: err.map(String::from),
+            payload: Payload::NotificationDone(Box::new(row)),
+        });
+    }
+
+    #[test]
+    fn done_removes_the_row_before_github_answers() {
+        let mut app = inbox(&["a", "b", "c"]);
+        app.notifs[0].cursor = 1;
+        app.handle_key("d");
+        assert_eq!(ids(&app), ["a", "c"]);
+        assert_eq!(selected(&app), "c");
+    }
+
+    #[test]
+    fn done_on_the_last_row_selects_the_new_last_row() {
+        let mut app = inbox(&["a", "b", "c"]);
+        app.notifs[0].cursor = 2;
+        app.handle_key("d");
+        assert_eq!(ids(&app), ["a", "b"]);
+        assert_eq!(selected(&app), "b");
+    }
+
+    #[test]
+    fn a_failed_done_puts_the_row_back() {
+        let mut app = inbox(&["a", "b", "c"]);
+        app.notifs[0].cursor = 1;
+        let row = app.notifs[0].current_notif().cloned().unwrap();
+        app.handle_key("d");
+        done_finished(&mut app, row, Some("boom"));
+        assert_eq!(ids(&app), ["a", "b", "c"]);
+        assert!(!app.notifs[0].session_done.contains("b"));
+    }
+
+    #[test]
+    fn a_fetch_started_before_done_does_not_bring_the_row_back() {
+        let mut app = inbox(&["a", "b", "c"]);
+        app.notifs[0].cursor = 1;
+        app.notifs[0].last_fetch_task = "fetch".into();
+        app.handle_key("d");
+        app.handle_msg(Msg::TaskFinished {
+            task_id: "fetch".into(),
+            section: Some(SectionKey {
+                view: ViewType::Notifications,
+                id: 0,
+            }),
+            err: None,
+            payload: Payload::Notifications {
+                task_id: "fetch".into(),
+                rows: vec![notif("a", 1), notif("b", 2), notif("c", 3)],
+                page_info: PageInfo::default(),
+            },
+        });
+        assert_eq!(ids(&app), ["a", "c"]);
+    }
 
     #[test]
     fn notification_filters_parse_like_go() {

@@ -610,6 +610,34 @@ impl Section {
 
     // ---- notifications ----
 
+    pub fn remove_notification(
+        &mut self,
+        id: &str,
+        cfg: &Config,
+        body_height: usize,
+    ) -> Option<NotifRow> {
+        let i = self.notifs.iter().position(|n| n.id() == id)?;
+        let row = self.notifs.remove(i);
+        self.session_done.insert(id.to_string());
+        self.session_read.remove(id);
+        self.total_count = self.notifs.len();
+        if !self.notifs.is_empty() && self.cursor >= self.notifs.len() {
+            self.last_row(cfg, body_height);
+        }
+        self.clamp_cursor();
+        Some(row)
+    }
+
+    pub fn restore_notification(&mut self, row: NotifRow) {
+        self.session_done.remove(row.id());
+        if !self.notifs.iter().any(|n| n.id() == row.id()) {
+            self.notifs.push(row);
+            self.sort_notifications();
+        }
+        self.total_count = self.notifs.len();
+        self.clamp_cursor();
+    }
+
     pub fn sort_notifications(&mut self) {
         match self.sort {
             SortOrder::Repo => self.notifs.sort_by(|a, b| {
