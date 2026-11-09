@@ -257,7 +257,7 @@ impl Default for RepoConfig {
     fn default() -> Self {
         Self {
             branches_refetch_interval_seconds: 30,
-            prs_refetch_interval_seconds: 60,
+            prs_refetch_interval_seconds: 300,
         }
     }
 }

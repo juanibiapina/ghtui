@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Show the last session's PRs, issues and notifications at launch, then fetch only what changed.
+- Load every view in the background, so switching views and moving between rows shows previews without waiting.
+- Stop fetching from GitHub while the terminal doesn't have focus, and catch up when it returns.
+- Pause background fetching when GitHub rate limits you, instead of retrying.
+- Refresh PRs in the branches view every 5 minutes instead of every minute, and right away when the terminal regains focus.
 - Show help in a popup that groups keys by category and closes with `esc`.
 - Show fetched PRs, issues and notifications up to 100 ms sooner.
 - Stop capturing the mouse, so you can select and copy text in the terminal again.
@@ -23,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix the branches view running two rows past the bottom of its area.
 - Fix the search popup in the branches view sitting one row too low.
 - Fix the branches view never refreshing PRs, and finding no PRs for repositories cloned over SSH.
+- Fix the branches view clearing its branches every time you switch to it.
+- Fix returning to the terminal loading another page of the current section instead of refreshing it.
 
 ## [0.1.0] - 2026-11-06
 

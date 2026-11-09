@@ -5,6 +5,7 @@ mod bookmarks;
 mod chroma;
 mod complete;
 mod config;
+mod disk_cache;
 mod git;
 mod github;
 mod help;
@@ -16,7 +17,9 @@ mod log;
 mod markdown;
 mod model;
 mod msg;
+mod refresh;
 mod section;
+mod store;
 mod tasks;
 mod template;
 mod text;
@@ -119,7 +122,33 @@ fn fatal(prefix: &str, err: impl std::fmt::Display) -> ! {
     std::process::exit(1);
 }
 
+/// Reads the signed-in account's cache: lists first, then the large details file.
+fn load_cache(tx: std::sync::mpsc::Sender<msg::Msg>) {
+    let started = std::time::Instant::now();
+    let cache = github::account_key()
+        .ok()
+        .and_then(|k| disk_cache::DiskCache::for_account(&k));
+    let lists = cache.as_ref().map(|c| c.load_lists()).unwrap_or_default();
+    crate::info!(
+        "cache lists read sections={} ms={}",
+        lists.sections.len(),
+        started.elapsed().as_millis()
+    );
+    let _ = tx.send(msg::Msg::CacheLoaded {
+        lists: Box::new(lists),
+        cache: cache.clone(),
+    });
+    let details = cache.map(|c| c.load_details()).unwrap_or_default();
+    crate::info!(
+        "cache details read prs={} ms={}",
+        details.prs.len(),
+        started.elapsed().as_millis()
+    );
+    let _ = tx.send(msg::Msg::DetailsLoaded(Box::new(details)));
+}
+
 fn main() {
+    let launched = std::time::Instant::now();
     let args = Args::parse();
     log::init(args.debug);
     crate::info!("Logging to debug.log");
@@ -171,17 +200,45 @@ fn main() {
         size.height as usize,
     );
     app.repo_url = repo_url;
-    app.start();
+    let tx = app.pool.msgs.clone();
+    std::thread::spawn(move || load_cache(tx));
 
     let mut dirty = true;
+    let mut first_frame = true;
     loop {
+        // A resize before crossterm listens for SIGWINCH sends no event; compare sizes instead.
+        if let Ok(size) = terminal.size()
+            && (size.width as usize, size.height as usize) != (app.width, app.height)
+        {
+            app.on_resize(size.width as usize, size.height as usize);
+            dirty = true;
+        }
         if dirty {
+            let started = std::time::Instant::now();
             app.ensure_sidebar_cache();
+            let sidebar = started.elapsed();
             let _ = terminal.draw(|f| ui::draw(f, &app));
+            let frame = started.elapsed();
+            if first_frame {
+                crate::info!(
+                    "first frame since launch ms={}",
+                    launched.elapsed().as_millis()
+                );
+                first_frame = false;
+            }
+            crate::debug!(
+                "frame us={} sidebar_us={}",
+                frame.as_micros(),
+                sidebar.as_micros()
+            );
             dirty = false;
         }
         // Poll briefly while background jobs run so their results show without delay.
-        let wait = if app.pool.busy() { 10 } else { 100 };
+        let wait = if app.pool.busy() || app.store_busy() {
+            10
+        } else {
+            100
+        };
         if event::poll(Duration::from_millis(wait)).unwrap_or(false) {
             match event::read() {
                 Ok(Event::Key(k)) if k.kind == KeyEventKind::Press => {
@@ -189,7 +246,11 @@ fn main() {
                     dirty = true;
                 }
                 Ok(Event::FocusGained) => {
-                    app.after_exec();
+                    app.on_focus(true);
+                    dirty = true;
+                }
+                Ok(Event::FocusLost) => {
+                    app.on_focus(false);
                     dirty = true;
                 }
                 Ok(Event::Resize(w, h)) => {
@@ -226,4 +287,5 @@ fn main() {
     }
     let _ = execute!(std::io::stdout(), DisableFocusChange);
     ratatui::restore();
+    app.save_cache(true);
 }

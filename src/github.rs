@@ -2,30 +2,177 @@
 //! resource queries for PRs and issues, REST for notifications, and the gh CLI
 //! for label lists. Authentication follows go-gh: $GH_TOKEN / $GITHUB_TOKEN,
 //! otherwise `gh auth token`.
+//!
+//! Requests run in a lane. Background requests stop while GitHub rate limits
+//! us; requests the user starts always run.
 
-use std::collections::HashMap;
+use std::cell::Cell;
+use std::collections::{HashMap, VecDeque};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value, json};
 
 use crate::model::*;
+
+/// Background work stops when fewer GraphQL points than this remain.
+const REMAINING_FLOOR: i64 = 500;
+/// Background GraphQL response time allowed per rolling minute.
+pub const BACKGROUND_BUDGET: Duration = Duration::from_secs(20);
+const BUDGET_WINDOW: Duration = Duration::from_secs(60);
+const MAX_CONDITIONAL: usize = 50;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Lane {
+    Foreground,
+    Background,
+}
+
+thread_local! {
+    static LANE: Cell<Lane> = const { Cell::new(Lane::Foreground) };
+}
+
+/// Runs `f` with its GitHub requests in the background lane.
+pub fn background<R>(f: impl FnOnce() -> R) -> R {
+    let prev = LANE.with(|l| l.replace(Lane::Background));
+    let r = f();
+    LANE.with(|l| l.set(prev));
+    r
+}
+
+fn lane() -> Lane {
+    LANE.with(|l| l.get())
+}
+
+/// GitHub asked us to wait. Background requests fail fast with this until `until`.
+#[derive(Debug, Clone, Copy)]
+pub struct RateLimited {
+    pub until: Instant,
+}
+
+impl std::fmt::Display for RateLimited {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let wait = self.until.saturating_duration_since(Instant::now());
+        let at = chrono::Local::now() + chrono::Duration::from_std(wait).unwrap_or_default();
+        write!(
+            f,
+            "GitHub rate limit reached, retrying at {}",
+            at.format("%H:%M")
+        )
+    }
+}
+
+impl std::error::Error for RateLimited {}
+
+/// GitHub didn't answer within its 10 s limit.
+#[derive(Debug, Clone, Copy)]
+pub struct Timeout;
+
+impl std::fmt::Display for Timeout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "GitHub took too long to respond")
+    }
+}
+
+impl std::error::Error for Timeout {}
+
+pub fn is_rate_limited(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<RateLimited>().is_some()
+}
+
+pub fn is_timeout(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<Timeout>().is_some()
+}
+
+/// The rate limit headers of a response.
+#[derive(Default, Debug, Clone)]
+pub struct RateHeaders {
+    pub retry_after: Option<u64>,
+    pub remaining: Option<i64>,
+    pub reset: Option<i64>,
+}
+
+/// How long a rate limited response asks us to wait.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Wait {
+    Exactly(Duration),
+    /// No usable header: back off.
+    Backoff,
+}
+
+/// Recognizes primary and secondary rate limit responses.
+pub fn detect_rate_limit(status: u16, h: &RateHeaders, body: &str, now_epoch: i64) -> Option<Wait> {
+    let lower = body.to_ascii_lowercase();
+    let secondary = lower.contains("secondary rate limit");
+    let graphql_limited = serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|v| v.get("errors").cloned())
+        .and_then(|e| e.as_array().cloned())
+        .map(|errs| {
+            errs.iter()
+                .any(|e| e.get("type").and_then(|t| t.as_str()) == Some("RATE_LIMITED"))
+        })
+        .unwrap_or(false);
+    let limited_status = matches!(status, 403 | 429)
+        && (status == 429 || h.retry_after.is_some() || h.remaining == Some(0) || secondary);
+    let limited = limited_status || graphql_limited || (status == 200 && secondary);
+    if !limited {
+        return None;
+    }
+    if let Some(s) = h.retry_after {
+        return Some(Wait::Exactly(Duration::from_secs(s)));
+    }
+    if h.remaining == Some(0)
+        && let Some(reset) = h.reset
+    {
+        return Some(Wait::Exactly(Duration::from_secs(
+            (reset - now_epoch).max(1) as u64,
+        )));
+    }
+    Some(Wait::Backoff)
+}
+
+/// 60 s, doubling with each consecutive rate limit response, up to 15 minutes.
+pub fn backoff(level: u32) -> Duration {
+    let secs = 60u64.saturating_mul(1u64 << level.min(10));
+    Duration::from_secs(secs.min(15 * 60))
+}
+
+/// A cached REST response for conditional requests.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Conditional {
+    pub url: String,
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+    pub body: String,
+    pub at: DateTime<Utc>,
+}
+
+#[derive(Default)]
+struct State {
+    paused_until: Option<Instant>,
+    backoff_level: u32,
+    low_until: Option<Instant>,
+    conditional: HashMap<String, Conditional>,
+    background_time: VecDeque<(Instant, Duration)>,
+    notifications_polled: Option<(DateTime<Utc>, u64)>,
+}
 
 pub struct Client {
     host: String,
     token: String,
     agent: ureq::Agent,
+    state: Mutex<State>,
 }
 
 static CLIENT: OnceLock<std::result::Result<Client, String>> = OnceLock::new();
 type Cache<T> = OnceLock<Mutex<HashMap<String, T>>>;
 
-static ENRICHED_CACHE: Cache<EnrichedPullRequest> = OnceLock::new();
-static ISSUE_CACHE: Cache<Issue> = OnceLock::new();
 static USER_CACHE: Cache<Vec<(String, String)>> = OnceLock::new();
 static LABEL_CACHE: Cache<Vec<Label>> = OnceLock::new();
 
@@ -79,18 +226,76 @@ pub fn client() -> Result<&'static Client> {
                 .user_agent("ghtui")
                 .build()
                 .into();
-            Ok(Client { host, token, agent })
+            Ok(Client {
+                host,
+                token,
+                agent,
+                state: Mutex::new(State::default()),
+            })
         })
         .as_ref()
         .map_err(|e| anyhow!(e.clone()))
 }
 
-pub fn clear_enrichment_cache() {
-    if let Some(c) = ENRICHED_CACHE.get() {
-        c.lock().unwrap().clear();
+/// 64-bit FNV-1a, stable across Rust releases.
+pub fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in bytes {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x100000001b3);
     }
-    if let Some(c) = ISSUE_CACHE.get() {
-        c.lock().unwrap().clear();
+    h
+}
+
+/// Names the signed-in account without revealing its token.
+pub fn account_key() -> Result<String> {
+    let c = client()?;
+    Ok(account_key_for(&c.host, &c.token))
+}
+
+pub fn account_key_for(host: &str, token: &str) -> String {
+    format!("{:016x}", fnv1a(format!("{host}\0{token}").as_bytes()))
+}
+
+/// How long background work must wait: a rate limit pause, the remaining-points
+/// floor, or the background lane's response time budget.
+pub fn background_wait() -> Option<Duration> {
+    let c = client().ok()?;
+    c.background_wait(Instant::now())
+}
+
+/// Notifications may be polled again: the last poll is older than `X-Poll-Interval`.
+pub fn notifications_poll_due() -> bool {
+    let Ok(c) = client() else { return true };
+    let st = c.state.lock().unwrap();
+    match st.notifications_polled {
+        Some((at, secs)) => Utc::now() >= at + chrono::Duration::seconds(secs as i64),
+        None => true,
+    }
+}
+
+pub fn notifications_polled() -> Option<(DateTime<Utc>, u64)> {
+    client().ok()?.state.lock().unwrap().notifications_polled
+}
+
+pub fn conditional_snapshot() -> Vec<Conditional> {
+    let Ok(c) = client() else { return vec![] };
+    let st = c.state.lock().unwrap();
+    let mut v: Vec<Conditional> = st.conditional.values().cloned().collect();
+    v.sort_by_key(|c| std::cmp::Reverse(c.at));
+    v.truncate(MAX_CONDITIONAL);
+    v
+}
+
+/// Loads conditional request state saved by an earlier session.
+pub fn seed_conditional(entries: Vec<Conditional>, polled: Option<(DateTime<Utc>, u64)>) {
+    let Ok(c) = client() else { return };
+    let mut st = c.state.lock().unwrap();
+    for e in entries {
+        st.conditional.entry(e.url.clone()).or_insert(e);
+    }
+    if st.notifications_polled.is_none() {
+        st.notifications_polled = polled;
     }
 }
 
@@ -104,6 +309,62 @@ struct GraphQlResponse<T> {
 #[derive(Deserialize)]
 struct GraphQlError {
     message: String,
+    #[serde(default)]
+    path: Vec<Value>,
+}
+
+/// An aliased query's data with the errors of each alias.
+pub struct Partial {
+    pub data: Map<String, Value>,
+    pub errors: HashMap<String, String>,
+}
+
+/// Decodes a GraphQL response, keeping the data of aliases that succeeded.
+pub fn decode_partial(text: &str) -> Result<Partial> {
+    let parsed: GraphQlResponse<Map<String, Value>> =
+        serde_json::from_str(text).map_err(|_| anyhow!(Timeout))?;
+    let mut errors: HashMap<String, String> = HashMap::new();
+    let mut global = vec![];
+    for e in parsed.errors {
+        match e.path.first().and_then(|p| p.as_str()) {
+            Some(alias) => {
+                errors.insert(alias.to_string(), e.message);
+            }
+            None => global.push(e.message),
+        }
+    }
+    match parsed.data {
+        Some(data) => Ok(Partial { data, errors }),
+        None => bail!("GraphQL: {}", global.join(", ")),
+    }
+}
+
+fn header(resp: &ureq::http::Response<ureq::Body>, name: &str) -> Option<String> {
+    resp.headers()
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .map(String::from)
+}
+
+fn rate_headers(resp: &ureq::http::Response<ureq::Body>) -> RateHeaders {
+    RateHeaders {
+        retry_after: header(resp, "retry-after").and_then(|v| v.trim().parse().ok()),
+        remaining: header(resp, "x-ratelimit-remaining").and_then(|v| v.trim().parse().ok()),
+        reset: header(resp, "x-ratelimit-reset").and_then(|v| v.trim().parse().ok()),
+    }
+}
+
+fn op_name(query: &str) -> &str {
+    query
+        .trim_start()
+        .strip_prefix("query ")
+        .and_then(|r| r.split(['(', ' ', '{']).next())
+        .unwrap_or("query")
+}
+
+fn instant_at_epoch(epoch: i64) -> Instant {
+    let now = Utc::now().timestamp();
+    Instant::now() + Duration::from_secs((epoch - now).max(0) as u64)
 }
 
 impl Client {
@@ -126,20 +387,127 @@ impl Client {
         }
     }
 
-    pub fn graphql<T: DeserializeOwned>(&self, query: &str, variables: Value) -> Result<T> {
+    fn background_wait(&self, now: Instant) -> Option<Duration> {
+        let mut st = self.state.lock().unwrap();
+        let pause = [st.paused_until, st.low_until]
+            .into_iter()
+            .flatten()
+            .filter(|t| *t > now)
+            .max();
+        if let Some(t) = pause {
+            return Some(t - now);
+        }
+        while st
+            .background_time
+            .front()
+            .is_some_and(|(t, _)| now.duration_since(*t) > BUDGET_WINDOW)
+        {
+            st.background_time.pop_front();
+        }
+        let used: Duration = st.background_time.iter().map(|(_, d)| *d).sum();
+        if used >= BACKGROUND_BUDGET {
+            let oldest = st.background_time.front().map(|(t, _)| *t).unwrap_or(now);
+            return Some(
+                (oldest + BUDGET_WINDOW)
+                    .saturating_duration_since(now)
+                    .max(Duration::from_millis(100)),
+            );
+        }
+        None
+    }
+
+    /// Background requests fail fast while GitHub asked us to wait.
+    fn check_paused(&self) -> Result<()> {
+        if lane() == Lane::Foreground {
+            return Ok(());
+        }
+        let now = Instant::now();
+        let st = self.state.lock().unwrap();
+        let until = [st.paused_until, st.low_until]
+            .into_iter()
+            .flatten()
+            .filter(|t| *t > now)
+            .max();
+        match until {
+            Some(until) => Err(anyhow!(RateLimited { until })),
+            None => Ok(()),
+        }
+    }
+
+    /// Records the outcome of a response and turns rate limits into `RateLimited`.
+    fn observe(
+        &self,
+        status: u16,
+        h: &RateHeaders,
+        body: &str,
+        elapsed: Duration,
+        graphql: bool,
+    ) -> Result<()> {
+        let mut st = self.state.lock().unwrap();
+        if graphql && lane() == Lane::Background {
+            st.background_time.push_back((Instant::now(), elapsed));
+        }
+        if let Some(wait) = detect_rate_limit(status, h, body, Utc::now().timestamp()) {
+            let wait = match wait {
+                Wait::Exactly(d) => d,
+                Wait::Backoff => {
+                    let d = backoff(st.backoff_level);
+                    st.backoff_level += 1;
+                    d
+                }
+            };
+            let until = Instant::now() + wait;
+            if graphql {
+                st.paused_until = Some(st.paused_until.map_or(until, |p| p.max(until)));
+            }
+            crate::warn!("rate limited status={status} wait={}s", wait.as_secs());
+            return Err(anyhow!(RateLimited { until }));
+        }
+        if graphql && (200..300).contains(&status) {
+            st.backoff_level = 0;
+            st.low_until = match (h.remaining, h.reset) {
+                (Some(r), Some(reset)) if r < REMAINING_FLOOR => Some(instant_at_epoch(reset)),
+                _ => None,
+            };
+        }
+        Ok(())
+    }
+
+    /// Sends a GraphQL request and returns the response body.
+    fn post_graphql(&self, query: &str, variables: Value) -> Result<String> {
+        self.check_paused()?;
         let body = json!({ "query": query, "variables": variables });
+        let started = Instant::now();
         let mut resp = self
             .agent
             .post(&self.graphql_url())
             .header("Authorization", &format!("bearer {}", self.token))
             .send_json(&body)?;
-        let status = resp.status();
+        let status = resp.status().as_u16();
+        let h = rate_headers(&resp);
         let text = resp.body_mut().read_to_string()?;
-        if !status.is_success() {
-            bail!("HTTP {}: {}", status.as_u16(), text.trim());
+        let elapsed = started.elapsed();
+        crate::info!(
+            "api graphql op={} lane={:?} status={status} ms={} remaining={}",
+            op_name(query),
+            lane(),
+            elapsed.as_millis(),
+            h.remaining.map(|r| r.to_string()).unwrap_or_default()
+        );
+        self.observe(status, &h, &text, elapsed, true)?;
+        if text.contains("couldn't respond to your request in time") {
+            bail!(Timeout);
         }
+        if !(200..300).contains(&status) {
+            bail!("HTTP {status}: {}", text.trim());
+        }
+        Ok(text)
+    }
+
+    pub fn graphql<T: DeserializeOwned>(&self, query: &str, variables: Value) -> Result<T> {
+        let text = self.post_graphql(query, variables)?;
         let parsed: GraphQlResponse<T> =
-            serde_json::from_str(&text).with_context(|| "decoding GraphQL response")?;
+            serde_json::from_str(&text).map_err(|_| anyhow!(Timeout))?;
         if !parsed.errors.is_empty() {
             let msgs: Vec<String> = parsed.errors.into_iter().map(|e| e.message).collect();
             bail!("GraphQL: {}", msgs.join(", "));
@@ -149,16 +517,36 @@ impl Client {
             .ok_or_else(|| anyhow!("GraphQL response had no data"))
     }
 
+    /// For aliased queries: one failing alias doesn't discard the others.
+    pub fn graphql_partial(&self, query: &str, variables: Value) -> Result<Partial> {
+        let text = self.post_graphql(query, variables)?;
+        decode_partial(&text)
+    }
+
     fn rest(&self, method: &str, path: &str) -> Result<(u16, String)> {
         let url = self.rest_url(path);
         let auth = format!("token {}", self.token);
+        let cached = (method == "GET")
+            .then(|| self.state.lock().unwrap().conditional.get(&url).cloned())
+            .flatten();
+        let started = Instant::now();
         let mut resp = match method {
-            "GET" => self
-                .agent
-                .get(&url)
-                .header("Authorization", &auth)
-                .header("Accept", "application/vnd.github+json")
-                .call()?,
+            "GET" => {
+                let mut req = self
+                    .agent
+                    .get(&url)
+                    .header("Authorization", &auth)
+                    .header("Accept", "application/vnd.github+json");
+                if let Some(c) = &cached {
+                    if let Some(e) = &c.etag {
+                        req = req.header("If-None-Match", e);
+                    }
+                    if let Some(m) = &c.last_modified {
+                        req = req.header("If-Modified-Since", m);
+                    }
+                }
+                req.call()?
+            }
             "DELETE" => self
                 .agent
                 .delete(&url)
@@ -177,13 +565,44 @@ impl Client {
             _ => bail!("unsupported method {method}"),
         };
         let status = resp.status().as_u16();
+        let h = rate_headers(&resp);
+        let etag = header(&resp, "etag");
+        let last_modified = header(&resp, "last-modified");
+        let poll = header(&resp, "x-poll-interval").and_then(|v| v.trim().parse::<u64>().ok());
         let text = resp.body_mut().read_to_string().unwrap_or_default();
+        crate::info!(
+            "api rest {method} {path} status={status} ms={}",
+            started.elapsed().as_millis()
+        );
+        if let Some(secs) = poll
+            && is_notification_list(path)
+        {
+            self.state.lock().unwrap().notifications_polled = Some((Utc::now(), secs));
+        }
+        if status == 304
+            && let Some(c) = cached
+        {
+            return Ok((200, c.body));
+        }
+        self.observe(status, &h, &text, started.elapsed(), false)?;
         if status >= 400 {
             let msg = serde_json::from_str::<Value>(&text)
                 .ok()
                 .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(String::from))
                 .unwrap_or(text);
             bail!("HTTP {status}: {msg} ({url})");
+        }
+        if method == "GET" && (etag.is_some() || last_modified.is_some()) {
+            self.state.lock().unwrap().conditional.insert(
+                url.clone(),
+                Conditional {
+                    url,
+                    etag,
+                    last_modified,
+                    body: text.clone(),
+                    at: Utc::now(),
+                },
+            );
         }
         Ok((status, text))
     }
@@ -194,6 +613,11 @@ impl Client {
     }
 }
 
+fn is_notification_list(path: &str) -> bool {
+    let p = path.split('?').next().unwrap_or(path);
+    p == "notifications" || (p.starts_with("repos/") && p.ends_with("/notifications"))
+}
+
 // ---------------- GraphQL documents ----------------
 
 const REPOSITORY_FIELDS: &str = "name owner { login } nameWithOwner isArchived \
@@ -202,7 +626,7 @@ requiresCodeOwnerReviews requiresStatusChecks requiredStatusCheckContexts } }";
 
 fn pr_fields() -> String {
     format!(
-        "number title author {{ login }} authorAssociation updatedAt createdAt url state mergeable \
+        "id number title author {{ login }} authorAssociation updatedAt createdAt url state mergeable \
 reviewDecision additions deletions headRefName baseRefName headRepository {{ name }} headRef {{ name }} \
 repository {{ {REPOSITORY_FIELDS} }} assignees(first: 3) {{ nodes {{ login }} }} comments {{ totalCount }} \
 reviewThreads {{ totalCount }} reviews {{ totalCount }} reviewRequests {{ totalCount }} isDraft isInMergeQueue \
@@ -216,11 +640,11 @@ statusContextCount statusContextCountsByState { count state }";
 
 fn enriched_pr_fields() -> String {
     format!(
-        "url number title body state isDraft author {{ login }} authorAssociation updatedAt createdAt \
+        "id url number title body state isDraft author {{ login }} authorAssociation updatedAt createdAt \
 mergeable reviewDecision additions deletions headRefName baseRefName headRepository {{ name }} \
 headRef {{ name }} labels(first: 6) {{ nodes {{ color name description }} }} \
 assignees(first: 3) {{ nodes {{ login }} }} repository {{ {REPOSITORY_FIELDS} }} \
-commits(last: 1) {{ totalCount nodes {{ commit {{ commitUrl statusCheckRollup {{ state contexts(last: 100) {{ \
+commits(last: 1) {{ totalCount nodes {{ commit {{ oid commitUrl statusCheckRollup {{ state contexts(last: 100) {{ \
 {COUNTS_BY_STATE} nodes {{ __typename ... on CheckRun {{ name status conclusion checkSuite {{ creator {{ login }} \
 workflowRun {{ workflow {{ name }} }} }} }} ... on StatusContext {{ context state creator {{ login }} }} }} }} }} \
 checkSuites(last: 20) {{ totalCount nodes {{ status conclusion app {{ name }} workflowRun {{ workflow {{ name }} }} }} }} }} }} }} \
@@ -239,7 +663,7 @@ mergeStateStatus isInMergeQueue"
 
 fn issue_fields() -> String {
     format!(
-        "number title body state author {{ login }} authorAssociation updatedAt createdAt url \
+        "id number title body state author {{ login }} authorAssociation updatedAt createdAt url \
 repository {{ {REPOSITORY_FIELDS} }} assignees(first: 3) {{ nodes {{ login }} }} \
 comments(last: 15) {{ totalCount nodes {{ author {{ login }} body updatedAt }} }} \
 reactions(first: 1) {{ totalCount }} labels(first: 20) {{ nodes {{ color name description }} }}"
@@ -324,43 +748,339 @@ pub fn fetch_issues(
     search("SearchIssues", "Issue", &issue_fields(), &q, limit, page)
 }
 
+// ---------------- batched reads ----------------
+
+/// Details for each URL, from one aliased `resource(url:)` query.
+fn fetch_by_url<T: DeserializeOwned>(
+    name: &str,
+    kind: &str,
+    fields: &str,
+    urls: &[String],
+) -> Result<Vec<(String, Result<T>)>> {
+    if urls.is_empty() {
+        return Ok(vec![]);
+    }
+    let params: Vec<String> = (0..urls.len()).map(|i| format!("$u{i}: URI!")).collect();
+    let body: Vec<String> = (0..urls.len())
+        .map(|i| format!("r{i}: resource(url: $u{i}) {{ ... on {kind} {{ {fields} }} }}"))
+        .collect();
+    let doc = format!(
+        "query {name}({}) {{ {} }}",
+        params.join(", "),
+        body.join(" ")
+    );
+    let mut vars = Map::new();
+    for (i, u) in urls.iter().enumerate() {
+        vars.insert(format!("u{i}"), json!(u));
+    }
+    let mut partial = client()?.graphql_partial(&doc, Value::Object(vars))?;
+    Ok(urls
+        .iter()
+        .enumerate()
+        .map(|(i, url)| {
+            let alias = format!("r{i}");
+            let res = match (partial.data.remove(&alias), partial.errors.remove(&alias)) {
+                (_, Some(e)) => Err(anyhow!("GraphQL: {e}")),
+                (Some(v), None) if !v.is_null() => {
+                    serde_json::from_value(v).map_err(|e| anyhow!("decoding {url}: {e}"))
+                }
+                _ => Err(anyhow!("not found: {url}")),
+            };
+            (url.clone(), res)
+        })
+        .collect())
+}
+
+pub fn fetch_pull_requests_by_url(
+    urls: &[String],
+) -> Result<Vec<(String, Result<EnrichedPullRequest>)>> {
+    fetch_by_url(
+        "FetchPullRequests",
+        "PullRequest",
+        &enriched_pr_fields(),
+        urls,
+    )
+}
+
+pub fn fetch_issues_by_url(urls: &[String]) -> Result<Vec<(String, Result<Issue>)>> {
+    fetch_by_url("FetchIssues", "Issue", &issue_fields(), urls)
+}
+
+/// Rows by node ID, 10 per request. Missing nodes are left out.
+fn fetch_by_id<T: DeserializeOwned>(
+    name: &str,
+    kind: &str,
+    fields: &str,
+    ids: &[String],
+) -> Result<Vec<T>> {
+    let doc = format!(
+        "query {name}($ids: [ID!]!) {{ nodes(ids: $ids) {{ ... on {kind} {{ {fields} }} }} }}"
+    );
+    let mut out = vec![];
+    for chunk in ids.chunks(10) {
+        let mut partial = client()?.graphql_partial(&doc, json!({ "ids": chunk }))?;
+        let nodes = partial.data.remove("nodes").unwrap_or(Value::Null);
+        for node in nodes.as_array().cloned().unwrap_or_default() {
+            if node.is_null() || node.as_object().is_some_and(|o| o.is_empty()) {
+                continue;
+            }
+            out.push(serde_json::from_value(node)?);
+        }
+    }
+    Ok(out)
+}
+
+pub fn fetch_prs_by_id(ids: &[String]) -> Result<Vec<PullRequest>> {
+    fetch_by_id("FetchPullRequestRows", "PullRequest", &pr_fields(), ids)
+}
+
+pub fn fetch_issues_by_id(ids: &[String]) -> Result<Vec<Issue>> {
+    fetch_by_id("FetchIssueRows", "Issue", &issue_fields(), ids)
+}
+
+// ---------------- list sync ----------------
+
+/// One section's search, as `fetch_pull_requests` or `fetch_issues` would run it.
+#[derive(Clone, Debug)]
+pub struct SyncQuery {
+    pub query: String,
+    pub limit: usize,
+}
+
+impl SyncQuery {
+    pub fn prs(filters: &str, limit: usize) -> SyncQuery {
+        SyncQuery {
+            query: format!("is:pr archived:false {filters} sort:updated"),
+            limit,
+        }
+    }
+
+    pub fn issues(filters: &str, limit: usize) -> SyncQuery {
+        SyncQuery {
+            query: format!("is:issue archived:false {filters} sort:updated"),
+            limit,
+        }
+    }
+}
+
+/// What a section's search contains now: row IDs and update times, in order.
+#[derive(Clone, Debug, Default)]
+pub struct Membership {
+    pub total_count: usize,
+    pub page_info: PageInfo,
+    pub rows: Vec<(String, DateTime<Utc>)>,
+}
+
 #[derive(Deserialize)]
-struct ResourceData<T> {
-    resource: Option<T>,
+#[serde(rename_all = "camelCase")]
+struct SyncNode {
+    #[serde(default)]
+    id: String,
+    updated_at: Option<DateTime<Utc>>,
 }
 
-pub fn fetch_pull_request(url: &str) -> Result<EnrichedPullRequest> {
-    let cache = ENRICHED_CACHE.get_or_init(Default::default);
-    if let Some(pr) = cache.lock().unwrap().get(url) {
-        return Ok(pr.clone());
-    }
-    let doc = format!(
-        "query FetchPullRequest($url: URI!) {{ resource(url: $url) {{ ... on PullRequest {{ {} }} }} }}",
-        enriched_pr_fields()
-    );
-    let data: ResourceData<EnrichedPullRequest> = client()?.graphql(&doc, json!({ "url": url }))?;
-    let pr = data
-        .resource
-        .ok_or_else(|| anyhow!("pull request not found: {url}"))?;
-    cache.lock().unwrap().insert(url.to_string(), pr.clone());
-    Ok(pr)
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncSearch {
+    issue_count: usize,
+    page_info: PageInfo,
+    nodes: Vec<Option<SyncNode>>,
 }
 
-pub fn fetch_issue(url: &str) -> Result<Issue> {
-    let cache = ISSUE_CACHE.get_or_init(Default::default);
-    if let Some(i) = cache.lock().unwrap().get(url) {
-        return Ok(i.clone());
+const MAX_SYNC_ALIASES: usize = 10;
+
+/// The aliased query documents for `queries`, at most 10 searches each.
+pub fn sync_documents(queries: &[SyncQuery]) -> Vec<(String, Value)> {
+    queries
+        .chunks(MAX_SYNC_ALIASES)
+        .map(|chunk| {
+            let params: Vec<String> = (0..chunk.len())
+                .map(|i| format!("$q{i}: String!, $n{i}: Int!"))
+                .collect();
+            let body: Vec<String> = (0..chunk.len())
+                .map(|i| {
+                    format!(
+                        "s{i}: search(type: ISSUE, first: $n{i}, query: $q{i}) {{ issueCount \
+pageInfo {{ hasNextPage startCursor endCursor }} \
+nodes {{ ... on PullRequest {{ id updatedAt }} ... on Issue {{ id updatedAt }} }} }}"
+                    )
+                })
+                .collect();
+            let doc = format!(
+                "query SyncSections({}) {{ {} }}",
+                params.join(", "),
+                body.join(" ")
+            );
+            let mut vars = Map::new();
+            for (i, q) in chunk.iter().enumerate() {
+                vars.insert(format!("q{i}"), json!(q.query));
+                vars.insert(format!("n{i}"), json!(q.limit.clamp(1, 100)));
+            }
+            (doc, Value::Object(vars))
+        })
+        .collect()
+}
+
+fn sync_chunk(
+    queries: &[SyncQuery],
+    split_on_timeout: bool,
+) -> Result<Vec<Result<Membership, String>>> {
+    let (doc, vars) = sync_documents(queries).remove(0);
+    let mut partial = match client()?.graphql_partial(&doc, vars) {
+        Err(e) if is_timeout(&e) && split_on_timeout && queries.len() > 1 => {
+            let (a, b) = queries.split_at(queries.len() / 2);
+            let mut out = sync_chunk(a, false)?;
+            out.extend(sync_chunk(b, false)?);
+            return Ok(out);
+        }
+        r => r?,
+    };
+    Ok((0..queries.len())
+        .map(|i| {
+            let alias = format!("s{i}");
+            if let Some(e) = partial.errors.remove(&alias) {
+                return Err(e);
+            }
+            let v = partial.data.remove(&alias).unwrap_or(Value::Null);
+            let s: SyncSearch = serde_json::from_value(v).map_err(|e| e.to_string())?;
+            Ok(Membership {
+                total_count: s.issue_count,
+                page_info: s.page_info,
+                rows: s
+                    .nodes
+                    .into_iter()
+                    .flatten()
+                    .filter(|n| !n.id.is_empty())
+                    .filter_map(|n| Some((n.id, n.updated_at?)))
+                    .collect(),
+            })
+        })
+        .collect())
+}
+
+/// Each section's membership, from one request per 10 sections.
+pub fn sync_sections(queries: &[SyncQuery]) -> Result<Vec<Result<Membership, String>>> {
+    let mut out = vec![];
+    for chunk in queries.chunks(MAX_SYNC_ALIASES) {
+        out.extend(sync_chunk(chunk, true)?);
     }
-    let doc = format!(
-        "query FetchIssue($url: URI!) {{ resource(url: $url) {{ ... on Issue {{ {} }} }} }}",
-        issue_fields()
-    );
-    let data: ResourceData<Issue> = client()?.graphql(&doc, json!({ "url": url }))?;
-    let issue = data
-        .resource
-        .ok_or_else(|| anyhow!("issue not found: {url}"))?;
-    cache.lock().unwrap().insert(url.to_string(), issue.clone());
-    Ok(issue)
+    Ok(out)
+}
+
+// ---------------- change check ----------------
+
+/// What GitHub reports for a PR now: enough to tell whether cached details changed.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PrVersion {
+    pub id: String,
+    pub url: String,
+    pub updated_at: DateTime<Utc>,
+    pub head_oid: String,
+    pub rollup_state: String,
+    pub check_counts: Vec<(String, i64)>,
+}
+
+/// Check run and status context counts by state, merged and sorted.
+pub fn check_counts(runs: &[CountByState], contexts: &[CountByState]) -> Vec<(String, i64)> {
+    let mut v: Vec<(String, i64)> = runs
+        .iter()
+        .chain(contexts)
+        .map(|c| (c.state.clone(), c.count))
+        .collect();
+    v.sort();
+    v
+}
+
+/// True when the cached detail no longer matches what GitHub reports.
+pub fn is_outdated(detail: &EnrichedPullRequest, v: &PrVersion) -> bool {
+    let head = detail.commits.nodes.last().map(|c| &c.commit);
+    let oid = head.map(|c| c.oid.as_str()).unwrap_or_default();
+    let rollup = head
+        .map(|c| c.status_check_rollup.state.as_str())
+        .unwrap_or_default();
+    let counts = head
+        .map(|c| {
+            let ctx = &c.status_check_rollup.contexts;
+            check_counts(
+                &ctx.check_run_counts_by_state,
+                &ctx.status_context_counts_by_state,
+            )
+        })
+        .unwrap_or_default();
+    detail.updated_at != v.updated_at
+        || oid != v.head_oid
+        || rollup != v.rollup_state
+        || counts != v.check_counts
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+struct CheckRollup {
+    state: String,
+    contexts: CheckRollupContexts,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+struct CheckRollupContexts {
+    check_run_counts_by_state: Vec<CountByState>,
+    status_context_counts_by_state: Vec<CountByState>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+struct CheckCommit {
+    oid: String,
+    status_check_rollup: Option<CheckRollup>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+struct CheckNode {
+    id: String,
+    url: String,
+    updated_at: Option<DateTime<Utc>>,
+    commits: Nodes<CommitNode<CheckCommit>>,
+}
+
+/// One `nodes(ids:)` query per 100 PRs.
+pub fn check_pull_requests(ids: &[String]) -> Result<Vec<PrVersion>> {
+    let doc = "query CheckPullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { id url updatedAt \
+commits(last: 1) { nodes { commit { oid statusCheckRollup { state contexts(last: 1) { \
+checkRunCountsByState { state count } statusContextCountsByState { state count } } } } } } } } }";
+    let mut out = vec![];
+    for chunk in ids.chunks(100) {
+        let mut partial = client()?.graphql_partial(doc, json!({ "ids": chunk }))?;
+        let nodes = partial.data.remove("nodes").unwrap_or(Value::Null);
+        for node in nodes.as_array().cloned().unwrap_or_default() {
+            let Ok(n) = serde_json::from_value::<CheckNode>(node) else {
+                continue;
+            };
+            let Some(updated_at) = n.updated_at else {
+                continue;
+            };
+            let head = n
+                .commits
+                .nodes
+                .into_iter()
+                .last()
+                .map(|c| c.commit)
+                .unwrap_or_default();
+            let rollup = head.status_check_rollup.unwrap_or_default();
+            out.push(PrVersion {
+                id: n.id,
+                url: n.url,
+                updated_at,
+                head_oid: head.oid,
+                rollup_state: rollup.state,
+                check_counts: check_counts(
+                    &rollup.contexts.check_run_counts_by_state,
+                    &rollup.contexts.status_context_counts_by_state,
+                ),
+            });
+        }
+    }
+    Ok(out)
 }
 
 pub fn latest_version() -> Result<String> {
@@ -564,21 +1284,6 @@ pub fn mark_all_notifications_read() -> Result<()> {
     client()?.rest("PUT", "notifications").map(|_| ())
 }
 
-pub fn fetch_comment_author(api_url: &str) -> Result<String> {
-    if api_url.is_empty() {
-        return Ok(String::new());
-    }
-    #[derive(Deserialize)]
-    struct C {
-        user: Login,
-    }
-    let path = api_url
-        .strip_prefix("https://api.github.com/")
-        .unwrap_or(api_url);
-    let c: C = client()?.rest_get(path)?;
-    Ok(c.user.login)
-}
-
 pub fn best_workflow_run(runs: &[WorkflowRun], at: DateTime<Utc>) -> Option<&WorkflowRun> {
     let mut best: Option<&WorkflowRun> = None;
     let mut best_diff = chrono::Duration::days(365);
@@ -598,4 +1303,139 @@ pub fn fetch_recent_workflow_run(repo: &str, at: DateTime<Utc>) -> Result<String
     Ok(best_workflow_run(&resp.workflow_runs, at)
         .map(|r| r.html_url.clone())
         .unwrap_or_default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn headers(
+        retry_after: Option<u64>,
+        remaining: Option<i64>,
+        reset: Option<i64>,
+    ) -> RateHeaders {
+        RateHeaders {
+            retry_after,
+            remaining,
+            reset,
+        }
+    }
+
+    #[test]
+    fn retry_after_sets_the_wait() {
+        let h = headers(Some(30), None, None);
+        assert_eq!(
+            detect_rate_limit(403, &h, "", 0),
+            Some(Wait::Exactly(Duration::from_secs(30)))
+        );
+        assert_eq!(
+            detect_rate_limit(429, &h, "", 0),
+            Some(Wait::Exactly(Duration::from_secs(30)))
+        );
+    }
+
+    #[test]
+    fn exhausted_points_wait_for_the_reset() {
+        let h = headers(None, Some(0), Some(1_000));
+        assert_eq!(
+            detect_rate_limit(403, &h, "", 900),
+            Some(Wait::Exactly(Duration::from_secs(100)))
+        );
+    }
+
+    #[test]
+    fn a_429_without_headers_backs_off() {
+        assert_eq!(
+            detect_rate_limit(429, &RateHeaders::default(), "", 0),
+            Some(Wait::Backoff)
+        );
+    }
+
+    #[test]
+    fn a_forbidden_response_is_not_a_rate_limit() {
+        let body = r#"{"message":"Resource not accessible by integration"}"#;
+        assert_eq!(
+            detect_rate_limit(403, &RateHeaders::default(), body, 0),
+            None
+        );
+    }
+
+    #[test]
+    fn graphql_rate_limited_errors_are_rate_limits() {
+        let body = r#"{"data":null,"errors":[{"type":"RATE_LIMITED","message":"API rate limit exceeded"}]}"#;
+        assert_eq!(
+            detect_rate_limit(200, &RateHeaders::default(), body, 0),
+            Some(Wait::Backoff)
+        );
+    }
+
+    #[test]
+    fn secondary_limits_reported_with_status_200_are_rate_limits() {
+        let body = r#"{"errors":[{"message":"You have exceeded a secondary rate limit."}]}"#;
+        assert_eq!(
+            detect_rate_limit(200, &RateHeaders::default(), body, 0),
+            Some(Wait::Backoff)
+        );
+        assert_eq!(
+            detect_rate_limit(200, &RateHeaders::default(), "{}", 0),
+            None
+        );
+    }
+
+    #[test]
+    fn backoff_doubles_up_to_fifteen_minutes() {
+        assert_eq!(backoff(0), Duration::from_secs(60));
+        assert_eq!(backoff(1), Duration::from_secs(120));
+        assert_eq!(backoff(3), Duration::from_secs(480));
+        assert_eq!(backoff(4), Duration::from_secs(900));
+        assert_eq!(backoff(30), Duration::from_secs(900));
+    }
+
+    #[test]
+    fn partial_responses_keep_the_aliases_that_succeeded() {
+        let body = r#"{"data":{"a":{"number":9000},"b":null,"c":null},"errors":[{"type":"NOT_FOUND","path":["c"],"locations":[{"line":1,"column":196}],"message":"Could not resolve to a node with the global id of 'PR_doesnotexist'"}]}"#;
+        let p = decode_partial(body).unwrap();
+        assert_eq!(p.data["a"]["number"], 9000);
+        assert!(p.data["b"].is_null());
+        assert!(!p.errors.contains_key("b"));
+        assert!(p.errors["c"].contains("Could not resolve"));
+    }
+
+    #[test]
+    fn a_response_that_is_not_json_is_a_timeout() {
+        let e = decode_partial("<html>We couldn't respond</html>")
+            .err()
+            .unwrap();
+        assert!(is_timeout(&e));
+    }
+
+    #[test]
+    fn sync_sends_at_most_ten_searches_per_request() {
+        let queries: Vec<SyncQuery> = (0..12)
+            .map(|i| SyncQuery::prs(&format!("repo:a/{i}"), 20))
+            .collect();
+        let docs = sync_documents(&queries);
+        assert_eq!(docs.len(), 2);
+        assert!(docs[0].0.contains("s9:"));
+        assert!(!docs[0].0.contains("s10:"));
+        assert!(docs[1].0.contains("s1:"));
+        assert!(!docs[1].0.contains("s2:"));
+        assert_eq!(
+            docs[1].1["q1"],
+            "is:pr archived:false repo:a/11 sort:updated"
+        );
+    }
+
+    #[test]
+    fn different_tokens_name_different_accounts() {
+        assert_ne!(
+            account_key_for("github.com", "a"),
+            account_key_for("github.com", "b")
+        );
+        assert_eq!(
+            account_key_for("github.com", "a"),
+            account_key_for("github.com", "a")
+        );
+        assert_eq!(fnv1a(b""), 0xcbf29ce484222325);
+    }
 }

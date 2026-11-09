@@ -28,6 +28,9 @@ use crate::theme::Theme;
 use crate::util;
 use crate::views::{self, Editor, EditorMode};
 
+mod live;
+use live::Live;
+
 pub const TABS_HEIGHT: usize = 2;
 pub const FOOTER_HEIGHT: usize = 1;
 const MIN_TABLE_WIDTH_FOR_RIGHT_PREVIEW: usize = 80;
@@ -137,6 +140,7 @@ pub struct App {
     pub last_refresh: Instant,
     pub version: String,
     pub latest_version: String,
+    pub live: Live,
 }
 
 /// A config size: a fraction of `total` when between 0 and 1, otherwise cells, capped at `total`.
@@ -169,6 +173,7 @@ impl App {
         let theme = Theme::from_config(&cfg);
         let view = cfg.defaults.view;
         let sidebar_open = cfg.defaults.preview.open;
+        let live = Live::new(&pool);
         let mut app = App {
             theme,
             keys,
@@ -214,6 +219,7 @@ impl App {
             last_refresh: Instant::now(),
             version: concat!("v", env!("CARGO_PKG_VERSION")).to_string(),
             latest_version: String::new(),
+            live,
             cfg,
         };
         app.init_sections();
@@ -280,21 +286,23 @@ impl App {
                 )
             })
             .collect();
-    }
-
-    pub fn start(&mut self) {
-        self.fetch_all_view_sections();
-        let tx = self.pool.clone();
-        tx.spawn(|| {
-            Some(match github::current_login() {
-                Ok(u) => Msg::User(u),
-                Err(e) => Msg::Error(e.to_string()),
-            })
-        });
-        // Check for a newer release.
-        self.pool
-            .spawn(|| github::latest_version().ok().map(Msg::LatestVersion));
-        self.on_viewed_row_changed();
+        if crate::config::feature_enabled("FF_REPO_VIEW") {
+            let mut s = Section::new(
+                0,
+                Kind::Branch,
+                SectionSpec {
+                    title: "Local Branches",
+                    filters: "",
+                    limit: None,
+                },
+                section::branch_columns(cfg),
+                cfg,
+                None,
+            );
+            s.search_value.clear();
+            s.search_bar.set_value("");
+            self.repo = vec![s];
+        }
     }
 
     // ---------------- accessors ----------------
@@ -525,22 +533,15 @@ impl App {
             self.handle_msg(m);
             changed = true;
         }
-        let interval = self.cfg.defaults.refetch_interval_minutes;
-        if interval > 0 && self.last_refresh.elapsed() >= Duration::from_secs(interval * 60) {
-            self.fetch_all_view_sections();
-            changed = true;
-        }
+        changed |= self.live_tick();
         changed
     }
 
     // ---------------- fetching ----------------
 
+    /// Full searches for every section of the current view, now.
     fn fetch_all_view_sections(&mut self) {
         self.last_refresh = Instant::now();
-        if self.view == ViewType::Repo {
-            self.fetch_all_branches();
-            return;
-        }
         let view = self.view;
         let n = self.sections_for(view).len();
         for i in 0..n {
@@ -552,6 +553,12 @@ impl App {
     }
 
     pub fn fetch_next_page(&mut self, view: ViewType, id: usize) {
+        self.fetch_page(view, id, false);
+    }
+
+    /// Fetches a section's next page, or its first after `page_info` was reset.
+    /// `background` requests stop while GitHub rate limits us. Returns the task ID.
+    fn fetch_page(&mut self, view: ViewType, id: usize, background: bool) -> Option<String> {
         let gh = self.gh_repo.clone();
         let cfg_limit = match view {
             ViewType::Notifications => self.cfg.defaults.notifications_limit,
@@ -559,13 +566,11 @@ impl App {
             _ => self.cfg.defaults.prs_limit,
         };
         let include_read = self.cfg.include_read_notifications;
-        let Some(s) = self.sections_for(view).get_mut(id) else {
-            return;
-        };
+        let s = self.sections_for(view).get_mut(id)?;
         if let Some(p) = &s.page_info
             && !p.has_next_page
         {
-            return;
+            return None;
         }
         let filters = s.search_value_for_fetch(gh.as_ref(), true);
         let limit = s.limit.unwrap_or(cfg_limit);
@@ -586,7 +591,7 @@ impl App {
                     "done_filter",
                     Some("done notifications cannot be retrieved".into()),
                 );
-                return;
+                return None;
             }
             let tid = task_id(&format!("fetching_notifications_{id}"));
             s.last_fetch_task = tid.clone();
@@ -600,9 +605,15 @@ impl App {
                 "Fetching notifications",
                 "Notifications have been fetched",
             );
+            let task = tid.clone();
             self.pool.spawn(move || {
-                let res =
-                    tasks::fetch_notifications(&nf, limit, page, &session_read, &session_done);
+                let fetch =
+                    || tasks::fetch_notifications(&nf, limit, page, &session_read, &session_done);
+                let res = if background {
+                    github::background(fetch)
+                } else {
+                    fetch()
+                };
                 Some(match res {
                     Ok((rows, page_info)) => Msg::TaskFinished {
                         task_id: tid.clone(),
@@ -622,7 +633,7 @@ impl App {
                     },
                 })
             });
-            return;
+            return Some(task);
         }
 
         let prefix = if kind == Kind::Pr {
@@ -646,129 +657,61 @@ impl App {
             )
         };
         self.start_task(&tid, &start, &done);
+        let task = tid.clone();
         self.pool.spawn(move || {
-            let msg = if kind == Kind::Pr {
-                match github::fetch_pull_requests(&filters, limit, page.as_ref()) {
-                    Ok(p) => Msg::TaskFinished {
-                        task_id: tid.clone(),
-                        section: Some(key),
-                        err: None,
-                        payload: Payload::Prs {
-                            task_id: tid,
+            let run = || {
+                if kind == Kind::Pr {
+                    github::fetch_pull_requests(&filters, limit, page.as_ref()).map(|p| {
+                        Payload::Prs {
+                            task_id: tid.clone(),
                             page: p,
-                        },
-                    },
-                    Err(e) => Msg::TaskFinished {
-                        task_id: tid,
-                        section: Some(key),
-                        err: Some(e.to_string()),
-                        payload: Payload::None,
-                    },
-                }
-            } else {
-                match github::fetch_issues(&filters, limit, page.as_ref()) {
-                    Ok(p) => Msg::TaskFinished {
+                        }
+                    })
+                } else {
+                    github::fetch_issues(&filters, limit, page.as_ref()).map(|p| Payload::Issues {
                         task_id: tid.clone(),
-                        section: Some(key),
-                        err: None,
-                        payload: Payload::Issues {
-                            task_id: tid,
-                            page: p,
-                        },
-                    },
-                    Err(e) => Msg::TaskFinished {
-                        task_id: tid,
-                        section: Some(key),
-                        err: Some(e.to_string()),
-                        payload: Payload::None,
-                    },
+                        page: p,
+                    })
                 }
             };
-            Some(msg)
+            let res = if background {
+                github::background(run)
+            } else {
+                run()
+            };
+            Some(match res {
+                Ok(payload) => Msg::TaskFinished {
+                    task_id: tid.clone(),
+                    section: Some(key),
+                    err: None,
+                    payload,
+                },
+                Err(e) => Msg::TaskFinished {
+                    task_id: tid,
+                    section: Some(key),
+                    err: Some(e.to_string()),
+                    payload: Payload::None,
+                },
+            })
         });
+        Some(task)
     }
 
+    /// CheckSuite notifications link to their workflow run.
     fn fetch_notification_extras(&self, rows: &[NotifRow]) {
-        for r in rows {
+        for r in rows.iter().filter(|r| r.subject_type() == "CheckSuite") {
             let id = r.id().to_string();
-            let url = r.url();
-            let read_at = r.n.last_read_at;
-            let comment_url = r.n.subject.latest_comment_url.clone();
-            match r.subject_type() {
-                "PullRequest" => self.pool.spawn(move || {
-                    let pr = github::fetch_pull_request(&url).ok()?;
-                    let after =
-                        |t: &chrono::DateTime<chrono::Utc>| read_at.map(|r| *t > r).unwrap_or(true);
-                    let mut count = pr
-                        .comments
-                        .nodes
-                        .iter()
-                        .filter(|c| after(&c.updated_at))
-                        .count();
-                    for th in &pr.review_threads.nodes {
-                        count += th
-                            .comments
-                            .nodes
-                            .iter()
-                            .filter(|c| after(&c.updated_at))
-                            .count();
-                    }
-                    count += pr
-                        .reviews
-                        .nodes
-                        .iter()
-                        .filter(|r| after(&r.updated_at))
-                        .count();
-                    let mut actor = github::fetch_comment_author(&comment_url).unwrap_or_default();
-                    if actor.is_empty() {
-                        actor = pr.author.login.clone();
-                    }
-                    Some(Msg::NotifComments {
-                        id,
-                        count: count as i64,
-                        state: pr.state,
-                        is_draft: pr.is_draft,
-                        actor,
-                    })
-                }),
-                "Issue" => self.pool.spawn(move || {
-                    let issue = github::fetch_issue(&url).ok()?;
-                    let count = issue
-                        .comments
-                        .nodes
-                        .iter()
-                        .filter(|c| read_at.map(|r| c.updated_at > r).unwrap_or(true))
-                        .count();
-                    let mut actor = github::fetch_comment_author(&comment_url).unwrap_or_default();
-                    if actor.is_empty() {
-                        actor = issue.author.login.clone();
-                    }
-                    Some(Msg::NotifComments {
-                        id,
-                        count: count as i64,
-                        state: issue.state,
-                        is_draft: false,
-                        actor,
-                    })
-                }),
-                "CheckSuite" => {
-                    let repo = r.repo().to_string();
-                    let at = r.n.updated_at;
-                    self.pool.spawn(move || {
-                        let url = github::fetch_recent_workflow_run(&repo, at).ok()?;
-                        if url.is_empty() {
-                            return None;
-                        }
-                        Some(Msg::NotifUrl { id, url })
-                    })
+            let repo = r.repo().to_string();
+            let at = r.n.updated_at;
+            self.pool.spawn(move || {
+                let url =
+                    github::background(|| github::fetch_recent_workflow_run(&repo, at)).ok()?;
+                if url.is_empty() {
+                    return None;
                 }
-                _ => {}
-            }
+                Some(Msg::NotifUrl { id, url })
+            });
         }
-    }
-
-    fn is_view_stale(&self) -> bool {
-        self.sections().iter().any(|s| s.is_data_stale())
     }
 
     // ---------------- sidebar ----------------
@@ -793,33 +736,27 @@ impl App {
         self.subject_id.clear();
         self.subject_pr = None;
         self.subject_issue = None;
+        self.live.subject_wanted = None;
         self.invalidate_sidebar();
         self.enrich_current_row();
         self.schedule_notification_preview();
         if self.view == ViewType::Repo {
             self.refresh_branch_status();
         }
+        self.refresh_prefetch();
     }
 
-    fn enrich_current_row(&mut self) {
-        if let Some(RowRef::Pr(pr)) = self.current_row()
-            && pr.enriched.is_none()
-        {
-            let url = pr.primary.url.clone();
-            self.pool.spawn(move || {
-                let result = github::fetch_pull_request(&url).map_err(|e| e.to_string());
-                Some(Msg::Enriched { url, result })
-            });
-        }
-    }
-
-    /// syncSidebar for notifications: PR and issue subjects load once the selection rests.
+    /// syncSidebar for notifications: a cached subject shows at once; others load
+    /// once the selection rests.
     fn schedule_notification_preview(&mut self) {
         if !self.sidebar_open {
             return;
         }
         if let Some(RowRef::Notification(n)) = self.current_row() {
             if self.subject_id == n.id() {
+                return;
+            }
+            if self.show_cached_subject(&n) {
                 return;
             }
             if matches!(n.subject_type(), "PullRequest" | "Issue") {
@@ -837,27 +774,7 @@ impl App {
         let Some(RowRef::Notification(n)) = self.current_row() else {
             return;
         };
-        let id = n.id().to_string();
-        let url = n.url();
-        match n.subject_type() {
-            "PullRequest" => self.pool.spawn(move || {
-                let result = github::fetch_pull_request(&url).map_err(|e| e.to_string());
-                Some(Msg::NotifPr {
-                    notif_id: id,
-                    result,
-                    preview: true,
-                })
-            }),
-            "Issue" => self.pool.spawn(move || {
-                let result = github::fetch_issue(&url).map_err(|e| e.to_string());
-                Some(Msg::NotifIssue {
-                    notif_id: id,
-                    result,
-                    preview: true,
-                })
-            }),
-            _ => {}
-        }
+        self.want_subject(&n);
     }
 
     /// loadNotificationContent: Enter marks the notification read and shows its subject.
@@ -866,7 +783,6 @@ impl App {
             return;
         };
         let id = n.id().to_string();
-        let url = n.url();
         self.invalidate_sidebar();
         let id2 = id.clone();
         self.pool.spawn(move || {
@@ -877,22 +793,12 @@ impl App {
             })
         });
         match n.subject_type() {
-            "PullRequest" => self.pool.spawn(move || {
-                let result = github::fetch_pull_request(&url).map_err(|e| e.to_string());
-                Some(Msg::NotifPr {
-                    notif_id: id,
-                    result,
-                    preview: false,
-                })
-            }),
-            "Issue" => self.pool.spawn(move || {
-                let result = github::fetch_issue(&url).map_err(|e| e.to_string());
-                Some(Msg::NotifIssue {
-                    notif_id: id,
-                    result,
-                    preview: false,
-                })
-            }),
+            "PullRequest" | "Issue" => {
+                self.mark_notification_read_locally(&id);
+                if !self.show_cached_subject(&n) {
+                    self.want_subject(&n);
+                }
+            }
             _ => self.open_browser(),
         }
     }
@@ -934,37 +840,21 @@ impl App {
                 } else {
                     self.apply_global_payload(payload);
                 }
-            }
-            Msg::Enriched { url, result } => match result {
-                Ok(pr) => {
-                    for s in self.prs.iter_mut() {
-                        for row in s.prs.iter_mut() {
-                            if row.primary.url == url {
-                                row.enriched = Some(pr.clone());
-                            }
-                        }
-                    }
+                if self.live.full_running.remove(&task_id) {
+                    self.pump_full();
                 }
-                Err(e) => self.error = Some(format!("failed enriching pr: {e}")),
-            },
-            Msg::NotifComments {
-                id,
-                count,
-                state,
-                is_draft,
-                actor,
-            } => {
-                for s in self.notifs.iter_mut() {
-                    if let Some(n) = s.notifs.iter_mut().find(|n| n.id() == id) {
-                        n.new_comments = count;
-                        n.subject_state = state.clone();
-                        n.is_draft = is_draft;
-                        n.actor = actor.clone();
-                        n.activity =
-                            section::activity_description(&n.n.reason, &n.n.subject.kind, &actor);
-                    }
+                if let Some(e) = &err {
+                    self.note_error(e);
                 }
             }
+            Msg::PrDetail { url, result } => self.on_pr_detail(url, result),
+            Msg::IssueDetail { url, result } => self.on_issue_detail(url, result),
+            Msg::CacheLoaded { lists, cache } => self.on_cache_loaded(*lists, cache),
+            Msg::DetailsLoaded(d) => self.on_details_loaded(*d),
+            Msg::Synced(results) => self.on_synced(results),
+            Msg::Checked(Ok(versions)) => self.on_checked(versions),
+            Msg::Checked(Err(e)) => self.note_error(&format!("checking PRs failed: {e}")),
+            Msg::CheckSelected { url } => self.check_selected(&url),
             Msg::NotifUrl { id, url } => {
                 for s in self.notifs.iter_mut() {
                     if let Some(n) = s.notifs.iter_mut().find(|n| n.id() == id) {
@@ -975,50 +865,6 @@ impl App {
             Msg::NotifPreview { notif_id } => {
                 if notif_id == self.selected_notification_id() && self.subject_id != notif_id {
                     self.preview_notification();
-                }
-            }
-            Msg::NotifPr {
-                notif_id,
-                result,
-                preview,
-            } => {
-                if notif_id != self.selected_notification_id() {
-                    return;
-                }
-                match result {
-                    Ok(pr) => {
-                        self.subject_pr = Some(PrRow {
-                            primary: pr.to_primary(),
-                            enriched: Some(pr),
-                        });
-                        self.subject_issue = None;
-                        self.subject_id = notif_id.clone();
-                        self.pr_tab = 0;
-                        if !preview {
-                            self.mark_notification_read_locally(&notif_id);
-                        }
-                    }
-                    Err(e) => self.error = Some(format!("failed fetching notification PR: {e}")),
-                }
-            }
-            Msg::NotifIssue {
-                notif_id,
-                result,
-                preview,
-            } => {
-                if notif_id != self.selected_notification_id() {
-                    return;
-                }
-                match result {
-                    Ok(issue) => {
-                        self.subject_issue = Some(issue);
-                        self.subject_pr = None;
-                        self.subject_id = notif_id.clone();
-                        if !preview {
-                            self.mark_notification_read_locally(&notif_id);
-                        }
-                    }
-                    Err(e) => self.error = Some(format!("failed fetching notification Issue: {e}")),
                 }
             }
             Msg::NotifReadState { id, unread } => {
@@ -1082,7 +928,11 @@ impl App {
                     c.fetch = FetchState::Idle;
                 }
             }
-            Msg::User(u) => self.user = u,
+            Msg::User(u) => {
+                self.user = u;
+                self.live.login_at = Some(chrono::Utc::now());
+                self.live.dirty = true;
+            }
             Msg::RepoTick { id, prs } => {
                 if id == self.repo_refresh_id {
                     let cfg = &self.cfg.repo;
@@ -1091,8 +941,10 @@ impl App {
                     } else {
                         cfg.branches_refetch_interval_seconds
                     };
-                    if prs {
-                        self.fetch_branch_prs();
+                    if !self.live.focused {
+                        // Skipped while unfocused; catch_up syncs on return.
+                    } else if prs {
+                        self.sync_views(&[ViewType::Repo]);
                     } else {
                         self.read_repo(false);
                     }
@@ -1104,7 +956,11 @@ impl App {
             }
             Msg::BranchStatus(st) => self.branch_status = Some(st),
             Msg::FetchBranchPr { branch, short, key } => self.fetch_branch_pr(branch, short, key),
-            Msg::LatestVersion(v) => self.latest_version = v,
+            Msg::LatestVersion(v) => {
+                self.latest_version = v;
+                self.live.latest_version_at = Some(chrono::Utc::now());
+                self.live.dirty = true;
+            }
             Msg::Error(e) => {
                 crate::error!("{e}");
                 self.error = Some(e)
@@ -1114,9 +970,12 @@ impl App {
 
     fn apply_global_payload(&mut self, payload: Payload) {
         if let Payload::UpdatePr(u) = payload {
+            let mut urls = vec![];
             for s in self.prs.iter_mut() {
+                urls.extend(pr_urls(s, u.number));
                 apply_update_pr(s, &u);
             }
+            self.refresh_after_mutation(urls, vec![]);
         }
     }
 
@@ -1128,6 +987,17 @@ impl App {
         let mut row_changed = false;
         let mut refetch = false;
         let mut repo_head: Option<String> = None;
+        let mut fill_prs = false;
+        let mut mutated_prs: Vec<String> = vec![];
+        let mut mutated_issues: Vec<String> = vec![];
+        let subject_pr_url = self
+            .subject_pr
+            .as_ref()
+            .map(|p| (p.primary.number, p.primary.url.clone()));
+        let subject_issue_url = self
+            .subject_issue
+            .as_ref()
+            .map(|i| (i.number, i.url.clone()));
         {
             let Some(s) = self.sections_for(key.view).get_mut(key.id) else {
                 return;
@@ -1159,6 +1029,7 @@ impl App {
                         s.last_updated = Local::now();
                         s.clamp_cursor();
                         row_changed = true;
+                        fill_prs = true;
                     }
                 }
                 Payload::Issues { task_id, page } => {
@@ -1197,8 +1068,24 @@ impl App {
                         row_changed = true;
                     }
                 }
-                Payload::UpdatePr(u) => apply_update_pr(s, &u),
+                Payload::UpdatePr(u) => {
+                    if !failed {
+                        mutated_prs.extend(pr_urls(s, u.number));
+                        if let Some((n, url)) = &subject_pr_url
+                            && *n == u.number
+                        {
+                            mutated_prs.push(url.clone());
+                        }
+                    }
+                    apply_update_pr(s, &u)
+                }
                 Payload::UpdateIssue(u) => {
+                    if !failed
+                        && let Some((n, url)) = &subject_issue_url
+                        && *n == u.number
+                    {
+                        mutated_issues.push(url.clone());
+                    }
                     if let Some(i) = s.issues.iter_mut().find(|i| i.number == u.number) {
                         if let Some(c) = u.is_closed {
                             i.state = if c { "CLOSED".into() } else { "OPEN".into() };
@@ -1264,6 +1151,7 @@ impl App {
                     s.repo_status = repo.status.clone();
                     s.is_loading = false;
                     s.last_updated = Local::now();
+                    s.last_fetch_at = Some(Instant::now());
                     if reset {
                         s.cursor = 0;
                         s.top = 0;
@@ -1280,6 +1168,7 @@ impl App {
                             enriched: None,
                         })
                         .collect();
+                    s.is_loading = false;
                 }
                 Payload::BranchPr(pr) => {
                     s.prs.push(PrRow {
@@ -1297,6 +1186,24 @@ impl App {
         }
         if matches!(key.view, ViewType::Notifications) && !new_notifs.is_empty() {
             self.fetch_notification_extras(&new_notifs);
+            self.notification_extras(None);
+        }
+        if fill_prs {
+            let store = &self.live.pr_store;
+            let section = match key.view {
+                ViewType::Prs => self.prs.get_mut(key.id),
+                ViewType::Repo => self.repo.get_mut(key.id),
+                _ => None,
+            };
+            if let Some(s) = section {
+                live::fill_enriched(&mut s.prs, store);
+            }
+        }
+        if !mutated_prs.is_empty() || !mutated_issues.is_empty() {
+            self.refresh_after_mutation(mutated_prs, mutated_issues);
+        }
+        if row_changed {
+            self.live.dirty = true;
         }
         if refetch {
             self.fetch_next_page(key.view, key.id);
@@ -1309,6 +1216,8 @@ impl App {
         }
         if is_current && row_changed {
             self.on_viewed_row_changed();
+        } else if row_changed {
+            self.refresh_prefetch();
         }
     }
 
@@ -1441,8 +1350,10 @@ impl App {
                     Position::Right
                 });
             }
-        } else if u.refresh.matches(key) && self.view == ViewType::Repo {
-            github::clear_enrichment_cache();
+        } else if (u.refresh.matches(key) || u.refresh_all.matches(key))
+            && self.view == ViewType::Repo
+        {
+            self.mark_all_details_stale();
             if let Some(s) = self.section_mut() {
                 s.prs.clear();
                 s.is_loading = true;
@@ -1452,7 +1363,7 @@ impl App {
             self.git_fetch();
             self.fetch_branch_prs();
         } else if u.refresh.matches(key) {
-            github::clear_enrichment_cache();
+            self.mark_all_details_stale();
             let gh = self.gh_repo.clone();
             let (view, id) = (self.view, self.curr);
             if let Some(s) = self.section_mut() {
@@ -1463,7 +1374,7 @@ impl App {
                 self.on_viewed_row_changed();
             }
         } else if u.refresh_all.matches(key) {
-            github::clear_enrichment_cache();
+            self.mark_all_details_stale();
             self.fetch_all_view_sections();
         } else if u.redraw.matches(key) {
             // The terminal is fully redrawn every frame.
@@ -2415,11 +2326,24 @@ impl App {
             _ => ViewType::Notifications,
         };
         self.curr = 0;
-        // Load the branches the first time the repo view opens.
-        let repo_unloaded = self.view == ViewType::Repo && self.repo.is_empty();
-        if repo_unloaded || self.is_view_stale() {
-            self.fetch_all_view_sections();
+        let view = self.view;
+        if view == ViewType::Repo {
+            self.start_repo_view();
         }
+        self.queue_unfetched(view);
+        if self
+            .live
+            .last_sync
+            .get(&view)
+            .is_none_or(|t| t.elapsed() >= live::SYNC_ON_SWITCH)
+        {
+            self.sync_views(&[view]);
+            if view == ViewType::Notifications {
+                self.queue_notifications_if_due(false);
+            }
+        }
+        self.pump_full();
+        self.change_check(view);
         self.on_viewed_row_changed();
     }
 
@@ -2875,9 +2799,14 @@ impl App {
         self.invalidate_sidebar();
     }
 
+    /// After an external command: sync the current view, which may have changed.
     pub fn after_exec(&mut self) {
-        let (view, id) = (self.view, self.curr);
-        self.fetch_next_page(view, id);
+        let view = self.view;
+        self.sync_views(&[view]);
+        if view == ViewType::Notifications {
+            self.queue_notifications_if_due(false);
+            self.pump_full();
+        }
     }
 }
 
@@ -2888,31 +2817,17 @@ impl App {
         self.repo_path.as_ref().map(|p| p.display().to_string())
     }
 
-    /// Starts the branches section: reads the repo, fetches origin and PRs, and schedules refreshes.
-    fn fetch_all_branches(&mut self) {
-        let cfg = self.cfg.clone();
-        let mut s = Section::new(
-            0,
-            Kind::Branch,
-            SectionSpec {
-                title: "Local Branches",
-                filters: "",
-                limit: None,
-            },
-            section::branch_columns(&cfg),
-            &cfg,
-            None,
-        );
-        s.search_value.clear();
-        s.search_bar.set_value("");
-        self.repo = vec![s];
-        self.curr = 0;
-        if self.repo_path.is_none() {
+    /// Starts the branches view once: reads the repo, fetches origin, syncs its PRs,
+    /// and schedules refreshes.
+    fn start_repo_view(&mut self) {
+        if self.live.repo_started || self.repo.is_empty() || self.repo_path.is_none() {
             return;
         }
+        self.live.repo_started = true;
+        let cfg = self.cfg.clone();
         self.read_repo(false);
         self.git_fetch();
-        self.fetch_branch_prs();
+        self.sync_views(&[ViewType::Repo]);
         self.repo_refresh_id += 1;
         let id = self.repo_refresh_id;
         let now = Instant::now();
@@ -3251,6 +3166,15 @@ impl App {
             })
         });
     }
+}
+
+/// The URLs of a section's PR rows with `number`.
+fn pr_urls(s: &Section, number: i64) -> Vec<String> {
+    s.prs
+        .iter()
+        .filter(|p| p.primary.number == number)
+        .map(|p| p.primary.url.clone())
+        .collect()
 }
 
 fn apply_update_pr(s: &mut Section, u: &UpdatePr) {

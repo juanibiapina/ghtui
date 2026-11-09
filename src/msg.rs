@@ -10,7 +10,19 @@ use crate::github::SearchPage;
 use crate::model::*;
 use crate::section::NotifRow;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// One section's result in a list sync.
+pub struct SyncedSection {
+    pub key: SectionKey,
+    pub result: Result<SyncedRows, String>,
+}
+
+pub struct SyncedRows {
+    pub membership: crate::github::Membership,
+    pub prs: Vec<PullRequest>,
+    pub issues: Vec<Issue>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SectionKey {
     pub view: ViewType,
     pub id: usize,
@@ -88,30 +100,32 @@ pub enum Msg {
         err: Option<String>,
         payload: Payload,
     },
-    Enriched {
+    /// A PR's details from the detail store, whoever asked for them.
+    PrDetail {
         url: String,
-        result: Result<EnrichedPullRequest, String>,
+        result: Result<Box<EnrichedPullRequest>, String>,
     },
-    NotifComments {
-        id: String,
-        count: i64,
-        state: String,
-        is_draft: bool,
-        actor: String,
+    IssueDetail {
+        url: String,
+        result: Result<Box<Issue>, String>,
     },
     NotifUrl {
         id: String,
         url: String,
     },
-    NotifPr {
-        notif_id: String,
-        result: Result<EnrichedPullRequest, String>,
-        preview: bool,
+    /// The last session's lists, read from disk.
+    CacheLoaded {
+        lists: Box<crate::disk_cache::Lists>,
+        cache: Option<crate::disk_cache::DiskCache>,
     },
-    NotifIssue {
-        notif_id: String,
-        result: Result<Issue, String>,
-        preview: bool,
+    DetailsLoaded(Box<crate::disk_cache::Details>),
+    /// A list sync: each section's membership and the rows that changed.
+    Synced(Vec<SyncedSection>),
+    /// The change check's view of PRs.
+    Checked(Result<Vec<crate::github::PrVersion>, String>),
+    /// The selection rested on a PR: check it if its last check is old.
+    CheckSelected {
+        url: String,
     },
     NotifReadState {
         id: String,

@@ -1,7 +1,7 @@
 //! GitHub data shapes. Field names follow the GraphQL/REST responses.
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Decodes `null` as the type's default.
 fn nd<'de, D, T>(d: D) -> Result<T, D::Error>
@@ -12,21 +12,21 @@ where
     Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
 }
 
-#[derive(Deserialize, Clone, Default, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
 #[serde(default)]
 pub struct Login {
     #[serde(deserialize_with = "nd")]
     pub login: String,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct NameOnly {
     #[serde(deserialize_with = "nd")]
     pub name: String,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(
     default,
     rename_all = "camelCase",
@@ -48,14 +48,14 @@ impl<T> Default for Nodes<T> {
     }
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Count {
     #[serde(deserialize_with = "nd")]
     pub total_count: i64,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct BranchProtectionRule {
     pub required_approving_review_count: i64,
@@ -66,7 +66,7 @@ pub struct BranchProtectionRule {
     pub required_status_check_contexts: Vec<String>,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Repository {
     pub name: String,
@@ -78,7 +78,7 @@ pub struct Repository {
     pub branch_protection_rules: Nodes<BranchProtectionRule>,
 }
 
-#[derive(Deserialize, Clone, Default, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
 #[serde(default)]
 pub struct Label {
     #[serde(deserialize_with = "nd")]
@@ -88,21 +88,21 @@ pub struct Label {
     pub description: String,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct RollupState {
     #[serde(deserialize_with = "nd")]
     pub state: String,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct CommitWithRollup {
     #[serde(deserialize_with = "nd")]
     pub status_check_rollup: RollupState,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, bound(deserialize = "T: Deserialize<'de> + Default"))]
 pub struct CommitNode<T> {
     #[serde(deserialize_with = "nd")]
@@ -110,9 +110,11 @@ pub struct CommitNode<T> {
 }
 
 /// A row in a PR section.
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct PullRequest {
+    #[serde(deserialize_with = "nd")]
+    pub id: String,
     pub number: i64,
     pub title: String,
     #[serde(deserialize_with = "nd")]
@@ -157,7 +159,7 @@ pub struct PullRequest {
     pub merge_state_status: String,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct CountByState {
     pub count: i64,
@@ -165,14 +167,14 @@ pub struct CountByState {
     pub state: String,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct WorkflowName {
     #[serde(deserialize_with = "nd")]
     pub workflow: NameOnly,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct CheckSuiteRef {
     #[serde(deserialize_with = "nd")]
@@ -182,7 +184,7 @@ pub struct CheckSuiteRef {
 }
 
 /// A node of statusCheckRollup.contexts: either a CheckRun or a StatusContext.
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct CheckContext {
     #[serde(rename = "__typename")]
@@ -205,7 +207,7 @@ pub struct CheckContext {
     pub creator: Login,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct RollupContexts {
     pub total_count: i64,
@@ -219,7 +221,7 @@ pub struct RollupContexts {
     pub nodes: Vec<CheckContext>,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct StatusCheckRollup {
     #[serde(deserialize_with = "nd")]
@@ -228,7 +230,7 @@ pub struct StatusCheckRollup {
     pub contexts: RollupContexts,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct CheckSuiteNode {
     #[serde(deserialize_with = "nd")]
@@ -241,9 +243,11 @@ pub struct CheckSuiteNode {
     pub workflow_run: WorkflowName,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct LastCommit {
+    #[serde(deserialize_with = "nd")]
+    pub oid: String,
     #[serde(deserialize_with = "nd")]
     pub commit_url: String,
     #[serde(deserialize_with = "nd")]
@@ -252,7 +256,7 @@ pub struct LastCommit {
     pub check_suites: Nodes<CheckSuiteNode>,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct CommitAuthor {
     #[serde(deserialize_with = "nd")]
@@ -261,7 +265,7 @@ pub struct CommitAuthor {
     pub user: Login,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct HistoryCommit {
     pub abbreviated_oid: String,
@@ -273,7 +277,7 @@ pub struct HistoryCommit {
     pub status_check_rollup: StatusCheckRollup,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Comment {
     #[serde(deserialize_with = "nd")]
@@ -283,7 +287,7 @@ pub struct Comment {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ReviewThread {
     pub id: String,
@@ -296,7 +300,7 @@ pub struct ReviewThread {
     pub comments: Nodes<Comment>,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Review {
     #[serde(deserialize_with = "nd")]
@@ -307,7 +311,7 @@ pub struct Review {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct RequestedReviewer {
     #[serde(deserialize_with = "nd")]
@@ -318,7 +322,7 @@ pub struct RequestedReviewer {
     pub name: String,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ReviewRequest {
     pub as_code_owner: bool,
@@ -340,7 +344,7 @@ impl ReviewRequest {
     }
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct SuggestedReviewer {
     pub is_author: bool,
@@ -349,7 +353,7 @@ pub struct SuggestedReviewer {
     pub reviewer: Login,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ChangedFile {
     pub additions: i64,
@@ -359,9 +363,11 @@ pub struct ChangedFile {
 }
 
 /// The full PR fetched for the preview pane.
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct EnrichedPullRequest {
+    #[serde(deserialize_with = "nd")]
+    pub id: String,
     pub url: String,
     pub number: i64,
     pub title: String,
@@ -418,6 +424,7 @@ impl EnrichedPullRequest {
     /// EnrichedPullRequestData.ToPullRequestData
     pub fn to_primary(&self) -> PullRequest {
         PullRequest {
+            id: self.id.clone(),
             number: self.number,
             title: self.title.clone(),
             author: self.author.clone(),
@@ -445,9 +452,11 @@ impl EnrichedPullRequest {
     }
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Issue {
+    #[serde(deserialize_with = "nd")]
+    pub id: String,
     pub number: i64,
     pub title: String,
     #[serde(deserialize_with = "nd")]
@@ -472,7 +481,7 @@ pub struct Issue {
     pub labels: Nodes<Label>,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct PageInfo {
     pub has_next_page: bool,
@@ -484,7 +493,7 @@ pub struct PageInfo {
 
 // ---- REST notifications ----
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct NotificationSubject {
     #[serde(deserialize_with = "nd")]
@@ -497,7 +506,7 @@ pub struct NotificationSubject {
     pub kind: String,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct NotificationRepository {
     pub id: i64,
@@ -510,7 +519,7 @@ pub struct NotificationRepository {
     pub html_url: String,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct Notification {
     pub id: String,
@@ -527,7 +536,7 @@ pub struct Notification {
     pub subscription: String,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct WorkflowRun {
     pub id: i64,
@@ -538,7 +547,7 @@ pub struct WorkflowRun {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct WorkflowRunsResponse {
     pub workflow_runs: Vec<WorkflowRun>,
