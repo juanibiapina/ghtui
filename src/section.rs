@@ -494,13 +494,6 @@ impl Section {
         self.notifs.get(self.cursor)
     }
 
-    pub fn is_data_stale(&self) -> bool {
-        match self.last_fetch_at {
-            None => true,
-            Some(t) => t.elapsed().as_secs() > 300,
-        }
-    }
-
     pub fn has_repo_filter(&self) -> bool {
         self.search_value
             .split_whitespace()
@@ -563,7 +556,7 @@ impl Section {
         content + usize::from(cfg.theme.ui.table.show_separator)
     }
 
-    fn per_page(&self, cfg: &Config, body_height: usize) -> usize {
+    pub fn per_page(&self, cfg: &Config, body_height: usize) -> usize {
         let h = self.item_height(cfg);
         body_height.checked_div(h).map_or(0, |n| n.max(1))
     }

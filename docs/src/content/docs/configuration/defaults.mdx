@@ -193,12 +193,18 @@ By default, the position is `auto`.
 | :------ | :-----: | :-----: |
 | Integer |    0    |   30    |
 
-This setting defines how often the dashboard should fetch issues and PRs from GitHub. The
-dashboard fetches work items for every section in the active view when the dashboard loads
-and the first time you switch to the inactive view.
+This setting defines how often the dashboard fully refetches issues, PRs and notifications
+from GitHub, in every view, while its terminal has focus.
 
-After the dashboard fetches the work items for the first time, it waits until this setting's
-defined interval elapses before fetching the work items again.
+The dashboard keeps the last session's work items in your cache directory
+(`~/Library/Caches/ghtui/` on macOS, `~/.cache/ghtui/` on Linux). When it loads, it shows
+them at once, then asks GitHub what changed and fetches only those items. It does the same
+when you return to its terminal and when you switch to a view you haven't looked at for five
+minutes. It also preloads the details of the PRs and notifications you can reach with one
+key, so their previews open without waiting.
+
+While its terminal doesn't have focus, the dashboard sends no requests. In tmux, add
+`set -g focus-events on` to your tmux config so the dashboard can tell.
 
 By default, the dashboard refetches work items every 30 minutes.
 
