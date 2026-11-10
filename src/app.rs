@@ -1523,7 +1523,8 @@ impl App {
             Kind::Pr => {
                 if k.pr.diff.matches(key) {
                     if let Some(SelectedRow::Pr(pr)) = self.current_row() {
-                        self.diff_pr(pr.primary.number, &pr.primary.repository.name_with_owner);
+                        let (number, url) = (pr.primary.number, pr.primary.url.clone());
+                        self.diff_pr(number, &pr.primary.repository.name_with_owner, &url);
                     }
                 } else if k.pr.checkout.matches(key) {
                     if let Some(SelectedRow::Pr(pr)) = self.current_row() {
@@ -2119,7 +2120,11 @@ impl App {
             }
             if p.diff.matches(key) {
                 let pr = self.subject_pr.clone().unwrap();
-                self.diff_pr(pr.primary.number, &pr.primary.repository.name_with_owner);
+                self.diff_pr(
+                    pr.primary.number,
+                    &pr.primary.repository.name_with_owner,
+                    &pr.primary.url,
+                );
                 return true;
             }
             if p.checkout.matches(key) {
@@ -2560,7 +2565,28 @@ impl App {
         });
     }
 
-    fn diff_pr(&mut self, number: i64, repo: &str) {
+    /// Show a PR's changes: through the `pager.pr` reviewer, in the repo's
+    /// local clone when `repoPaths` names one, or else `gh pr diff`.
+    fn diff_pr(&mut self, number: i64, repo: &str, url: &str) {
+        if let Some(reviewer) = self.cfg.pr_reviewer() {
+            let shown = format!("{reviewer} {url}");
+            let mut cmd = util::shell_command(&shown);
+            if let Some(path) = util::repo_local_path(repo, &self.cfg.repo_paths)
+                .map(|path| util::expand_home(&path))
+                .filter(|path| std::path::Path::new(path).is_dir())
+            {
+                cmd.current_dir(path);
+            }
+            self.exec = Some(ExecRequest {
+                cmd,
+                on_done: Box::new(move |res| match res {
+                    Err(e) => vec![Msg::Error(format!("{shown}: {e}"))],
+                    Ok(st) if !st.success() => vec![Msg::Error(format!("{shown}: {st}"))],
+                    _ => vec![],
+                }),
+            });
+            return;
+        }
         let mut cmd = Command::new("gh");
         cmd.args(["pr", "diff", &number.to_string(), "-R", repo]);
         for (k, v) in self.cfg.diff_pager_env() {

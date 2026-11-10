@@ -66,6 +66,16 @@ setting in your configuration, which defaults to `less`, to display the diff.
 The dashboard view is replaced by PRs change diff displayed with the configured pager. When you
 exit the pager, the view returns to the dashboard.
 
+To review the PR in a program of its own instead, set `pager.pr` to its command. The dashboard
+runs it with the PR's URL as its last argument, from the repository's local path when
+[`repoPaths`](/ghtui/configuration/repo-paths) names one. For example, to review PRs in
+[deltoids](https://deltoids.dev):
+
+```yaml
+pager:
+  pr: deltoids pr
+```
+
 ## `e` - Expand Description
 
 Press <kbd>e</kbd> to display the full description for the PR.

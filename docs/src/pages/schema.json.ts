@@ -162,6 +162,12 @@ export function GET() {
               ],
               default: "less",
             },
+            pr: {
+              title: "PR Reviewer",
+              description:
+                "A program that reviews a PR, such as `deltoids pr`. When set, `D` runs it with the PR's URL as its last argument in place of `gh pr diff`, from the repository's local path when [repoPaths](repo-paths) names one.",
+              type: "string",
+            },
           },
         },
         showAuthorIcons: {

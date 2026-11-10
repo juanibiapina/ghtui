@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add the `quitOnEsc` setting to quit with `esc`.
+- Add the `pager.pr` setting to review PRs with `D` in a program such as `deltoids pr`, run from the repository's local path.
 - Add mouse support: scroll the list or preview under the pointer, and click rows, tabs and buttons. Turn it off with the `mouse` setting.
 - Show what changed since you last read a PR or issue notification at the top of its preview, and highlight new comments in the conversation.
 - Preview failed builds, releases, commits and discussions in the notifications view. A build shows its jobs and the steps that failed, and `o` opens the exact run, release, commit or discussion.

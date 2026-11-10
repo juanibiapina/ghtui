@@ -384,6 +384,10 @@ pub struct Keybindings {
 pub struct Pager {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diff: Option<String>,
+    /// A program that reviews a PR, run with the PR's URL as its last
+    /// argument in place of `gh pr diff`, such as `deltoids pr`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pr: Option<String>,
 }
 
 /// A hex color (`#rrggbb` or `#rgb`) or an ANSI 256 color number.
@@ -624,6 +628,15 @@ impl Config {
             Some(other) => other.to_string(),
         };
         vec![("LESS".into(), "CRX".into()), ("GH_PAGER".into(), diff)]
+    }
+
+    /// The command `pager.pr` sets, unless it is blank.
+    pub fn pr_reviewer(&self) -> Option<&str> {
+        self.pager
+            .pr
+            .as_deref()
+            .map(str::trim)
+            .filter(|cmd| !cmd.is_empty())
     }
 }
 
@@ -916,6 +929,16 @@ mod tests {
         assert_eq!(prs[1].command(), Some("two"));
         assert_eq!(cfg.pr_sections.len(), 1);
         assert_eq!(cfg.pr_sections[0].title, "C");
+    }
+
+    #[test]
+    fn pager_pr_names_the_pr_reviewer() {
+        assert_eq!(
+            layers(&["pager:\n  pr: ' deltoids pr '\n"]).pr_reviewer(),
+            Some("deltoids pr")
+        );
+        assert_eq!(layers(&["pager:\n  pr: ''\n"]).pr_reviewer(), None);
+        assert_eq!(layers(&["pager:\n  diff: delta\n"]).pr_reviewer(), None);
     }
 
     #[test]
