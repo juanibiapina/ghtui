@@ -1,5 +1,5 @@
 //! Messages delivered to the app loop from background work, and the worker
-//! pool that runs that work (the equivalent of bubbletea commands).
+//! pool that runs that work.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};

@@ -426,11 +426,9 @@ impl Section {
             session_done: HashSet::new(),
         };
         if kind == Kind::Notification {
-            // Scopes to the current repo when smart filtering is on.
             s.filtered_by_current_remote = cfg.smart_filtering_at_launch;
             s.search_value = s.search_value_for_fetch(gh_repo, false);
         } else {
-            // Smart filtering adds the current repo to the filters.
             let mut filters = filters.to_string();
             if cfg.smart_filtering_at_launch
                 && let Some((owner, name)) = gh_repo
@@ -509,7 +507,7 @@ impl Section {
         }
     }
 
-    /// BaseModel.GetSearchValue: expands templates and adds/removes the current-repo filter.
+    /// Expands templates and adds or removes the current-repo filter.
     pub fn search_value_for_fetch(
         &self,
         gh_repo: Option<&(String, String)>,
@@ -542,8 +540,6 @@ impl Section {
         self.cursor = 0;
         self.top = 0;
     }
-
-    // ---- cursor and scrolling ----
 
     pub fn item_height(&self, cfg: &Config) -> usize {
         let content = match self.kind {
@@ -606,8 +602,6 @@ impl Section {
         self.top = n.saturating_sub(per);
     }
 
-    // ---- notifications ----
-
     pub fn remove_notification(
         &mut self,
         id: &str,
@@ -647,8 +641,6 @@ impl Section {
                 .sort_by_key(|n| std::cmp::Reverse(n.n.updated_at)),
         }
     }
-
-    // ---- footer pager ----
 
     pub fn pager_content(&self) -> String {
         if self.kind == Kind::Branch {
@@ -697,7 +689,6 @@ impl Section {
         }
     }
 
-    /// GetPromptConfirmation text for the current action.
     pub fn prompt_text(&self) -> Option<String> {
         let (action, _) = self.prompt.as_ref()?;
         let what = match self.kind {
@@ -730,10 +721,7 @@ impl Section {
         })
     }
 
-    // ---- rendering ----
-
-    /// Section View: search box followed by the table, inside 1 cell of horizontal padding.
-    /// Draws the search box and the table of rows.
+    /// Draws the search box and the table of rows, inside 1 cell of horizontal padding.
     pub fn render(&self, rc: &RenderCtx, area: Rect, buf: &mut Buffer, hits: &mut HitMap) {
         let t = rc.theme;
         let [search_area, table_area] =
@@ -768,7 +756,6 @@ impl Section {
         let input = self.search.as_ref().unwrap_or(&self.search_bar);
         let mut value_line = input.view(width.saturating_sub(prompt_w), t.primary(), focused);
         if self.kind == Kind::Branch && input.value().is_empty() {
-            // The branch search shows its placeholder while empty.
             let ph = "Search branches...";
             value_line = if focused {
                 Line::from(vec![
@@ -1117,7 +1104,6 @@ fn pr_row(
     let created = span(time_cell(pr.created_at, cfg), t.faint());
 
     if !cfg.theme.ui.table.compact {
-        // renderExtendedTitle
         let title_w = columns
             .iter()
             .filter(|c| !c.hidden)
@@ -1492,7 +1478,7 @@ fn branch_row(row: &BranchRow, rc: &RenderCtx, columns: &[Column], widths: &[usi
     )]);
 
     if !cfg.theme.ui.table.compact {
-        // renderExtendedTitle: the branch with ahead/behind counts over its last commit.
+        // The branch with ahead/behind counts over its last commit.
         let width = columns
             .iter()
             .filter(|c| !c.hidden)

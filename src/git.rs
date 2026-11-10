@@ -71,7 +71,6 @@ pub fn repo_short_name(url: &str) -> String {
     r.strip_suffix(".git").unwrap_or(r).to_string()
 }
 
-/// `git diff HEAD --name-status`.
 pub fn status(dir: &str) -> Result<NameStatus> {
     let out = git(dir, &["diff", "HEAD", "--name-status"])?;
     let mut s = NameStatus::default();
@@ -122,7 +121,7 @@ pub fn get_repo(dir: &str) -> Result<Repo> {
                 ),
                 None => (None, None),
             };
-            // git-module's RemoteGetURL is called with the branch name as the remote.
+            // Asks for a remote named after the branch; most branches have none.
             let remotes = git(dir, &["remote", "get-url", b])
                 .map(|s| s.lines().map(|l| l.to_string()).collect())
                 .unwrap_or_default();
@@ -156,7 +155,6 @@ pub fn get_repo(dir: &str) -> Result<Repo> {
     })
 }
 
-/// `git fetch --all`, then read.
 pub fn fetch_repo(dir: &str) -> Result<Repo> {
     git(dir, &["fetch", "--all"])?;
     get_repo(dir)

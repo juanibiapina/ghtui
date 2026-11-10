@@ -11,8 +11,6 @@ use fancy_regex::{Regex, RegexBuilder};
 
 include!(concat!(env!("OUT_DIR"), "/chroma_lexers.rs"));
 
-// ---------------- token types (types.go) ----------------
-
 pub type TT = i32;
 
 pub const ERROR: TT = -11;
@@ -160,8 +158,6 @@ pub fn category(t: TT) -> TT {
     t / 1000 * 1000
 }
 
-// ---------------- regexp2 -> fancy-regex ----------------
-
 /// Rewrites .NET-style (regexp2) syntax that fancy-regex / regex reject.
 pub fn translate(p: &str) -> String {
     let c: Vec<char> = p.chars().collect();
@@ -269,8 +265,6 @@ fn compile(pattern: &str) -> Option<Regex> {
         .ok()
 }
 
-// ---------------- lexer model ----------------
-
 #[derive(Clone, Debug)]
 pub enum Emitter {
     Token(TT),
@@ -282,7 +276,6 @@ pub enum Emitter {
         code_group: usize,
         emitters: Vec<Option<Emitter>>,
     },
-    /// UsingLexer(TypeRemappingLexer(lexer, {from -> to}))
     UsingRemap {
         lexer: String,
         from: TT,
@@ -344,8 +337,6 @@ pub struct Lexer {
     rules: OnceLock<HashMap<String, Vec<Arc<Rule>>>>,
     analyse_res: OnceLock<Vec<(Option<Regex>, f32)>>,
 }
-
-// ---------------- XML loading ----------------
 
 #[derive(Debug, Default)]
 struct El {
@@ -545,8 +536,6 @@ fn parse_rules(el: &El) -> Vec<(String, Vec<Rule>)> {
         .collect()
 }
 
-// ---------------- lexer behaviour ----------------
-
 impl Lexer {
     fn from_xml(src: &'static str) -> Option<Lexer> {
         // Only the <config> is read eagerly; rules load on first use.
@@ -644,7 +633,7 @@ impl Lexer {
     }
 }
 
-/// RegexLexer.maybeCompile: expand include and combined mutators.
+/// Expands include and combined mutators.
 fn expand(map: &mut HashMap<String, Vec<Arc<Rule>>>) {
     let mut guard = 0;
     'restart: loop {
@@ -696,7 +685,6 @@ fn ensure_lf(t: &str) -> String {
     t.replace("\r\n", "\n").replace('\r', "\n")
 }
 
-/// RegexLexer.Tokenise + LexerState.Iterator.
 pub fn tokenise(lexer: &Lexer, text: &str, state: &str, nested: bool) -> Vec<Token> {
     let mut text = if nested {
         text.to_string()
@@ -855,8 +843,6 @@ fn emit(e: &Emitter, groups: &[String], lexer: &Lexer, out: &mut Vec<Token>) {
         }
     }
 }
-
-// ---------------- Go-defined lexers (lexers/go.go, lexers/markdown.go) ----------------
 
 fn words(prefix: &str, suffix: &str, words: &[&str]) -> String {
     let mut w: Vec<&str> = words.to_vec();
@@ -1153,7 +1139,6 @@ fn go_analyser(text: &str) -> f32 {
     }
 }
 
-/// lexers/mysql.go
 fn mysql_analyser(text: &str) -> f32 {
     static BT: OnceLock<regex::Regex> = OnceLock::new();
     static BR: OnceLock<regex::Regex> = OnceLock::new();
@@ -1176,7 +1161,6 @@ fn mysql_analyser(text: &str) -> f32 {
     }
 }
 
-/// lexers/dns.go
 fn dns_analyser(text: &str) -> f32 {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     if RE
@@ -1189,7 +1173,6 @@ fn dns_analyser(text: &str) -> f32 {
     }
 }
 
-/// lexers/zed.go
 fn zed_analyser(text: &str) -> f32 {
     let (d, r, p) = (
         text.contains("definition "),
@@ -1226,8 +1209,6 @@ fn coded(
         analyse_res: OnceLock::new(),
     }
 }
-
-// ---------------- registry ----------------
 
 pub struct Registry {
     pub lexers: Vec<Lexer>,
@@ -1349,7 +1330,6 @@ fn priority(l: &Lexer) -> f32 {
     }
 }
 
-/// LexerRegistry.Match
 fn match_filename(filename: &str) -> Option<&'static Lexer> {
     let reg = registry();
     let base = filename.rsplit('/').next().unwrap_or(filename);
@@ -1383,7 +1363,6 @@ fn match_filename(filename: &str) -> Option<&'static Lexer> {
     None
 }
 
-/// LexerRegistry.Get
 pub fn get(name: &str) -> Option<&'static Lexer> {
     let reg = registry();
     let lower = name.to_lowercase();
@@ -1422,7 +1401,6 @@ pub fn get(name: &str) -> Option<&'static Lexer> {
     candidates.first().copied()
 }
 
-/// LexerRegistry.Analyse
 pub fn analyse(text: &str) -> Option<&'static Lexer> {
     let mut picked = None;
     let mut highest = 0.0f32;

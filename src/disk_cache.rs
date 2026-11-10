@@ -232,7 +232,7 @@ mod tests {
         DiskCache::new(dir)
     }
 
-    /// A search node and a notification as GitHub returns them.
+    /// A PR search node as GitHub returns it.
     fn pr_fixture() -> PullRequest {
         serde_json::from_str(
             r#"{"id":"PR_1","number":7,"title":"Add sync","author":{"login":"juan"},

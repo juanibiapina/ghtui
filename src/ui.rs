@@ -324,7 +324,7 @@ fn view_switcher(app: &App) -> (Line<'static>, Owners) {
         footer.fg(t.faint_border),
     ));
     if let Some(p) = &app.repo_path {
-        // footer.renderViewSwitcher: the origin's short name when known.
+        // The origin's short name when known.
         let name = if !app.repo_url.is_empty() {
             crate::git::repo_short_name(&app.repo_url)
         } else {
@@ -475,7 +475,6 @@ fn render_footer(app: &App, area: Rect, buf: &mut Buffer, hits: &mut HitMap) {
     );
 }
 
-/// One row in the middle of `area`.
 fn middle_row(area: Rect) -> Rect {
     Rect {
         y: area.y + area.height / 2,
@@ -497,7 +496,6 @@ pub fn draw(f: &mut Frame, app: &App) -> HitMap {
         .border_type(BorderType::Thick)
         .border_style(border);
 
-    // The repo view has no tabs, leaving one empty line.
     if app.view != ViewType::Repo {
         let [tabs, rule] = Layout::vertical([Constraint::Length(1); 2]).areas(areas.tabs);
         let (line, owners) = tabs_line(app);
@@ -576,7 +574,7 @@ pub fn draw(f: &mut Frame, app: &App) -> HitMap {
         }
     }
 
-    // Autocomplete popups are layers over the content, like lipgloss.NewLayer in ui.View.
+    // Autocomplete popups are layers over the content.
     let sections = areas.sections;
     if let Some(c) = app.section().and_then(|s| s.search_cmp.as_ref()) {
         let below_search = Rect::new(
@@ -592,7 +590,6 @@ pub fn draw(f: &mut Frame, app: &App) -> HitMap {
     if let (Some(p), Some(ed)) = (areas.preview, editor)
         && let Some(c) = ed.cmp.as_ref().filter(|c| c.visible)
     {
-        // y = ScreenHeight - FooterHeight - LineFromBottom - InputBoxHeight - 6, x = preview x + 3.
         let text = ed.area.value();
         let lines = text.split('\n').count();
         let (_, cur) = crate::input::Editable::cursor_pos(&ed.area);

@@ -12,8 +12,6 @@ use crate::theme::parse_color;
 
 type Cell = (char, Style);
 
-// ---------------- styles ----------------
-
 #[derive(Clone, Default, Debug)]
 struct Prim {
     color: Option<Color>,
@@ -37,7 +35,6 @@ struct Blk {
     indent_token: Option<String>,
 }
 
-/// ansi.cascadeStylePrimitive
 fn cascade_prim(parent: &Prim, child: &Prim, to_block: bool) -> Prim {
     let mut s = child.clone();
     s.color = child.color.or(parent.color);
@@ -65,7 +62,6 @@ fn cascade_prim(parent: &Prim, child: &Prim, to_block: bool) -> Prim {
     s
 }
 
-/// ansi.cascadeStylePrimitives
 fn cascade_prims(list: &[&Prim]) -> Prim {
     let mut r = Prim::default();
     for p in list {
@@ -74,7 +70,6 @@ fn cascade_prims(list: &[&Prim]) -> Prim {
     r
 }
 
-/// ansi.cascadeStyle
 fn cascade_blk(parent: &Blk, child: &Blk, to_block: bool) -> Blk {
     let mut s = child.clone();
     s.prim = cascade_prim(&parent.prim, &child.prim, to_block);
@@ -115,7 +110,6 @@ fn col(s: &str) -> Option<Color> {
     parse_color(s)
 }
 
-/// internal/tui/markdown/theme.go CustomDarkStyleConfig
 struct Theme {
     document: Blk,
     block_quote: Blk,
@@ -261,8 +255,6 @@ fn theme() -> Theme {
     }
 }
 
-// ---------------- goldmark-shaped tree ----------------
-
 #[derive(Debug, Clone)]
 enum K {
     Document,
@@ -311,7 +303,7 @@ impl Node {
                 | K::TaskCheck(_)
         )
     }
-    /// The plain text of a node (goldmark Node.Text).
+    /// The plain text of a node.
     fn plain(&self) -> String {
         match &self.k {
             K::Text(t) => t.trim_end_matches('\n').to_string(),
@@ -634,8 +626,6 @@ fn unescape_html(s: &str) -> String {
         .replace("&amp;", "&")
 }
 
-// ---------------- renderer ----------------
-
 struct BlockEl {
     block: Vec<Cell>,
     style: Blk,
@@ -698,7 +688,6 @@ impl Ctx {
             Blk::default()
         }
     }
-    /// BlockStack.Width
     fn width(&self) -> usize {
         let indent: usize = self.stack.iter().map(|b| b.style.indent.unwrap_or(0)).sum();
         let margin: usize = self.stack.iter().map(|b| b.style.margin.unwrap_or(0)).sum();
@@ -715,8 +704,8 @@ impl Ctx {
         self.buf(w).extend_from_slice(cells);
     }
 
-    /// MarginWriter: indent tokens (parent style) at each line start and
-    /// padding to the block width (rules style) before each newline.
+    /// Writes indent tokens (parent style) at each line start and padding to the
+    /// block width (rules style) before each newline.
     fn margin_write(&mut self, w: W, rules: &Blk, cells: &[Cell]) {
         let indent = rules.indent.unwrap_or(0) + rules.margin.unwrap_or(0);
         let token = rules.indent_token.clone().unwrap_or_else(|| " ".into());
@@ -754,7 +743,6 @@ impl Ctx {
         });
     }
 
-    /// BlockElement.Render
     fn block_render(&mut self, w: W, style: Blk) {
         self.push_block(style.clone());
         let parent = self.parent().prim;
@@ -764,7 +752,6 @@ impl Ctx {
         self.render_text(cw, &cur, &style.prim.prefix);
     }
 
-    /// BlockElement.Finish
     fn block_finish(&mut self, w: W, margin: bool, newline: bool) {
         let cur = self.current();
         if margin {
@@ -785,7 +772,6 @@ impl Ctx {
         self.stack.pop();
     }
 
-    /// BaseElement.doRender
     fn base_render(
         &mut self,
         w: W,
@@ -809,7 +795,6 @@ impl Ctx {
         self.render_text(w, st1, suffix);
     }
 
-    /// BaseElement.Render
     fn base(&mut self, w: W, token: &str, prefix: &str, suffix: &str, style: &Prim) {
         let st1 = self.current().prim;
         let st2 = cascade_blk(
@@ -824,7 +809,6 @@ impl Ctx {
         self.base_render(w, token, prefix, suffix, &st1, &st2);
     }
 
-    /// BaseElement.StyleOverrideRender
     fn base_override(&mut self, w: W, token: &str, style: &Prim, over: &Prim) {
         let cur = self.current();
         let st1 = cascade_prims(&[&cur.prim, over]);
@@ -841,7 +825,7 @@ impl Ctx {
         self.base_render(w, token, "", "", &st1, &st2);
     }
 
-    /// Renders an inline node that its parent renders itself (isChild nodes).
+    /// Renders an inline node that its parent renders itself.
     fn inline(&mut self, w: W, n: &Node, over: Option<&Prim>) {
         let th_text = self.th.text.clone();
         match &n.k {
@@ -913,7 +897,6 @@ impl Ctx {
         }
     }
 
-    /// LinkElement.Render
     fn link(&mut self, w: W, url: &str, children: &[Node], skip_text: bool, skip_href: bool) {
         let valid = !url.starts_with('#');
         if !skip_text {
@@ -960,7 +943,6 @@ impl Ctx {
     }
 
     fn node(&mut self, n: &Node, first: bool, next_sibling: Option<&Node>) {
-        // entering
         let w = self.cur_w();
         match &n.k {
             K::Document => {
@@ -988,7 +970,6 @@ impl Ctx {
                 let cw = self.cur_w();
                 self.render_text(cw, &cur, &rules.prim.prefix);
                 self.children(n);
-                // HeadingElement.Finish
                 let pw = self.parent_w();
                 let rules = self.current();
                 let block = std::mem::take(&mut self.stack.last_mut().unwrap().block);
@@ -1013,7 +994,6 @@ impl Ctx {
                 let cw = self.cur_w();
                 self.render_text(cw, &cur, &rules.prim.prefix);
                 self.children(n);
-                // ParagraphElement.Finish
                 let pw = self.parent_w();
                 let rules = self.current();
                 let block = std::mem::take(&mut self.stack.last_mut().unwrap().block);
@@ -1141,7 +1121,6 @@ impl Ctx {
     }
 }
 
-// List bookkeeping kept outside the Go-shaped core for clarity.
 impl Ctx {
     fn in_item(&self) -> bool {
         self.parents.last().copied().unwrap_or(false)

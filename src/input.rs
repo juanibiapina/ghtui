@@ -252,7 +252,7 @@ impl TextArea {
     }
 
     /// Renders the text hard-wrapped to `width` with a block cursor, numbering
-    /// logical lines like the bubbles textarea ("  1 hello").
+    /// logical lines ("  1 hello").
     pub fn view(&self, width: usize, height: usize, text: Style, number_style: Style) -> Block {
         let width = width.saturating_sub(4).max(1);
         let mut lines: Vec<Vec<Span<'static>>> = vec![vec![]];

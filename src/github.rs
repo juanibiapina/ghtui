@@ -176,7 +176,6 @@ type Cache<T> = OnceLock<Mutex<HashMap<String, T>>>;
 static USER_CACHE: Cache<Vec<(String, String)>> = OnceLock::new();
 static LABEL_CACHE: Cache<Vec<Label>> = OnceLock::new();
 
-/// The ctrl+f "refresh" key in autocomplete drops the cached lists for a repo.
 pub fn clear_suggestion_cache(repo: &str) {
     if let Some(c) = USER_CACHE.get() {
         c.lock().unwrap().remove(repo);
@@ -618,8 +617,6 @@ fn is_notification_list(path: &str) -> bool {
     p == "notifications" || (p.starts_with("repos/") && p.ends_with("/notifications"))
 }
 
-// ---------------- GraphQL documents ----------------
-
 const REPOSITORY_FIELDS: &str = "name owner { login } nameWithOwner isArchived \
 branchProtectionRules(first: 1) { nodes { requiredApprovingReviewCount requiresApprovingReviews \
 requiresCodeOwnerReviews requiresStatusChecks requiredStatusCheckContexts } }";
@@ -748,8 +745,6 @@ pub fn fetch_issues(
     search("SearchIssues", "Issue", &issue_fields(), &q, limit, page)
 }
 
-// ---------------- batched reads ----------------
-
 /// Details for each URL, from one aliased `resource(url:)` query.
 fn fetch_by_url<T: DeserializeOwned>(
     name: &str,
@@ -837,8 +832,6 @@ pub fn fetch_prs_by_id(ids: &[String]) -> Result<Vec<PullRequest>> {
 pub fn fetch_issues_by_id(ids: &[String]) -> Result<Vec<Issue>> {
     fetch_by_id("FetchIssueRows", "Issue", &issue_fields(), ids)
 }
-
-// ---------------- list sync ----------------
 
 /// One section's search, as `fetch_pull_requests` or `fetch_issues` would run it.
 #[derive(Clone, Debug)]
@@ -966,8 +959,6 @@ pub fn sync_sections(queries: &[SyncQuery]) -> Result<Vec<Result<Membership, Str
     }
     Ok(out)
 }
-
-// ---------------- change check ----------------
 
 /// What GitHub reports for a PR now: enough to tell whether cached details changed.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -1165,7 +1156,6 @@ repository(owner: $owner, name: $name) { mentionableUsers(first: $limit) { nodes
     Ok(users)
 }
 
-/// `gh label list`.
 pub fn fetch_repo_labels(repo: &str) -> Result<Vec<Label>> {
     let cache = LABEL_CACHE.get_or_init(Default::default);
     if let Some(l) = cache.lock().unwrap().get(repo) {
@@ -1197,8 +1187,6 @@ pub fn fetch_repo_labels(repo: &str) -> Result<Vec<Label>> {
         .insert(repo.to_string(), labels.clone());
     Ok(labels)
 }
-
-// ---------------- REST: notifications ----------------
 
 pub struct NotificationsPage {
     pub notifications: Vec<Notification>,

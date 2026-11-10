@@ -40,7 +40,7 @@ pub struct Editor {
     pub mode: EditorMode,
     pub prompt: String,
     pub area: TextArea,
-    /// Comment and approve ask before throwing away the text (ConfirmDiscardOnCancel).
+    /// Comment and approve ask before throwing away the text.
     pub confirm_discard: bool,
     pub discarding: bool,
     pub cmp: Option<crate::complete::Completer>,
@@ -103,7 +103,7 @@ pub fn pill(text: &str, bg: Color, fg: Color, cap_bg: Option<Color>) -> Vec<Span
     ]
 }
 
-/// common.renderLabelName: GitHub emoji shortcodes become their emoji.
+/// GitHub emoji shortcodes become their emoji.
 fn label_name(name: &str) -> String {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = RE.get_or_init(|| regex::Regex::new(r":[[:alnum:]_+-]+:").unwrap());
@@ -222,7 +222,7 @@ fn boxed(lines: Block, inner_w: usize, border: Color, set: border::Set) -> Block
     out
 }
 
-/// checks.viewCheckCategory: a padded block with an optional bottom divider.
+/// A padded block with an optional bottom divider.
 fn check_category(
     t: &Theme,
     icon: Span<'static>,
@@ -349,7 +349,6 @@ pub fn pr_view(t: &Theme, row: &PrRow, width: usize, st: &PrViewState) -> (Block
     out.extend(preview_title(t, width, &pr.title));
     out.push(Line::default());
 
-    // renderBranches
     let (state_text, pill_bg) = match pr.state.as_str() {
         "OPEN" if pr.is_in_merge_queue => {
             (format!("{} Queued", icons::MERGE_QUEUE), theme::OPEN_PR)
@@ -382,7 +381,6 @@ pub fn pr_view(t: &Theme, row: &PrRow, width: usize, st: &PrViewState) -> (Block
     ));
     out.push(Line::default());
 
-    // Tabs carousel with a faint bottom border.
     let tab_spans: Vec<Span<'static>> = pr_tabs(width)
         .into_iter()
         .enumerate()
@@ -1248,7 +1246,7 @@ fn changed_files(t: &Theme, row: &PrRow, w: usize) -> Block {
     out
 }
 
-/// inputbox view: prompt, text area and a short help line, in a bordered box.
+/// The prompt, text area and a short help line, in a bordered box.
 pub fn editor_view(t: &Theme, ed: &Editor, w: usize) -> Block {
     let inner = w.saturating_sub(2);
     let prompt = if ed.discarding {
@@ -1356,7 +1354,7 @@ pub fn notification_loading(t: &Theme, row: &NotifRow, width: usize) -> Block {
     b
 }
 
-/// ui.renderNotificationPrompt for subjects that can't be previewed.
+/// Shown for subjects that can't be previewed.
 pub fn notification_prompt(t: &Theme, row: &NotifRow) -> Block {
     let margin = "      ";
     let kind = row.subject_type();

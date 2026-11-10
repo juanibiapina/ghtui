@@ -141,7 +141,7 @@ pub fn simple_issue(app: &mut App, verb: &str, n: i64, repo: &str, key: SectionK
     );
 }
 
-/// MergePR runs interactively, so the TUI is suspended while it runs.
+/// Merging runs interactively, so the TUI is suspended while it runs.
 pub fn merge(app: &mut App, n: i64, repo: &str, key: SectionKey) {
     let id = format!("merge_{n}");
     app.start_task(

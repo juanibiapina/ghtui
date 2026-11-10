@@ -40,7 +40,7 @@ pub const OPEN_PR: Color = OPEN_ISSUE;
 pub const CLOSED_PR: Color = Color::Rgb(0x65, 0x6C, 0x76);
 pub const MERGED_PR: Color = Color::Rgb(0xA3, 0x71, 0xF7);
 pub const LOGO: Color = Color::Rgb(0x00, 0xF9, 0xFB);
-/// lipgloss.Darken(LogoColor, 0.7)
+/// `darken(LOGO, 0.7)`
 pub const LOGO_BG: Color = Color::Rgb(0, 74, 75);
 pub const GOLD: Color = Color::Rgb(0xFF, 0xD7, 0x00);
 

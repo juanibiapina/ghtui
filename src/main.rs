@@ -196,7 +196,7 @@ fn main() {
         fatal("Reading config file", e);
     }
 
-    // ui.initScreen: the repo view needs the origin URL; a repo without one is fatal.
+    // The repo view needs the origin URL; a repo without one is fatal.
     let mut repo_url = String::new();
     if config::feature_enabled("FF_REPO_VIEW")
         && let Some(p) = &repo_path

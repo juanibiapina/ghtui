@@ -95,7 +95,6 @@ pub fn align_line(l: Line<'static>, w: usize, align: Alignment, pad_style: Style
     Line::from(spans)
 }
 
-/// Concatenates spans of single-line pieces.
 pub fn concat(lines: Vec<Line<'static>>) -> Line<'static> {
     let mut spans = vec![];
     for l in lines {

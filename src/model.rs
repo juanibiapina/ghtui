@@ -421,7 +421,6 @@ pub struct EnrichedPullRequest {
 }
 
 impl EnrichedPullRequest {
-    /// EnrichedPullRequestData.ToPullRequestData
     pub fn to_primary(&self) -> PullRequest {
         PullRequest {
             id: self.id.clone(),
@@ -491,8 +490,6 @@ pub struct PageInfo {
     pub end_cursor: String,
 }
 
-// ---- REST notifications ----
-
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default)]
 pub struct NotificationSubject {
@@ -551,8 +548,6 @@ pub struct WorkflowRun {
 pub struct WorkflowRunsResponse {
     pub workflow_runs: Vec<WorkflowRun>,
 }
-
-// ---- check state helpers ----
 
 pub fn is_status_waiting(s: &str) -> bool {
     matches!(s, "PENDING" | "QUEUED" | "IN_PROGRESS" | "WAITING")

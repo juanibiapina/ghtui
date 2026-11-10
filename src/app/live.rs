@@ -193,8 +193,6 @@ impl App {
         }
     }
 
-    // ---------------- launch ----------------
-
     /// The disk cache key of the repo view's branch PRs.
     fn branch_pr_filters(&self) -> String {
         format!(
@@ -335,8 +333,6 @@ impl App {
         self.on_viewed_row_changed();
     }
 
-    // ---------------- saving ----------------
-
     fn snapshot_lists(&self) -> Lists {
         let mut sections = vec![];
         for view in [
@@ -423,8 +419,6 @@ impl App {
             std::thread::spawn(save);
         }
     }
-
-    // ---------------- focus ----------------
 
     pub fn on_focus(&mut self, focused: bool) {
         crate::info!("focus focused={focused}");
@@ -514,8 +508,6 @@ impl App {
         changed
     }
 
-    // ---------------- full searches ----------------
-
     /// Sections that never loaded get a full search.
     pub(super) fn queue_unfetched(&mut self, view: ViewType) {
         let n = self.sections_for(view).len();
@@ -563,7 +555,7 @@ impl App {
         }
     }
 
-    /// Starts queued full searches, at most three at a time.
+    /// Starts queued full searches, up to `MAX_FULL_SEARCHES` at a time.
     pub(super) fn pump_full(&mut self) {
         while self.live.full_running.len() < MAX_FULL_SEARCHES {
             let Some(key) = self.live.full_queue.pop_front() else {
@@ -578,8 +570,6 @@ impl App {
             }
         }
     }
-
-    // ---------------- list sync ----------------
 
     fn sync_targets(&self, view: ViewType) -> Vec<SyncTarget> {
         let mut out = vec![];
@@ -723,8 +713,6 @@ impl App {
         }
     }
 
-    // ---------------- change check ----------------
-
     fn check_ids(&self, view: ViewType) -> Vec<String> {
         let mut ids: Vec<String> = match view {
             ViewType::Prs => self
@@ -843,8 +831,6 @@ impl App {
             Msg::CheckSelected { url },
         ));
     }
-
-    // ---------------- details ----------------
 
     /// Shows the selected PR's details from the store, fetching them if missing.
     pub(super) fn enrich_current_row(&mut self) {
@@ -1068,8 +1054,6 @@ impl App {
         self.live.pr_store.mark_all_stale();
         self.live.issue_store.mark_all_stale();
     }
-
-    // ---------------- preloading ----------------
 
     /// Hands the stores what to preload, nearest to the cursor first.
     pub(super) fn refresh_prefetch(&mut self) {

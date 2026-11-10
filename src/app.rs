@@ -309,8 +309,6 @@ impl App {
         }
     }
 
-    // ---------------- accessors ----------------
-
     pub fn sections(&self) -> &Vec<Section> {
         match self.view {
             ViewType::Notifications => &self.notifs,
@@ -367,8 +365,6 @@ impl App {
             NotificationSubject::None
         }
     }
-
-    // ---------------- layout ----------------
 
     fn preview_position(&self) -> Position {
         let preview = &self.cfg.defaults.preview;
@@ -456,8 +452,6 @@ impl App {
         }
     }
 
-    // ---------------- tasks / footer ----------------
-
     pub fn start_task(&mut self, id: &str, start: &str, finished: &str) {
         crate::info!("Starting task id={id}");
         self.tasks.insert(
@@ -540,8 +534,6 @@ impl App {
         changed |= self.live_tick();
         changed
     }
-
-    // ---------------- fetching ----------------
 
     /// Full searches for every section of the current view, now.
     fn fetch_all_view_sections(&mut self) {
@@ -715,8 +707,6 @@ impl App {
         }
     }
 
-    // ---------------- sidebar ----------------
-
     pub fn invalidate_sidebar(&mut self) {
         self.sidebar_cache = None;
     }
@@ -729,7 +719,6 @@ impl App {
         self.sidebar_scroll = usize::MAX;
     }
 
-    /// onViewedRowChanged
     fn on_viewed_row_changed(&mut self) {
         self.summary_more = false;
         self.pr_tab = 0;
@@ -747,8 +736,8 @@ impl App {
         self.refresh_prefetch();
     }
 
-    /// syncSidebar for notifications: a cached subject shows at once; others load
-    /// once the selection rests.
+    /// A cached notification subject shows at once; others load once the selection
+    /// rests.
     fn schedule_notification_preview(&mut self) {
         if !self.sidebar_open {
             return;
@@ -785,8 +774,6 @@ impl App {
             self.quit = true;
         }
     }
-
-    // ---------------- messages ----------------
 
     pub fn handle_msg(&mut self, msg: Msg) {
         self.invalidate_sidebar();
@@ -1158,8 +1145,6 @@ impl App {
         }
     }
 
-    // ---------------- keys ----------------
-
     pub fn handle_key(&mut self, key: &str) {
         if key.is_empty() {
             return;
@@ -1342,7 +1327,6 @@ impl App {
             }
         }
 
-        // Page up/down scroll the preview.
         if u.page_down.matches(key) {
             self.scroll_preview(3);
         } else if u.page_up.matches(key) {
@@ -1423,8 +1407,6 @@ impl App {
         }
         self.sidebar_scroll = self.sidebar_scroll.saturating_add_signed(delta);
     }
-
-    // ---------------- mouse ----------------
 
     /// True while a search, prompt, editor or confirmation takes every key.
     fn input_captured(&self) -> bool {
@@ -1541,7 +1523,6 @@ impl App {
         total.saturating_sub(self.sidebar_viewport_height())
     }
 
-    /// Keys that belong to the current section's kind.
     fn section_key(&mut self, key: &str) {
         let k = self.keys.clone();
         let gh = self.gh_repo.clone();
@@ -2346,10 +2327,7 @@ impl App {
         });
     }
 
-    // ---------------- view switching / sections ----------------
-
     fn switch_selected_view(&mut self) {
-        // With FF_REPO_VIEW the cycle passes through the branches view.
         let repo_ff = crate::config::feature_enabled("FF_REPO_VIEW");
         let next = match self.view {
             ViewType::Notifications => ViewType::Prs,
@@ -2455,8 +2433,6 @@ impl App {
         self.curr = del.min(n - 1);
         self.on_viewed_row_changed();
     }
-
-    // ---------------- custom keybindings ----------------
 
     fn is_user_defined_keybinding(&self, key: &str) -> bool {
         let kb = &self.cfg.keybindings;
@@ -2585,7 +2561,6 @@ impl App {
         }
     }
 
-    /// resolveTemplateInput + runCustomCommand
     fn run_custom_command(&mut self, template: &str, mut vars: HashMap<String, String>) {
         if let Some(repo) = vars.get("RepoName").cloned()
             && let Some(p) = util::repo_local_path(&repo, &self.cfg.repo_paths)
@@ -2625,8 +2600,6 @@ impl App {
             }),
         });
     }
-
-    // ---------------- external commands ----------------
 
     pub fn open_browser(&mut self) {
         let id = task_id("open_browser");
@@ -2770,8 +2743,6 @@ impl App {
         });
     }
 
-    // ---------------- sidebar content ----------------
-
     /// The preview lines, and the index of the PR tabs line when it shows a PR.
     pub fn sidebar_content(&self) -> (Block, Option<usize>) {
         let width = self.sidebar_content_width();
@@ -2866,8 +2837,6 @@ impl App {
         }
     }
 }
-
-// ---------------- repo view ----------------
 
 impl App {
     fn repo_dir(&self) -> Option<String> {
@@ -2978,7 +2947,7 @@ impl App {
         });
     }
 
-    /// updateBranchesWithPrs: attach each branch's PR, checked-out branch first, then newest.
+    /// Attaches each branch's PR, checked-out branch first, then newest.
     fn relink_branch_prs(&mut self) {
         let Some(s) = self.repo.first_mut() else {
             return;
@@ -3063,7 +3032,6 @@ impl App {
         false
     }
 
-    /// Branch keys: checkout, push, force-push, fast-forward.
     fn branch_section_key(&mut self, key: &str) {
         let br = self.keys.branch.clone();
         let Some(b) = self.current_branch() else {
@@ -3187,7 +3155,6 @@ impl App {
         });
     }
 
-    /// Fetches the PR for a branch after it was created.
     fn fetch_branch_pr(&mut self, branch: String, short: String, key: SectionKey) {
         let tid = task_id(&format!("fetching_pr_for_branch_{branch}"));
         self.start_task(

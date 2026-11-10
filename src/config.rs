@@ -498,7 +498,6 @@ pub fn feature_enabled(name: &str) -> bool {
 const KEYBINDING_UNION_TYPES: [&str; 4] = ["universal", "prs", "issues", "completions"];
 const SECTION_TYPES: [&str; 3] = ["prSections", "issuesSections", "notificationsSections"];
 
-/// `$XDG_CONFIG_HOME/ghtui/config.yml`
 fn global_config_path() -> Result<PathBuf> {
     let dir = match std::env::var("XDG_CONFIG_HOME") {
         Ok(d) if !d.is_empty() => PathBuf::from(d),
@@ -565,8 +564,8 @@ fn read_yaml(path: &Path) -> Result<Value> {
     })
 }
 
-/// mapstructure matches struct fields case-insensitively, so `Open:` and `Title:`
-/// mean `open` and `title`. repoPaths keys are data.
+/// Keys match struct fields case-insensitively, so `Open:` and `Title:` mean
+/// `open` and `title`. repoPaths keys are data and keep their case.
 fn normalize_keys(v: Value) -> Value {
     match v {
         Value::Mapping(m) => Value::Mapping(
@@ -633,7 +632,7 @@ fn keybindings_of(layer: &Value, typ: &str) -> Vec<Value> {
         .unwrap_or_default()
 }
 
-/// Mirrors mergeOption(): union keybindings by key, replace section lists, deep-merge the rest.
+/// Unions keybindings by key, replaces section lists and deep-merges the rest.
 fn merge_layer(dest: &mut Value, layer: Value) {
     let mut unioned: Vec<(&str, Vec<Value>)> = vec![];
     for typ in KEYBINDING_UNION_TYPES {
