@@ -521,15 +521,15 @@ pub fn draw(f: &mut Frame, app: &App) -> HitMap {
 
     if let Some(p) = areas.preview {
         let content = app
-            .sidebar_cache
+            .preview_cache
             .as_ref()
             .map(|(_, b)| b.as_slice())
             .unwrap_or_default();
         let vh = p.content.height as usize;
-        let scroll = app.sidebar_scroll.min(content.len().saturating_sub(vh));
+        let scroll = app.preview_scroll.min(content.len().saturating_sub(vh));
         hits.push(p.body(), Target::Preview);
         if let Some(line) = app
-            .sidebar_tabs_line
+            .preview_tabs_line
             .filter(|l| (scroll..scroll + vh).contains(l))
         {
             let y = p.content.y + (line - scroll) as u16;
@@ -706,7 +706,7 @@ mod tests {
 
     fn screen(mut app: App) -> String {
         let (w, h) = (app.width as u16, app.height as u16);
-        app.ensure_sidebar_cache();
+        app.ensure_preview_cache();
         let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
         terminal
             .draw(|f| {
@@ -718,7 +718,7 @@ mod tests {
 
     fn frame(app: &mut App) -> (Buffer, HitMap) {
         let (w, h) = (app.width as u16, app.height as u16);
-        app.ensure_sidebar_cache();
+        app.ensure_preview_cache();
         let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
         let mut hits = HitMap::default();
         terminal.draw(|f| hits = draw(f, app)).unwrap();
@@ -785,8 +785,8 @@ mod tests {
         let (buf, _) = frame(&mut app);
         let at = find(&buf, "· #1");
         assert!(mouse(&mut app, MouseEventKind::ScrollDown, at));
-        app.ensure_sidebar_cache();
-        assert!(app.sidebar_scroll > 0);
+        app.ensure_preview_cache();
+        assert!(app.preview_scroll > 0);
         assert_eq!(app.section().unwrap().cursor, 0);
     }
 
@@ -859,7 +859,7 @@ mod tests {
     #[test]
     fn prs_without_preview() {
         let mut app = with_prs(app(100, 20, Config::default()));
-        app.sidebar_open = false;
+        app.preview_open = false;
         insta::assert_snapshot!(screen(app));
     }
 

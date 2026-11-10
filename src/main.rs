@@ -245,8 +245,8 @@ fn main() {
         }
         if dirty {
             let started = std::time::Instant::now();
-            app.ensure_sidebar_cache();
-            let sidebar = started.elapsed();
+            app.ensure_preview_cache();
+            let preview = started.elapsed();
             let _ = terminal.draw(|f| hits = ui::draw(f, &app));
             let frame = started.elapsed();
             if first_frame {
@@ -257,9 +257,9 @@ fn main() {
                 first_frame = false;
             }
             crate::debug!(
-                "frame us={} sidebar_us={}",
+                "frame us={} preview_us={}",
                 frame.as_micros(),
-                sidebar.as_micros()
+                preview.as_micros()
             );
             dirty = false;
         }

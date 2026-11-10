@@ -286,7 +286,7 @@ impl App {
         {
             self.relink_branch_prs();
         }
-        self.invalidate_sidebar();
+        self.invalidate_preview();
     }
 
     /// Fills the detail stores with the last session's details.
@@ -300,7 +300,7 @@ impl App {
             fill_enriched(&mut s.prs, store);
         }
         self.notification_extras(None);
-        self.invalidate_sidebar();
+        self.invalidate_preview();
         if self.live.started {
             self.change_check(self.view);
             self.enrich_current_row();
@@ -709,7 +709,7 @@ impl App {
         if is_current && before != after {
             self.on_viewed_row_changed();
         } else {
-            self.invalidate_sidebar();
+            self.invalidate_preview();
         }
     }
 
@@ -796,7 +796,7 @@ impl App {
                 self.live.pr_store.mark_stale(&v.url);
             }
         }
-        self.invalidate_sidebar();
+        self.invalidate_preview();
         self.refresh_prefetch();
     }
 

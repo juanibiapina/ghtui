@@ -101,8 +101,8 @@ impl Help {
         ];
         if pr_shown {
             preview.extend([
-                p.prev_sidebar_tab.clone(),
-                p.next_sidebar_tab.clone(),
+                p.prev_preview_tab.clone(),
+                p.next_preview_tab.clone(),
                 p.summary_view_more.clone(),
             ]);
         }

@@ -111,10 +111,10 @@ pub struct App {
     pub branch_status: Option<crate::git::NameStatus>,
     pub repo_refresh_id: u64,
     pub curr: usize,
-    pub sidebar_open: bool,
-    pub sidebar_scroll: usize,
-    pub sidebar_cache: Option<(usize, Block)>,
-    pub sidebar_tabs_line: Option<usize>,
+    pub preview_open: bool,
+    pub preview_scroll: usize,
+    pub preview_cache: Option<(usize, Block)>,
+    pub preview_tabs_line: Option<usize>,
     pub position_override: Option<Position>,
     pub help: Option<Help>,
     pub confirm_quit_shown: bool,
@@ -175,7 +175,7 @@ impl App {
     ) -> App {
         let theme = Theme::from_config(&cfg);
         let view = cfg.defaults.view;
-        let sidebar_open = cfg.defaults.preview.open;
+        let preview_open = cfg.defaults.preview.open;
         let live = Live::new(&pool);
         let mut app = App {
             theme,
@@ -191,10 +191,10 @@ impl App {
             branch_status: None,
             repo_refresh_id: 0,
             curr: 0,
-            sidebar_open,
-            sidebar_scroll: 0,
-            sidebar_cache: None,
-            sidebar_tabs_line: None,
+            preview_open,
+            preview_scroll: 0,
+            preview_cache: None,
+            preview_tabs_line: None,
             position_override: None,
             help: None,
             confirm_quit_shown: false,
@@ -400,7 +400,7 @@ impl App {
             preview: None,
             footer,
         };
-        if !self.sidebar_open {
+        if !self.preview_open {
             return areas;
         }
         let preview = &self.cfg.defaults.preview;
@@ -429,11 +429,11 @@ impl App {
         areas
     }
 
-    pub fn sidebar_content_width(&self) -> usize {
+    pub fn preview_content_width(&self) -> usize {
         self.areas().preview.map_or(0, |p| p.content.width as usize)
     }
 
-    pub fn sidebar_viewport_height(&self) -> usize {
+    pub fn preview_viewport_height(&self) -> usize {
         self.areas()
             .preview
             .map_or(0, |p| p.content.height as usize)
@@ -707,27 +707,27 @@ impl App {
         }
     }
 
-    pub fn invalidate_sidebar(&mut self) {
-        self.sidebar_cache = None;
+    pub fn invalidate_preview(&mut self) {
+        self.preview_cache = None;
     }
 
-    fn scroll_sidebar_top(&mut self) {
-        self.sidebar_scroll = 0;
+    fn scroll_preview_top(&mut self) {
+        self.preview_scroll = 0;
     }
 
-    fn scroll_sidebar_bottom(&mut self) {
-        self.sidebar_scroll = usize::MAX;
+    fn scroll_preview_bottom(&mut self) {
+        self.preview_scroll = usize::MAX;
     }
 
     fn on_viewed_row_changed(&mut self) {
         self.summary_more = false;
         self.pr_tab = 0;
-        self.scroll_sidebar_top();
+        self.scroll_preview_top();
         self.subject_id.clear();
         self.subject_pr = None;
         self.subject_issue = None;
         self.live.subject_wanted = None;
-        self.invalidate_sidebar();
+        self.invalidate_preview();
         self.enrich_current_row();
         self.schedule_notification_preview();
         if self.view == ViewType::Repo {
@@ -739,7 +739,7 @@ impl App {
     /// A cached notification subject shows at once; others load once the selection
     /// rests.
     fn schedule_notification_preview(&mut self) {
-        if !self.sidebar_open {
+        if !self.preview_open {
             return;
         }
         if let Some(RowRef::Notification(n)) = self.current_row() {
@@ -776,7 +776,7 @@ impl App {
     }
 
     pub fn handle_msg(&mut self, msg: Msg) {
-        self.invalidate_sidebar();
+        self.invalidate_preview();
         match msg {
             Msg::TaskFinished {
                 task_id,
@@ -1151,7 +1151,7 @@ impl App {
         }
         crate::info!("Key pressed key={key}");
         self.error = None;
-        self.invalidate_sidebar();
+        self.invalidate_preview();
 
         if self.section().map(|s| s.search.is_some()).unwrap_or(false) {
             self.handle_search_key(key);
@@ -1241,10 +1241,10 @@ impl App {
                 self.on_viewed_row_changed();
             }
         } else if u.toggle_preview.matches(key) {
-            self.sidebar_open = !self.sidebar_open;
+            self.preview_open = !self.preview_open;
             self.schedule_notification_preview();
         } else if u.toggle_preview_position.matches(key) {
-            if self.sidebar_open {
+            if self.preview_open {
                 self.position_override = Some(if self.areas().position == Position::Right {
                     Position::Bottom
                 } else {
@@ -1402,10 +1402,10 @@ impl App {
     }
 
     fn scroll_preview(&mut self, delta: isize) {
-        if self.sidebar_scroll == usize::MAX {
-            self.sidebar_scroll = self.sidebar_max_scroll();
+        if self.preview_scroll == usize::MAX {
+            self.preview_scroll = self.preview_max_scroll();
         }
-        self.sidebar_scroll = self.sidebar_scroll.saturating_add_signed(delta);
+        self.preview_scroll = self.preview_scroll.saturating_add_signed(delta);
     }
 
     /// True while a search, prompt, editor or confirmation takes every key.
@@ -1430,7 +1430,7 @@ impl App {
         };
         if changed {
             self.error = None;
-            self.invalidate_sidebar();
+            self.invalidate_preview();
         }
         changed
     }
@@ -1514,13 +1514,13 @@ impl App {
         true
     }
 
-    pub fn sidebar_max_scroll(&self) -> usize {
+    pub fn preview_max_scroll(&self) -> usize {
         let total = self
-            .sidebar_cache
+            .preview_cache
             .as_ref()
             .map(|(_, b)| b.len())
             .unwrap_or(0);
-        total.saturating_sub(self.sidebar_viewport_height())
+        total.saturating_sub(self.preview_viewport_height())
     }
 
     fn section_key(&mut self, key: &str) {
@@ -1859,7 +1859,7 @@ impl App {
                         e.area.handle_key(key);
                     }
                 }
-                self.scroll_sidebar_bottom();
+                self.scroll_preview_bottom();
             }
         }
     }
@@ -2035,8 +2035,8 @@ impl App {
         if let Some(kind) = kind {
             self.load_suggestions(target, kind, repo, false);
         }
-        self.sidebar_open = true;
-        self.scroll_sidebar_bottom();
+        self.preview_open = true;
+        self.scroll_preview_bottom();
     }
 
     fn prompt_confirmation(&mut self, action: &str) {
@@ -2050,11 +2050,11 @@ impl App {
 
     fn handle_pr_view_key(&mut self, key: &str) -> bool {
         let p = self.keys.pr.clone();
-        if p.prev_sidebar_tab.matches(key) {
+        if p.prev_preview_tab.matches(key) {
             self.pr_tab = self.pr_tab.saturating_sub(1);
             return true;
         }
-        if p.next_sidebar_tab.matches(key) {
+        if p.next_preview_tab.matches(key) {
             self.pr_tab = (self.pr_tab + 1).min(views::PR_TABS.len() - 1);
             return true;
         }
@@ -2200,11 +2200,11 @@ impl App {
                 self.switch_selected_view();
                 return true;
             }
-            if p.prev_sidebar_tab.matches(key) {
+            if p.prev_preview_tab.matches(key) {
                 self.pr_tab = self.pr_tab.saturating_sub(1);
                 return true;
             }
-            if p.next_sidebar_tab.matches(key) {
+            if p.next_preview_tab.matches(key) {
                 self.pr_tab = (self.pr_tab + 1).min(views::PR_TABS.len() - 1);
                 return true;
             }
@@ -2744,8 +2744,8 @@ impl App {
     }
 
     /// The preview lines, and the index of the PR tabs line when it shows a PR.
-    pub fn sidebar_content(&self) -> (Block, Option<usize>) {
-        let width = self.sidebar_content_width();
+    pub fn preview_content(&self) -> (Block, Option<usize>) {
+        let width = self.preview_content_width();
         let Some(row) = self.current_row() else {
             return (vec![], None);
         };
@@ -2803,17 +2803,17 @@ impl App {
         }
     }
 
-    pub fn ensure_sidebar_cache(&mut self) {
-        let width = self.sidebar_content_width();
-        let valid = matches!(&self.sidebar_cache, Some((w, _)) if *w == width);
+    pub fn ensure_preview_cache(&mut self) {
+        let width = self.preview_content_width();
+        let valid = matches!(&self.preview_cache, Some((w, _)) if *w == width);
         if !valid {
-            let (content, tabs) = self.sidebar_content();
-            self.sidebar_cache = Some((width, content));
-            self.sidebar_tabs_line = tabs;
+            let (content, tabs) = self.preview_content();
+            self.preview_cache = Some((width, content));
+            self.preview_tabs_line = tabs;
         }
-        let max = self.sidebar_max_scroll();
-        if self.sidebar_scroll > max {
-            self.sidebar_scroll = max;
+        let max = self.preview_max_scroll();
+        if self.preview_scroll > max {
+            self.preview_scroll = max;
         }
     }
 
@@ -2824,7 +2824,7 @@ impl App {
         if pos == "auto" || pos.is_empty() {
             self.position_override = None;
         }
-        self.invalidate_sidebar();
+        self.invalidate_preview();
     }
 
     /// After an external command: sync the current view, which may have changed.

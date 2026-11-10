@@ -67,8 +67,8 @@ pub struct Universal {
 
 #[derive(Clone, Debug)]
 pub struct PrKeys {
-    pub prev_sidebar_tab: Binding,
-    pub next_sidebar_tab: Binding,
+    pub prev_preview_tab: Binding,
+    pub next_preview_tab: Binding,
     pub approve: Binding,
     pub assign: Binding,
     pub unassign: Binding,
@@ -205,8 +205,8 @@ impl Default for Keys {
                 quit: b(&["q", "ctrl+c"], "q", "quit"),
             },
             pr: PrKeys {
-                prev_sidebar_tab: b(&["["], "[", "previous sidebar tab"),
-                next_sidebar_tab: b(&["]"], "]", "next sidebar tab"),
+                prev_preview_tab: b(&["["], "[", "previous sidebar tab"),
+                next_preview_tab: b(&["]"], "]", "next sidebar tab"),
                 approve: b(&["v"], "v", "approve"),
                 assign: b(&["a"], "a", "assign"),
                 unassign: b(&["A"], "A", "unassign"),
@@ -323,8 +323,8 @@ impl Keys {
             }
             let p = &mut self.pr;
             let target = match kb.builtin.as_str() {
-                "prevSidebarTab" => &mut p.prev_sidebar_tab,
-                "nextSidebarTab" => &mut p.next_sidebar_tab,
+                "prevSidebarTab" => &mut p.prev_preview_tab,
+                "nextSidebarTab" => &mut p.next_preview_tab,
                 "approve" => &mut p.approve,
                 "assign" => &mut p.assign,
                 "unassign" => &mut p.unassign,
