@@ -807,7 +807,7 @@ mod tests {
     }
 
     #[test]
-    fn capitalized_keys_from_go_marshalled_config() {
+    fn config_keys_match_case_insensitively() {
         let cfg = layers(&[
             "defaults:\n  preview:\n    Open: false\n    width: 0.5\nrepoPaths:\n  Owner/repo: /x\n",
         ]);

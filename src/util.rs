@@ -188,7 +188,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn repo_paths_resolve_like_go() {
+    fn repo_paths_match_exact_then_wildcards() {
         let mut paths = HashMap::new();
         paths.insert("user/repo".to_string(), "/path/to/user/repo".to_string());
         paths.insert("user_2/*".to_string(), "/path/to/user_2/*".to_string());

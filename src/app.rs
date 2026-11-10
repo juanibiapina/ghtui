@@ -3401,7 +3401,7 @@ mod tests {
     }
 
     #[test]
-    fn notification_filters_parse_like_go() {
+    fn notification_filters_parse_repos_reasons_and_done() {
         let f = parse_notification_filters("repo:a/b reason:participating");
         assert_eq!(f.repo_filters, vec!["a/b"]);
         assert_eq!(f.reason_filters.len(), 6);
