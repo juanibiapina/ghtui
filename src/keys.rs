@@ -103,7 +103,6 @@ pub struct IssueKeys {
 
 #[derive(Clone, Debug)]
 pub struct NotificationKeys {
-    pub view: Binding,
     pub back_to_notification: Binding,
     pub mark_as_done: Binding,
     pub mark_all_as_done: Binding,
@@ -239,7 +238,6 @@ impl Default for Keys {
                 view_prs: b(&["s"], "s", "switch to notifications"),
             },
             notif: NotificationKeys {
-                view: b(&["enter"], "enter", "view notification"),
                 back_to_notification: b(&["esc"], "esc", "back to notification"),
                 mark_as_done: b(&["d"], "d", "mark as done"),
                 mark_all_as_done: b(&["alt+d"], "alt+d", "mark all as done"),
@@ -401,7 +399,6 @@ impl Keys {
             }
             let n = &mut self.notif;
             let target = match kb.builtin.as_str() {
-                "view" => &mut n.view,
                 "markAsDone" => &mut n.mark_as_done,
                 "markAllAsDone" => &mut n.mark_all_as_done,
                 "unsubscribe" => &mut n.unsubscribe,

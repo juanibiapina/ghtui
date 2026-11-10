@@ -774,22 +774,6 @@ impl App {
         self.want_subject(&n);
     }
 
-    /// loadNotificationContent: Enter shows the notification's subject.
-    fn load_notification_content(&mut self) {
-        let Some(RowRef::Notification(n)) = self.current_row() else {
-            return;
-        };
-        self.invalidate_sidebar();
-        match n.subject_type() {
-            "PullRequest" | "Issue" => {
-                if !self.show_cached_subject(&n) {
-                    self.want_subject(&n);
-                }
-            }
-            _ => self.open_browser(),
-        }
-    }
-
     fn back_to_notification(&mut self) -> bool {
         if self.subject_pr.is_none() && self.subject_issue.is_none() {
             return false;
@@ -2035,10 +2019,6 @@ impl App {
         if k.u.open_github.matches(key) {
             self.open_browser();
             return true;
-        }
-        if k.notif.view.matches(key) {
-            self.load_notification_content();
-            return false;
         }
         if k.notif.back_to_notification.matches(key) && self.back_to_notification() {
             return true;
