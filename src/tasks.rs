@@ -35,31 +35,29 @@ pub fn run_gh(args: &[&str], dir: Option<&str>) -> std::result::Result<String, S
 
 fn run_gh_task(
     app: &mut App,
-    id: String,
     args: Vec<String>,
     start: String,
     done: String,
     key: SectionKey,
     payload: Payload,
 ) {
-    app.start_task(&id, &start, &done);
+    let id = app.start_task(&start, &done);
     app.pool.spawn(move || {
         let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
         let err = run_gh(&refs, None).err();
         Some(Msg::TaskFinished {
-            task_id: id,
+            task: id,
             section: Some(key),
-            err,
-            payload,
+            result: err.map_or(Ok(()), Err),
+            payload: Some(payload),
         })
     });
 }
 
 /// `verb` is close, reopen, ready or update-branch.
 pub fn simple_pr(app: &mut App, verb: &str, n: i64, repo: &str, key: SectionKey) {
-    let (prefix, start, done, update) = match verb {
+    let (start, done, update) = match verb {
         "close" => (
-            "pr_close",
             format!("Closing PR #{n}"),
             format!("PR #{n} has been closed"),
             UpdatePr {
@@ -68,7 +66,6 @@ pub fn simple_pr(app: &mut App, verb: &str, n: i64, repo: &str, key: SectionKey)
             },
         ),
         "reopen" => (
-            "pr_reopen",
             format!("Reopening PR #{n}"),
             format!("PR #{n} has been reopened"),
             UpdatePr {
@@ -77,7 +74,6 @@ pub fn simple_pr(app: &mut App, verb: &str, n: i64, repo: &str, key: SectionKey)
             },
         ),
         "ready" => (
-            "pr_ready",
             format!("Marking PR #{n} as ready for review"),
             format!("PR #{n} has been marked as ready for review"),
             UpdatePr {
@@ -86,7 +82,6 @@ pub fn simple_pr(app: &mut App, verb: &str, n: i64, repo: &str, key: SectionKey)
             },
         ),
         _ => (
-            "pr_update",
             format!("Updating PR #{n}"),
             format!("PR #{n} has been updated"),
             UpdatePr::default(),
@@ -101,7 +96,6 @@ pub fn simple_pr(app: &mut App, verb: &str, n: i64, repo: &str, key: SectionKey)
     ];
     run_gh_task(
         app,
-        format!("{prefix}_{n}"),
         args,
         start,
         done,
@@ -138,22 +132,12 @@ pub fn simple_issue(app: &mut App, verb: &str, n: i64, repo: &str, key: SectionK
         is_closed: Some(closed),
         ..Default::default()
     });
-    run_gh_task(
-        app,
-        format!("issue_{verb}_{n}"),
-        args,
-        start,
-        done,
-        key,
-        payload,
-    );
+    run_gh_task(app, args, start, done, key, payload);
 }
 
 /// Merging runs interactively, so the TUI is suspended while it runs.
 pub fn merge(app: &mut App, n: i64, repo: &str, key: SectionKey) {
-    let id = format!("merge_{n}");
-    app.start_task(
-        &id,
+    let id = app.start_task(
         &format!("Merging PR #{n}"),
         &format!("PR #{n} has been merged"),
     );
@@ -169,36 +153,34 @@ pub fn merge(app: &mut App, n: i64, repo: &str, key: SectionKey) {
                 _ => None,
             };
             vec![Msg::TaskFinished {
-                task_id: id,
+                task: id,
                 section: Some(key),
-                err,
-                payload: Payload::UpdatePr(UpdatePr {
+                result: err.map_or(Ok(()), Err),
+                payload: Some(Payload::UpdatePr(UpdatePr {
                     number: n,
                     is_merged: Some(merged),
                     ..Default::default()
-                }),
+                })),
             }]
         }),
     });
 }
 
 pub fn approve_workflows(app: &mut App, n: i64, repo: &str, key: SectionKey) {
-    let id = format!("pr_approve_workflows_{n}");
-    app.start_task(
-        &id,
+    let id = app.start_task(
         &format!("Approving workflows for PR #{n}"),
         &format!("Workflows for PR #{n} have been approved"),
     );
     let repo = repo.to_string();
     app.pool.spawn(move || {
         let fail = |e: String| Msg::TaskFinished {
-            task_id: id.clone(),
+            task: id,
             section: Some(key),
-            err: Some(e),
-            payload: Payload::UpdatePr(UpdatePr {
+            result: Err(e),
+            payload: Some(Payload::UpdatePr(UpdatePr {
                 number: n,
                 ..Default::default()
-            }),
+            })),
         };
         let sha = match run_gh(
             &[
@@ -253,13 +235,13 @@ pub fn approve_workflows(app: &mut App, n: i64, repo: &str, key: SectionKey) {
             }
         }
         Some(Msg::TaskFinished {
-            task_id: id,
+            task: id,
             section: Some(key),
-            err: last_err,
-            payload: Payload::UpdatePr(UpdatePr {
+            result: last_err.map_or(Ok(()), Err),
+            payload: Some(Payload::UpdatePr(UpdatePr {
                 number: n,
                 ..Default::default()
-            }),
+            })),
         })
     });
 }
@@ -306,15 +288,7 @@ pub fn comment(app: &mut App, is_pr: bool, n: i64, repo: &str, body: &str, key: 
         String::from("-b"),
         String::from(body),
     ];
-    run_gh_task(
-        app,
-        format!("{noun}_comment_{n}"),
-        args,
-        start,
-        done,
-        key,
-        payload,
-    );
+    run_gh_task(app, args, start, done, key, payload);
 }
 
 pub fn approve(app: &mut App, n: i64, repo: &str, comment: &str, key: SectionKey) {
@@ -332,7 +306,6 @@ pub fn approve(app: &mut App, n: i64, repo: &str, comment: &str, key: SectionKey
     }
     run_gh_task(
         app,
-        format!("pr_approve_{n}"),
         args,
         format!("Approving pr #{n}"),
         format!("pr #{n} has been approved"),
@@ -370,15 +343,13 @@ pub fn assign(
         args.push(u.clone());
     }
     let list = format!("[{}]", users.join(" "));
-    let (id, start, done) = if add {
+    let (start, done) = if add {
         (
-            format!("{noun}_assign_{n}"),
             format!("Assigning {noun} #{n} to {list}"),
             format!("{noun} #{n} has been assigned to {list}"),
         )
     } else {
         (
-            format!("{noun}_unassign_{n}"),
             format!("Unassigning {list} from {noun} #{n}"),
             format!("{list} unassigned from {noun} #{n}"),
         )
@@ -398,7 +369,7 @@ pub fn assign(
             ..Default::default()
         })
     };
-    run_gh_task(app, id, args, start, done, key, payload);
+    run_gh_task(app, args, start, done, key, payload);
 }
 
 pub fn label(
@@ -458,7 +429,6 @@ pub fn label(
     };
     run_gh_task(
         app,
-        format!("{noun}_label_{n}"),
         args,
         format!("Labeling {noun} #{n} to {list}"),
         format!("{noun} #{n} has been labeled with {list}"),

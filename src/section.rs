@@ -16,6 +16,7 @@ use crate::icons;
 use crate::input::TextInput;
 use crate::model::*;
 use crate::mouse::{HitMap, Target};
+use crate::msg::TaskId;
 use crate::text::*;
 use crate::theme::{self, Theme};
 use crate::util::{format_number, time_elapsed};
@@ -373,7 +374,7 @@ pub struct Section {
     pub repo_status: crate::git::NameStatus,
     pub total_count: usize,
     pub page_info: Option<PageInfo>,
-    pub last_fetch_task: String,
+    pub last_fetch_task: Option<TaskId>,
     pub last_fetch_at: Option<Instant>,
     pub is_loading: bool,
     pub cursor: usize,
@@ -429,7 +430,7 @@ impl Section {
             repo_status: Default::default(),
             total_count: 0,
             page_info: None,
-            last_fetch_task: String::new(),
+            last_fetch_task: None,
             last_fetch_at: None,
             is_loading: false,
             cursor: 0,

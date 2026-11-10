@@ -50,18 +50,15 @@ pub struct UpdateIssue {
     pub removed_assignees: Option<Vec<String>>,
 }
 
+/// Identifies a task the footer shows, and a section's latest fetch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct TaskId(pub u64);
+
+/// What a finished task changes. Failed mutations carry the payload to roll back.
 pub enum Payload {
-    None,
-    Prs {
-        task_id: String,
-        page: SearchPage<PullRequest>,
-    },
-    Issues {
-        task_id: String,
-        page: SearchPage<Issue>,
-    },
+    Prs(SearchPage<PullRequest>),
+    Issues(SearchPage<Issue>),
     Notifications {
-        task_id: String,
         rows: Vec<NotifRow>,
         page_info: PageInfo,
     },
@@ -85,18 +82,18 @@ pub enum CompletionTarget {
 }
 
 pub enum Msg {
+    /// Completion sources for `target`. `None` means the source wasn't requested.
     Suggestions {
         target: CompletionTarget,
-        users: Option<Vec<(String, String)>>,
-        labels: Option<Vec<Label>>,
-        err: Option<String>,
+        users: Option<Result<Vec<(String, String)>, String>>,
+        labels: Option<Result<Vec<Label>, String>>,
     },
     CompletionClearStatus(CompletionTarget),
     TaskFinished {
-        task_id: String,
+        task: TaskId,
         section: Option<SectionKey>,
-        err: Option<String>,
-        payload: Payload,
+        result: Result<(), String>,
+        payload: Option<Payload>,
     },
     /// A PR's details from the detail store, whoever asked for them.
     PrDetail {

@@ -119,7 +119,8 @@ pub struct App {
     pub help: Option<Help>,
     pub confirm_quit_shown: bool,
     pub error: Option<String>,
-    pub tasks: HashMap<String, Task>,
+    pub tasks: HashMap<TaskId, Task>,
+    next_task: u64,
     pub spinner: usize,
     spinner_at: Instant,
     pub user: String,
@@ -154,13 +155,6 @@ fn resolve_size(size: f64, total: usize) -> usize {
         size
     };
     (cells as usize).min(total)
-}
-
-fn task_id(prefix: &str) -> String {
-    format!(
-        "{prefix}_{}",
-        Local::now().timestamp_nanos_opt().unwrap_or_default()
-    )
 }
 
 impl App {
@@ -200,6 +194,7 @@ impl App {
             confirm_quit_shown: false,
             error: None,
             tasks: HashMap::new(),
+            next_task: 0,
             spinner: 0,
             spinner_at: Instant::now(),
             user: String::new(),
@@ -452,10 +447,13 @@ impl App {
         }
     }
 
-    pub fn start_task(&mut self, id: &str, start: &str, finished: &str) {
-        crate::info!("Starting task id={id}");
+    /// Shows `start` in the footer until the task finishes, then `finished`.
+    pub fn start_task(&mut self, start: &str, finished: &str) -> TaskId {
+        self.next_task += 1;
+        let id = TaskId(self.next_task);
+        crate::info!("Starting task id={id:?}");
         self.tasks.insert(
-            id.to_string(),
+            id,
             Task {
                 start_text: start.into(),
                 finished_text: finished.into(),
@@ -465,34 +463,33 @@ impl App {
                 finished: None,
             },
         );
+        id
     }
 
-    fn finish_task(&mut self, id: &str, err: Option<String>) {
-        match &err {
-            Some(e) => crate::error!("Task finished with error id={id} err={e}"),
-            None => crate::info!("Task finished id={id}"),
+    fn finish_task(&mut self, id: TaskId, result: Result<(), String>) {
+        match &result {
+            Err(e) => crate::error!("Task finished with error id={id:?} err={e}"),
+            Ok(()) => crate::info!("Task finished id={id:?}"),
         }
-        if let Some(t) = self.tasks.get_mut(id) {
-            t.state = if err.is_some() {
+        if let Some(t) = self.tasks.get_mut(&id) {
+            t.state = if result.is_err() {
                 TaskState::Failed
             } else {
                 TaskState::Done
             };
-            t.error = err;
+            t.error = result.err();
             t.finished = Some(Instant::now());
         }
     }
 
     fn notify(&mut self, text: &str) {
-        let id = task_id("notify");
-        self.start_task(&id, text, text);
-        self.finish_task(&id, None);
+        let id = self.start_task(text, text);
+        self.finish_task(id, Ok(()));
     }
 
     fn notify_err(&mut self, text: &str) {
-        let id = task_id("notify");
-        self.start_task(&id, text, text);
-        self.finish_task(&id, Some(text.to_string()));
+        let id = self.start_task(text, text);
+        self.finish_task(id, Err(text.to_string()));
     }
 
     pub fn is_animating(&self) -> bool {
@@ -558,7 +555,7 @@ impl App {
 
     /// Fetches a section's next page, or its first after `page_info` was reset.
     /// `background` requests stop while GitHub rate limits us. Returns the task ID.
-    fn fetch_page(&mut self, view: ViewType, id: usize, background: bool) -> Option<String> {
+    fn fetch_page(&mut self, view: ViewType, id: usize, background: bool) -> Option<TaskId> {
         let gh = self.gh_repo.clone();
         let cfg_limit = match view {
             ViewType::Notifications => self.cfg.defaults.notifications_limit,
@@ -593,25 +590,13 @@ impl App {
                 s.total_count = 0;
                 s.is_loading = false;
                 s.last_fetch_at = Some(Instant::now());
-                self.start_task("done_filter", "Fetching notifications", "");
-                self.finish_task(
-                    "done_filter",
-                    Some("done notifications cannot be retrieved".into()),
-                );
+                self.notify_err("done notifications cannot be retrieved");
                 return None;
             }
-            let tid = task_id(&format!("fetching_notifications_{id}"));
-            s.last_fetch_task = tid.clone();
-            s.last_fetch_at = Some(Instant::now());
-            s.is_loading = true;
             let session_done = s.session_done.clone();
             let limit = self.cfg.defaults.notifications_limit;
-            self.start_task(
-                &tid,
-                "Fetching notifications",
-                "Notifications have been fetched",
-            );
-            let task = tid.clone();
+            let task = self.start_task("Fetching notifications", "Notifications have been fetched");
+            self.mark_fetching(key, task);
             self.pool.spawn(move || {
                 let fetch = || tasks::fetch_notifications(&nf, limit, page, &session_done);
                 let res = if background {
@@ -619,37 +604,22 @@ impl App {
                 } else {
                     fetch()
                 };
-                Some(match res {
-                    Ok((rows, page_info)) => Msg::TaskFinished {
-                        task_id: tid.clone(),
-                        section: Some(key),
-                        err: None,
-                        payload: Payload::Notifications {
-                            task_id: tid,
-                            rows,
-                            page_info,
-                        },
-                    },
-                    Err(e) => Msg::TaskFinished {
-                        task_id: tid,
-                        section: Some(key),
-                        err: Some(e.to_string()),
-                        payload: Payload::None,
-                    },
+                let (result, payload) = match res {
+                    Ok((rows, page_info)) => {
+                        (Ok(()), Some(Payload::Notifications { rows, page_info }))
+                    }
+                    Err(e) => (Err(e.to_string()), None),
+                };
+                Some(Msg::TaskFinished {
+                    task,
+                    section: Some(key),
+                    result,
+                    payload,
                 })
             });
             return Some(task);
         }
 
-        let prefix = if kind == Kind::Pr {
-            "fetching_prs"
-        } else {
-            "fetching_issues"
-        };
-        let tid = task_id(&format!("{prefix}_{id}"));
-        s.last_fetch_task = tid.clone();
-        s.last_fetch_at = Some(Instant::now());
-        s.is_loading = true;
         let (start, done) = if kind == Kind::Pr {
             (
                 format!("Fetching PRs for \"{title}\""),
@@ -661,22 +631,14 @@ impl App {
                 format!("Issues for \"{title}\" have been fetched"),
             )
         };
-        self.start_task(&tid, &start, &done);
-        let task = tid.clone();
+        let task = self.start_task(&start, &done);
+        self.mark_fetching(key, task);
         self.pool.spawn(move || {
             let run = || {
                 if kind == Kind::Pr {
-                    github::fetch_pull_requests(&filters, limit, page.as_ref()).map(|p| {
-                        Payload::Prs {
-                            task_id: tid.clone(),
-                            page: p,
-                        }
-                    })
+                    github::fetch_pull_requests(&filters, limit, page.as_ref()).map(Payload::Prs)
                 } else {
-                    github::fetch_issues(&filters, limit, page.as_ref()).map(|p| Payload::Issues {
-                        task_id: tid.clone(),
-                        page: p,
-                    })
+                    github::fetch_issues(&filters, limit, page.as_ref()).map(Payload::Issues)
                 }
             };
             let res = if background {
@@ -684,22 +646,27 @@ impl App {
             } else {
                 run()
             };
-            Some(match res {
-                Ok(payload) => Msg::TaskFinished {
-                    task_id: tid.clone(),
-                    section: Some(key),
-                    err: None,
-                    payload,
-                },
-                Err(e) => Msg::TaskFinished {
-                    task_id: tid,
-                    section: Some(key),
-                    err: Some(e.to_string()),
-                    payload: Payload::None,
-                },
+            let (result, payload) = match res {
+                Ok(payload) => (Ok(()), Some(payload)),
+                Err(e) => (Err(e.to_string()), None),
+            };
+            Some(Msg::TaskFinished {
+                task,
+                section: Some(key),
+                result,
+                payload,
             })
         });
         Some(task)
+    }
+
+    /// Records that `task` is the section's latest fetch, so older results are ignored.
+    fn mark_fetching(&mut self, key: SectionKey, task: TaskId) {
+        if let Some(s) = self.sections_for(key.view).get_mut(key.id) {
+            s.last_fetch_task = Some(task);
+            s.last_fetch_at = Some(Instant::now());
+            s.is_loading = true;
+        }
     }
 
     /// CheckSuite notifications link to the workflow run fetched here.
@@ -797,21 +764,21 @@ impl App {
         self.invalidate_preview();
         match msg {
             Msg::TaskFinished {
-                task_id,
+                task,
                 section,
-                err,
+                result,
                 payload,
             } => {
-                self.finish_task(&task_id, err.clone());
-                if let Some(key) = section {
-                    self.apply_payload(key, payload, err.is_some());
-                } else {
-                    self.apply_global_payload(payload);
+                self.finish_task(task, result.clone());
+                match (section, payload) {
+                    (Some(key), payload) => self.apply_payload(key, task, payload, result.is_err()),
+                    (None, Some(payload)) => self.apply_global_payload(payload),
+                    (None, None) => {}
                 }
-                if self.live.full_running.remove(&task_id) {
+                if self.live.full_running.remove(&task) {
                     self.start_queued_full_searches();
                 }
-                if let Some(e) = &err {
+                if let Err(e) = &result {
                     self.report_error(e);
                 }
             }
@@ -839,7 +806,6 @@ impl App {
                 target,
                 users,
                 labels,
-                err,
             } => {
                 let text_pos: Option<(String, (usize, usize))> = match target {
                     CompletionTarget::Search(k) => self
@@ -856,12 +822,20 @@ impl App {
                         .as_ref()
                         .map(|e| (e.area.value(), crate::input::Editable::cursor_pos(&e.area))),
                 };
+                let err = [
+                    users.as_ref().and_then(|r| r.as_ref().err()),
+                    labels.as_ref().and_then(|r| r.as_ref().err()),
+                ]
+                .into_iter()
+                .flatten()
+                .next_back()
+                .cloned();
                 let failed = err.is_some();
                 if let (Some(c), Some((text, pos))) = (self.completer_mut(target), text_pos) {
-                    if let Some(u) = users {
+                    if let Some(Ok(u)) = users {
                         c.users = u;
                     }
-                    if let Some(l) = labels {
+                    if let Some(Ok(l)) = labels {
                         c.labels = l;
                     }
                     c.filter(&text, pos);
@@ -937,7 +911,13 @@ impl App {
         }
     }
 
-    fn apply_payload(&mut self, key: SectionKey, payload: Payload, failed: bool) {
+    fn apply_payload(
+        &mut self,
+        key: SectionKey,
+        task: TaskId,
+        payload: Option<Payload>,
+        failed: bool,
+    ) {
         let is_current = key.view == self.view && key.id == self.curr;
         let mut new_notifs: Vec<NotifRow> = vec![];
         let mut row_changed = false;
@@ -959,13 +939,13 @@ impl App {
                 return;
             };
             match payload {
-                Payload::None => {
+                None => {
                     if failed {
                         s.is_loading = false;
                     }
                 }
-                Payload::Prs { task_id, page } => {
-                    if s.last_fetch_task == task_id {
+                Some(Payload::Prs(page)) => {
+                    if s.last_fetch_task == Some(task) {
                         let rows: Vec<PrRow> = page
                             .items
                             .into_iter()
@@ -988,8 +968,8 @@ impl App {
                         fill_prs = true;
                     }
                 }
-                Payload::Issues { task_id, page } => {
-                    if s.last_fetch_task == task_id {
+                Some(Payload::Issues(page)) => {
+                    if s.last_fetch_task == Some(task) {
                         if s.page_info.is_some() {
                             s.issues.extend(page.items);
                         } else {
@@ -1003,12 +983,8 @@ impl App {
                         row_changed = true;
                     }
                 }
-                Payload::Notifications {
-                    task_id,
-                    rows,
-                    page_info,
-                } => {
-                    if s.last_fetch_task == task_id {
+                Some(Payload::Notifications { rows, page_info }) => {
+                    if s.last_fetch_task == Some(task) {
                         let rows: Vec<NotifRow> = rows
                             .into_iter()
                             .filter(|n| !s.session_done.contains(n.id()))
@@ -1028,7 +1004,7 @@ impl App {
                         row_changed = true;
                     }
                 }
-                Payload::UpdatePr(u) => {
+                Some(Payload::UpdatePr(u)) => {
                     if !failed {
                         mutated_prs.extend(pr_urls(s, u.number));
                         if let Some((n, url)) = &subject_pr_url
@@ -1039,7 +1015,7 @@ impl App {
                     }
                     apply_update_pr(s, &u)
                 }
-                Payload::UpdateIssue(u) => {
+                Some(Payload::UpdateIssue(u)) => {
                     if !failed
                         && let Some((n, url)) = &subject_issue_url
                         && *n == u.number
@@ -1071,13 +1047,13 @@ impl App {
                     }
                     s.is_loading = false;
                 }
-                Payload::NotificationDone(row) => {
+                Some(Payload::NotificationDone(row)) => {
                     if failed {
                         s.restore_notification(*row);
                         row_changed = true;
                     }
                 }
-                Payload::ClearAllNotifications => {
+                Some(Payload::ClearAllNotifications) => {
                     s.notifs.clear();
                     s.total_count = 0;
                     s.page_info = None;
@@ -1087,7 +1063,7 @@ impl App {
                     refetch = true;
                     row_changed = true;
                 }
-                Payload::Repo { repo, reset } => {
+                Some(Payload::Repo { repo, reset }) => {
                     s.branches = repo
                         .branches
                         .iter()
@@ -1108,7 +1084,7 @@ impl App {
                     row_changed = true;
                     repo_head = Some(repo.head_branch_name.clone());
                 }
-                Payload::BranchPrs(prs) => {
+                Some(Payload::BranchPrs(prs)) => {
                     s.prs = prs
                         .into_iter()
                         .map(|p| PrRow {
@@ -1118,7 +1094,7 @@ impl App {
                         .collect();
                     s.is_loading = false;
                 }
-                Payload::BranchPr(pr) => {
+                Some(Payload::BranchPr(pr)) => {
                     s.prs.push(PrRow {
                         primary: *pr,
                         details: None,
@@ -1609,35 +1585,28 @@ impl App {
             };
             self.live.dirty = true;
             self.on_viewed_row_changed();
-            let tid = format!("notification_done_{nid}");
-            self.start_task(
-                &tid,
+            let tid = self.start_task(
                 "Marking notification as done",
                 "Notification marked as done",
             );
             self.pool.spawn(move || {
                 let r = tasks::mark_done(&nid);
                 Some(Msg::TaskFinished {
-                    task_id: tid,
+                    task: tid,
                     section: Some(key_),
-                    err: r.err().map(|e| e.to_string()),
-                    payload: Payload::NotificationDone(Box::new(row)),
+                    result: r.map_err(|e| e.to_string()),
+                    payload: Some(Payload::NotificationDone(Box::new(row))),
                 })
             });
         } else if k.unsubscribe.matches(key) {
-            let tid = format!("notification_unsubscribe_{nid}");
-            self.start_task(
-                &tid,
-                "Unsubscribing from thread",
-                "Unsubscribed from thread",
-            );
+            let tid = self.start_task("Unsubscribing from thread", "Unsubscribed from thread");
             self.pool.spawn(move || {
                 let r = github::unsubscribe_thread(&nid);
                 Some(Msg::TaskFinished {
-                    task_id: tid,
+                    task: tid,
                     section: Some(key_),
-                    err: r.err().map(|e| e.to_string()),
-                    payload: Payload::None,
+                    result: r.map_err(|e| e.to_string()),
+                    payload: None,
                 })
             });
         } else if k.toggle_bookmark.matches(key) {
@@ -1761,26 +1730,15 @@ impl App {
             }
         }
         self.pool.spawn(move || {
-            let mut err = None;
-            let users = if matches!(kind, SourceKind::Search | SourceKind::Mention { .. }) {
-                github::fetch_repo_users(&owner, &name)
-                    .map_err(|e| err = Some(e.to_string()))
-                    .ok()
-            } else {
-                None
-            };
-            let labels = if matches!(kind, SourceKind::Search | SourceKind::Labels) {
-                github::fetch_repo_labels(&format!("{owner}/{name}"))
-                    .map_err(|e| err = Some(e.to_string()))
-                    .ok()
-            } else {
-                None
-            };
+            let users = matches!(kind, SourceKind::Search | SourceKind::Mention { .. })
+                .then(|| github::fetch_repo_users(&owner, &name).map_err(|e| e.to_string()));
+            let labels = matches!(kind, SourceKind::Search | SourceKind::Labels).then(|| {
+                github::fetch_repo_labels(&format!("{owner}/{name}")).map_err(|e| e.to_string())
+            });
             Some(Msg::Suggestions {
                 target,
                 users,
                 labels,
-                err,
             })
         });
     }
@@ -2323,10 +2281,8 @@ impl App {
         if ids.is_empty() {
             return;
         }
-        let tid = "notification_done_all".to_string();
         let count = ids.len();
-        self.start_task(
-            &tid,
+        let tid = self.start_task(
             &format!("Marking {count} notifications as done"),
             &format!("{count} notifications marked as done"),
         );
@@ -2339,14 +2295,10 @@ impl App {
             }
             let failed = last_err.is_some();
             Some(Msg::TaskFinished {
-                task_id: tid,
+                task: tid,
                 section: Some(key),
-                err: last_err,
-                payload: if failed {
-                    Payload::None
-                } else {
-                    Payload::ClearAllNotifications
-                },
+                result: last_err.map_or(Ok(()), Err),
+                payload: (!failed).then_some(Payload::ClearAllNotifications),
             })
         });
     }
@@ -2605,17 +2557,10 @@ impl App {
             }
         };
         let shown = cmd.clone();
-        let (view, id) = (self.view, self.curr);
-        let key = SectionKey { view, id };
         self.exec = Some(ExecRequest {
             cmd: util::shell_command(&cmd),
             on_done: Box::new(move |res| match res {
-                Ok(st) if st.success() => vec![Msg::TaskFinished {
-                    task_id: String::new(),
-                    section: Some(key),
-                    err: None,
-                    payload: Payload::None,
-                }],
+                Ok(st) if st.success() => vec![],
                 Ok(st) => vec![Msg::Error(format!(
                     "Whoops, got an error: {st}\nWhile running: {shown}"
                 ))],
@@ -2627,8 +2572,7 @@ impl App {
     }
 
     pub fn open_browser(&mut self) {
-        let id = task_id("open_browser");
-        self.start_task(&id, "Opening in browser", "Opened in browser");
+        let id = self.start_task("Opening in browser", "Opened in browser");
         let url = self.current_row().map(|r| r.url());
         self.pool.spawn_detached(move || {
             let err = match url {
@@ -2636,10 +2580,10 @@ impl App {
                 Some(u) => util::open_browser(&u).err().map(|e| e.to_string()),
             };
             Some(Msg::TaskFinished {
-                task_id: id,
+                task: id,
                 section: None,
-                err,
-                payload: Payload::None,
+                result: err.map_or(Ok(()), Err),
+                payload: None,
             })
         });
     }
@@ -2669,19 +2613,17 @@ impl App {
             return;
         };
         let path = util::expand_home(&path);
-        let tid = format!("checkout_{number}");
-        self.start_task(
-            &tid,
+        let tid = self.start_task(
             &format!("Checking out PR #{number}"),
             &format!("PR #{number} has been checked out at {path}"),
         );
         self.pool.spawn_detached(move || {
             let err = tasks::run_gh(&["pr", "checkout", &number.to_string()], Some(&path)).err();
             Some(Msg::TaskFinished {
-                task_id: tid,
+                task: tid,
                 section: None,
-                err,
-                payload: Payload::None,
+                result: err.map_or(Ok(()), Err),
+                payload: None,
             })
         });
     }
@@ -2695,9 +2637,7 @@ impl App {
             return;
         };
         let path = util::expand_home(&path);
-        let tid = format!("issue_checkout_{number}");
-        self.start_task(
-            &tid,
+        let tid = self.start_task(
             &format!("Checking out branch for issue #{number}"),
             &format!("Branch for issue #{number} has been checked out at {path}"),
         );
@@ -2716,10 +2656,10 @@ impl App {
             )
             .err();
             Some(Msg::TaskFinished {
-                task_id: tid,
+                task: tid,
                 section: None,
-                err,
-                payload: Payload::None,
+                result: err.map_or(Ok(()), Err),
+                payload: None,
             })
         });
     }
@@ -2729,13 +2669,11 @@ impl App {
         let repo = pr.primary.repository.name_with_owner.clone();
         let title = pr.primary.title.clone();
         let rollup = pr.primary.rollup_state();
-        let tid = format!("pr_watch_{n}");
-        self.start_task(
-            &tid,
+        let tid = self.start_task(
             &format!("Watching checks for PR #{n}"),
             &format!("Watching checks for PR #{n}"),
         );
-        self.finish_task(&tid, None);
+        self.finish_task(tid, Ok(()));
         self.pool.spawn_detached(move || {
             let _ = tasks::run_gh(
                 &[
@@ -2890,14 +2828,13 @@ impl App {
 
     fn repo_task(
         &mut self,
-        tid: String,
         start: &str,
         done: &str,
         reset: bool,
         work: impl FnOnce(&str) -> anyhow::Result<crate::git::Repo> + Send + 'static,
     ) {
         let Some(dir) = self.repo_dir() else { return };
-        self.start_task(&tid, start, done);
+        let tid = self.start_task(start, done);
         let key = SectionKey {
             view: ViewType::Repo,
             id: 0,
@@ -2905,32 +2842,29 @@ impl App {
         self.pool.spawn(move || {
             Some(match work(&dir) {
                 Ok(repo) => Msg::TaskFinished {
-                    task_id: tid,
+                    task: tid,
                     section: Some(key),
-                    err: None,
-                    payload: Payload::Repo { repo, reset },
+                    result: Ok(()),
+                    payload: Some(Payload::Repo { repo, reset }),
                 },
                 Err(e) => Msg::TaskFinished {
-                    task_id: tid,
+                    task: tid,
                     section: None,
-                    err: Some(e.to_string()),
-                    payload: Payload::None,
+                    result: Err(e.to_string()),
+                    payload: None,
                 },
             })
         });
     }
 
     fn read_repo(&mut self, reset: bool) {
-        let tid = task_id("fetching_branches");
-        self.repo_task(tid, "Reading local branches", "Branches read", reset, |d| {
+        self.repo_task("Reading local branches", "Branches read", reset, |d| {
             crate::git::get_repo(d)
         });
     }
 
     fn git_fetch(&mut self) {
-        let tid = task_id("git_fetch_repo");
         self.repo_task(
-            tid,
             "Fetching branches from origin",
             "Fetched origin branches",
             false,
@@ -2939,8 +2873,7 @@ impl App {
     }
 
     fn fetch_branch_prs(&mut self) {
-        let tid = task_id("fetching_pr_branches");
-        self.start_task(&tid, "Fetching PRs", "PRs fetched");
+        let tid = self.start_task("Fetching PRs", "PRs fetched");
         let query = format!(
             "author:@me repo:{}",
             crate::git::repo_short_name(&self.repo_url)
@@ -2953,16 +2886,16 @@ impl App {
         self.pool.spawn(move || {
             Some(match github::fetch_pull_requests(&query, limit, None) {
                 Ok(p) => Msg::TaskFinished {
-                    task_id: tid,
+                    task: tid,
                     section: Some(key),
-                    err: None,
-                    payload: Payload::BranchPrs(p.items),
+                    result: Ok(()),
+                    payload: Some(Payload::BranchPrs(p.items)),
                 },
                 Err(e) => Msg::TaskFinished {
-                    task_id: tid,
+                    task: tid,
                     section: Some(key),
-                    err: Some(e.to_string()),
-                    payload: Payload::None,
+                    result: Err(e.to_string()),
+                    payload: None,
                 },
             })
         });
@@ -3014,9 +2947,7 @@ impl App {
         if self.keys.u.open_github.matches(key) {
             if let Some(b) = self.current_branch() {
                 let name = b.b.name.clone();
-                let tid = format!("branch_open_{name}");
-                self.start_task(
-                    &tid,
+                let tid = self.start_task(
                     &format!("Opening PR for branch {name}"),
                     &format!("PR for branch {name} has been opened"),
                 );
@@ -3025,10 +2956,10 @@ impl App {
                     let err =
                         tasks::run_gh(&["pr", "view", "--web", &name, "-R", &repo], None).err();
                     Some(Msg::TaskFinished {
-                        task_id: tid,
+                        task: tid,
                         section: None,
-                        err,
-                        payload: Payload::None,
+                        result: err.map_or(Ok(()), Err),
+                        payload: None,
                     })
                 });
             }
@@ -3059,11 +2990,9 @@ impl App {
             return;
         };
         let name = b.b.name.clone();
-        let stamp = Local::now().timestamp();
         if br.checkout.matches(key) {
             let n = name.clone();
             self.repo_task(
-                format!("checkout_{name}_{stamp}"),
                 &format!("Checking out branch {name}"),
                 &format!("Branch {name} has been checked out"),
                 true,
@@ -3081,7 +3010,6 @@ impl App {
             };
             let n = name.clone();
             self.repo_task(
-                format!("push_{name}_{stamp}"),
                 &format!("Pushing branch {name}{with}"),
                 &format!("Branch {name} has been pushed{with}"),
                 false,
@@ -3094,7 +3022,6 @@ impl App {
             let n = name.clone();
             let checked_out = b.b.is_checked_out;
             self.repo_task(
-                format!("fast-forward_{name}_{stamp}"),
                 &format!("Fast-forwarding branch {name}"),
                 &format!("Branch {name} has been fast-forwarded"),
                 false,
@@ -3113,7 +3040,6 @@ impl App {
         let name = b.b.name.clone();
         let n = name.clone();
         self.repo_task(
-            format!("delete_{name}_{}", Local::now().timestamp()),
             &format!("Deleting branch {name}"),
             &format!("Branch {name} has been deleted"),
             false,
@@ -3128,7 +3054,6 @@ impl App {
         let n = name.to_string();
         let base = self.repo_head.clone();
         self.repo_task(
-            format!("create_branch_{name}_{}", Local::now().timestamp()),
             &format!("Creating branch {name}"),
             &format!("Branch {name} has been created"),
             false,
@@ -3145,9 +3070,7 @@ impl App {
             return;
         };
         let branch = b.b.name.clone();
-        let tid = format!("create_pr_{title}");
-        self.start_task(
-            &tid,
+        let tid = self.start_task(
             &format!("Creating PR \"{title}\""),
             &format!("PR \"{title}\" has been created"),
         );
@@ -3163,10 +3086,10 @@ impl App {
             on_done: Box::new(move |res| {
                 let created = matches!(&res, Ok(st) if st.success());
                 let mut msgs = vec![Msg::TaskFinished {
-                    task_id: tid,
+                    task: tid,
                     section: None,
-                    err: None,
-                    payload: Payload::None,
+                    result: Ok(()),
+                    payload: None,
                 }];
                 if created {
                     msgs.push(Msg::FetchBranchPr { branch, short, key });
@@ -3177,12 +3100,7 @@ impl App {
     }
 
     fn fetch_branch_pr(&mut self, branch: String, short: String, key: SectionKey) {
-        let tid = task_id(&format!("fetching_pr_for_branch_{branch}"));
-        self.start_task(
-            &tid,
-            &format!("Fetching PR for branch {branch}"),
-            "PR fetched",
-        );
+        let tid = self.start_task(&format!("Fetching PR for branch {branch}"), "PR fetched");
         self.pool.spawn(move || {
             let res = github::fetch_pull_requests(
                 &format!("author:@me repo:{short} head:{branch}"),
@@ -3191,22 +3109,24 @@ impl App {
             );
             Some(match res {
                 Ok(p) if p.items.len() == 1 => Msg::TaskFinished {
-                    task_id: tid,
+                    task: tid,
                     section: Some(key),
-                    err: None,
-                    payload: Payload::BranchPr(Box::new(p.items.into_iter().next().unwrap())),
+                    result: Ok(()),
+                    payload: Some(Payload::BranchPr(Box::new(
+                        p.items.into_iter().next().unwrap(),
+                    ))),
                 },
                 Ok(p) => Msg::TaskFinished {
-                    task_id: tid,
+                    task: tid,
                     section: Some(key),
-                    err: Some(format!("expected 1 PR, got {}", p.items.len())),
-                    payload: Payload::None,
+                    result: Err(format!("expected 1 PR, got {}", p.items.len())),
+                    payload: None,
                 },
                 Err(e) => Msg::TaskFinished {
-                    task_id: tid,
+                    task: tid,
                     section: Some(key),
-                    err: Some(e.to_string()),
-                    payload: Payload::None,
+                    result: Err(e.to_string()),
+                    payload: None,
                 },
             })
         });
@@ -3349,13 +3269,13 @@ mod tests {
 
     fn done_finished(app: &mut App, row: NotifRow, err: Option<&str>) {
         app.handle_msg(Msg::TaskFinished {
-            task_id: format!("notification_done_{}", row.id()),
+            task: TaskId(99),
             section: Some(SectionKey {
                 view: ViewType::Notifications,
                 id: 0,
             }),
-            err: err.map(String::from),
-            payload: Payload::NotificationDone(Box::new(row)),
+            result: err.map_or(Ok(()), |e| Err(e.to_string())),
+            payload: Some(Payload::NotificationDone(Box::new(row))),
         });
     }
 
@@ -3392,20 +3312,19 @@ mod tests {
     fn a_fetch_started_before_done_does_not_bring_the_row_back() {
         let mut app = inbox(&["a", "b", "c"]);
         app.notifs[0].cursor = 1;
-        app.notifs[0].last_fetch_task = "fetch".into();
+        app.notifs[0].last_fetch_task = Some(TaskId(1));
         app.handle_key("d");
         app.handle_msg(Msg::TaskFinished {
-            task_id: "fetch".into(),
+            task: TaskId(1),
             section: Some(SectionKey {
                 view: ViewType::Notifications,
                 id: 0,
             }),
-            err: None,
-            payload: Payload::Notifications {
-                task_id: "fetch".into(),
+            result: Ok(()),
+            payload: Some(Payload::Notifications {
                 rows: vec![notif("a", 1), notif("b", 2), notif("c", 3)],
                 page_info: PageInfo::default(),
-            },
+            }),
         });
         assert_eq!(ids(&app), ["a", "c"]);
     }

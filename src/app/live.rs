@@ -39,7 +39,7 @@ pub struct Live {
     pub last_check: HashMap<ViewType, Instant>,
     pub pr_checked: HashMap<String, Instant>,
     pub full_queue: VecDeque<SectionKey>,
-    pub full_running: HashSet<String>,
+    pub full_running: HashSet<TaskId>,
     pub refresh_due: bool,
     pub subject_wanted: Option<String>,
     pub cache: Option<DiskCache>,
