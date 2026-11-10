@@ -80,10 +80,10 @@ export function GET() {
         },
         dateFormat: {
           title: "Date format",
-          description: "Specifies how dates are formatted.",
-          type: "integer",
-          minimum: 1,
-          default: 30,
+          description:
+            'How dates are formatted: "relative" or a strftime format like "%Y-%m-%d %H:%M".',
+          type: "string",
+          default: "relative",
         },
         view: {
           title: "Default View",

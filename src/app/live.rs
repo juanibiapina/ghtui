@@ -200,7 +200,8 @@ impl App {
         if view == ViewType::Repo {
             self.branch_pr_filters()
         } else {
-            s.search_value_for_fetch(self.gh_repo.as_ref(), true)
+            s.fetch_filters(self.gh_repo.as_ref())
+                .unwrap_or_else(|_| s.search_value(self.gh_repo.as_ref()))
         }
     }
 
@@ -584,7 +585,9 @@ impl App {
                     if s.last_fetch_at.is_none() || s.is_loading {
                         continue;
                     }
-                    let filters = s.search_value_for_fetch(self.gh_repo.as_ref(), true);
+                    let Ok(filters) = s.fetch_filters(self.gh_repo.as_ref()) else {
+                        continue;
+                    };
                     let limit = s.limit.unwrap_or(default_limit);
                     let (query, known) = if s.kind == Kind::Pr {
                         (
@@ -1249,7 +1252,7 @@ mod tests {
         let s = &app.sections_of(view)[id];
         SectionSnapshot {
             view,
-            filters: s.search_value_for_fetch(None, true),
+            filters: s.fetch_filters(None).unwrap(),
             fetched_at: Utc::now() - age,
             prs: vec![PullRequest {
                 id: format!("PR_{id}"),

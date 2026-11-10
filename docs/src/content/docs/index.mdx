@@ -73,8 +73,8 @@ keybindings:
     - key: C
       name: code review
       command: >
-        tmux new-window -c {{.RepoPath}}
-        'nvim -c ":silent Octo pr edit {{.PrNumber}}"'
+        tmux new-window -c {{ repoPath }}
+        'nvim -c ":silent Octo pr edit {{ prNumber }}"'
 ```
 
 <video autoplay loop muted playsinline>

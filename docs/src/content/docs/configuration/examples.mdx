@@ -126,26 +126,26 @@ keybindings:
     - key: g
       name: lazygit
       command: >
-        cd {{.RepoPath}} && lazygit
+        cd {{ repoPath }} && lazygit
   prs:
     - key: O
       builtin: checkout
     - key: m
-      command: gh pr merge --admin --repo {{.RepoName}} {{.PrNumber}}
+      command: gh pr merge --admin --repo {{ repoName }} {{ prNumber }}
     - key: C
       name: code review
       command: >
-        tmux new-window -c {{.RepoPath}} '
-        nvim -c ":silent Octo pr edit {{.PrNumber}}"
+        tmux new-window -c {{ repoPath }} '
+        nvim -c ":silent Octo pr edit {{ prNumber }}"
         '
     - key: a
       name: lazygit add
       command: >
-        cd {{.RepoPath}} && git add -A && lazygit
+        cd {{ repoPath }} && git add -A && lazygit
     - key: v
       name: approve
       command: >
-        gh pr review --repo {{.RepoName}} --approve --body "$(gum input --prompt='Approval Comment: ')" {{.PrNumber}}
+        gh pr review --repo {{ repoName }} --approve --body "$(gum input --prompt='Approval Comment: ')" {{ prNumber }}
 ```
 
 ## Repo Paths Example

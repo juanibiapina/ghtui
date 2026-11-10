@@ -558,7 +558,7 @@ mod tests {
             prs: vec![Keybinding {
                 key: "O".into(),
                 name: None,
-                action: Action::Command("echo {{.PrNumber}}".into()),
+                action: Action::Command("echo {{ prNumber }}".into()),
             }],
             ..Default::default()
         })

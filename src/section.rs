@@ -11,7 +11,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{self, BorderType, Cell, Row, StatefulWidget, Table, TableState, Widget};
 
-use crate::config::{Config, IssuesLayoutConfig, PrsLayoutConfig};
+use crate::config::{Config, DateFormat, IssuesLayoutConfig, PrsLayoutConfig};
 use crate::icons;
 use crate::input::TextInput;
 use crate::model::*;
@@ -441,7 +441,7 @@ impl Section {
         };
         if kind == Kind::Notification {
             s.filtered_by_current_remote = cfg.smart_filtering_at_launch;
-            s.search_value = s.search_value_for_fetch(gh_repo, false);
+            s.search_value = s.search_value(gh_repo);
         } else {
             let mut filters = filters.to_string();
             if cfg.smart_filtering_at_launch
@@ -521,26 +521,19 @@ impl Section {
         }
     }
 
-    /// Expands templates and adds or removes the current-repo filter.
-    pub fn search_value_for_fetch(
-        &self,
-        gh_repo: Option<&(String, String)>,
-        expand: bool,
-    ) -> String {
-        let value = if expand {
-            crate::template::render(&self.search_value, &Default::default())
-                .unwrap_or_else(|_| self.search_value.clone())
-        } else {
-            self.search_value.clone()
-        };
-        let Some((o, n)) = gh_repo else { return value };
-        let f = format!("repo:{o}/{n}");
-        let rest: Vec<&str> = value.split_whitespace().filter(|t| *t != f).collect();
-        if self.filtered_by_current_remote {
-            format!("{f} {}", rest.join(" "))
-        } else {
-            rest.join(" ")
-        }
+    /// The filters to send to GitHub: `search_value` with its templates expanded.
+    pub fn fetch_filters(&self, gh_repo: Option<&(String, String)>) -> anyhow::Result<String> {
+        let expanded = crate::template::render(&self.search_value, &Default::default())?;
+        Ok(with_repo_filter(
+            &expanded,
+            gh_repo,
+            self.filtered_by_current_remote,
+        ))
+    }
+
+    /// `search_value` with the current-repo filter added or removed.
+    pub fn search_value(&self, gh_repo: Option<&(String, String)>) -> String {
+        with_repo_filter(&self.search_value, gh_repo, self.filtered_by_current_remote)
     }
 
     pub fn reset_rows(&mut self) {
@@ -977,6 +970,20 @@ impl Section {
     }
 }
 
+/// `value` with `repo:<gh_repo>` added when `filtered`, or removed when not.
+fn with_repo_filter(value: &str, gh_repo: Option<&(String, String)>, filtered: bool) -> String {
+    let Some((o, n)) = gh_repo else {
+        return value.to_string();
+    };
+    let f = format!("repo:{o}/{n}");
+    let rest: Vec<&str> = value.split_whitespace().filter(|t| *t != f).collect();
+    if filtered {
+        format!("{f} {}", rest.join(" "))
+    } else {
+        rest.join(" ")
+    }
+}
+
 fn single_line(spans: Vec<Span<'static>>) -> Block {
     vec![Line::from(spans)]
 }
@@ -1004,12 +1011,7 @@ fn head_repository_name(pr: &PullRequest) -> String {
 }
 
 fn time_cell(t: chrono::DateTime<chrono::Utc>, cfg: &Config) -> String {
-    let fmt = &cfg.defaults.date_format;
-    if fmt.is_empty() || fmt == "relative" {
-        time_elapsed(t)
-    } else {
-        crate::util_time::go_format(t, fmt)
-    }
+    cfg.defaults.date_format.format(t)
 }
 
 fn issue_title(
@@ -1353,11 +1355,9 @@ fn notification_row(row: &NotifRow, rc: &RenderCtx) -> Vec<Block> {
     } else {
         vec![Line::default(), Line::default(), Line::default()]
     };
-    let fmt = &cfg.defaults.date_format;
-    let updated = if fmt.is_empty() || fmt == "relative" {
-        format!("{}\u{a0}ago", time_elapsed(row.n.updated_at))
-    } else {
-        crate::util_time::go_format(row.n.updated_at, fmt)
+    let updated = match &cfg.defaults.date_format {
+        DateFormat::Relative => format!("{}\u{a0}ago", time_elapsed(row.n.updated_at)),
+        format => format.format(row.n.updated_at),
     };
     let updated_cell = vec![
         Line::from(span(updated, t.primary())),

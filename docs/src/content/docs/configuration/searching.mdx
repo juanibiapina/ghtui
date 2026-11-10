@@ -20,7 +20,7 @@ prsSections:
     filter: >-
       is:open
       -author:@me
-      updated:>={{ nowModify "-2w" }}
+      updated:>={{ now-2w }}
 ```
 
 Note: don't specify `is:pr` for this setting. The dashboard always adds that filter for PR
@@ -32,26 +32,23 @@ filter per line.
 
 For more information about writing filters for searching GitHub, see [Searching issues and pull requests][02].
 
-## Search Templates
+## Dates
 
-In addition to GitHub's filters, ghtui adds templating functions.
+`{{ now }}` inserts today's date in the `YYYY-MM-DD` format GitHub expects. Add an offset to move
+it: `{{ now-2w }}` is two weeks ago and `{{ now+1d }}` is tomorrow.
 
-### `nowModify`
+Given the date today is 2025-02-02, a search filter of `updated:>={{ now-1mo }}` will output
+`updated:>=2025-01-02`.
 
-The `nowModify` function helps you calculate relative dates in the ISO-8601 format (which is what GitHub expects).
+An offset is `-` or `+` followed by one or more whole numbers with a unit, such as `-1mo2w`. The
+units are:
 
-Given the date today is 2025-02-02, a search filter of `updated:>={{ nowModify "-1mo" }}` will output `updated:>=2025-01-02`.
+- `d` for days
+- `w` for weeks
+- `mo` for months
+- `y` for years
 
-A duration string is a possibly signed sequence of decimal numbers, each with optional fraction and a unit suffix, such as `1w`, `-8h` or `1mo2w`.
-
-The available units are:
-
-- [Go's builtin durations](https://pkg.go.dev/time#ParseDuration) - `ns`, `us` (or `µs`), `ms`, `s`, `m`, `h`
-- Additionally:
-  - `d`/`D` for days
-  - `w`/`W` for weeks
-  - `M`/`mo` for months
-  - `y`/`Y` for years
+Months and years follow the calendar: a month before March 31 is February 28.
 
 ## Smart Filtering
 

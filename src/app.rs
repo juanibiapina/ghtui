@@ -571,7 +571,15 @@ impl App {
         {
             return None;
         }
-        let filters = s.search_value_for_fetch(gh.as_ref(), true);
+        let filters = match s.fetch_filters(gh.as_ref()) {
+            Ok(f) => f,
+            Err(e) => {
+                s.is_loading = false;
+                let msg = format!("{}: {e}", s.title);
+                self.notify_err(&msg);
+                return None;
+            }
+        };
         let limit = s.limit.unwrap_or(cfg_limit);
         let page = s.page_info.clone();
         let key = SectionKey { view, id };
@@ -1278,8 +1286,7 @@ impl App {
             let gh = self.gh_repo.clone();
             let (view, id) = (self.view, self.curr);
             if let Some(s) = self.section_mut() {
-                s.search_bar
-                    .set_value(&s.search_value_for_fetch(gh.as_ref(), false));
+                s.search_bar.set_value(&s.search_value(gh.as_ref()));
                 s.reset_rows();
                 self.fetch_next_page(view, id);
                 self.on_viewed_row_changed();
@@ -1551,7 +1558,7 @@ impl App {
             if s.has_current_repo_filter(gh.as_ref()) || !s.has_repo_filter() {
                 s.filtered_by_current_remote = !s.filtered_by_current_remote;
             }
-            let v = s.search_value_for_fetch(gh.as_ref(), false);
+            let v = s.search_value(gh.as_ref());
             if v != s.search_value {
                 s.search_value = v.clone();
                 s.search_bar.set_value(&v);
@@ -2490,7 +2497,7 @@ impl App {
         if let Some(command) = find(&kb.universal) {
             let mut vars = HashMap::new();
             if let Some(p) = &self.repo_path {
-                vars.insert("RepoPath".to_string(), p.display().to_string());
+                vars.insert("repoPath".to_string(), p.display().to_string());
             }
             self.run_custom_command(&command, vars);
             return;
@@ -2501,10 +2508,10 @@ impl App {
             (ViewType::Issues, Some(SelectedRow::Issue(i))) => {
                 if let Some(command) = find(&kb.issues) {
                     let vars = HashMap::from([
-                        (s("RepoName"), i.repository.name_with_owner.clone()),
-                        (s("IssueNumber"), i.number.to_string()),
-                        (s("IssueTitle"), i.title.clone()),
-                        (s("Author"), Login::of(&i.author).to_string()),
+                        (s("repoName"), i.repository.name_with_owner.clone()),
+                        (s("issueNumber"), i.number.to_string()),
+                        (s("issueTitle"), i.title.clone()),
+                        (s("author"), Login::of(&i.author).to_string()),
                     ]);
                     self.run_custom_command(&command, vars);
                 }
@@ -2512,26 +2519,26 @@ impl App {
             (ViewType::Prs, Some(SelectedRow::Pr(p))) => {
                 if let Some(command) = find(&kb.prs) {
                     let vars = HashMap::from([
-                        (s("RepoName"), p.primary.repository.name_with_owner.clone()),
-                        (s("PrNumber"), p.primary.number.to_string()),
-                        (s("HeadRefName"), p.primary.head_ref_name.clone()),
-                        (s("BaseRefName"), p.primary.base_ref_name.clone()),
-                        (s("Author"), Login::of(&p.primary.author).to_string()),
+                        (s("repoName"), p.primary.repository.name_with_owner.clone()),
+                        (s("prNumber"), p.primary.number.to_string()),
+                        (s("headRefName"), p.primary.head_ref_name.clone()),
+                        (s("baseRefName"), p.primary.base_ref_name.clone()),
+                        (s("author"), Login::of(&p.primary.author).to_string()),
                     ]);
                     self.run_custom_command(&command, vars);
                 }
             }
             (ViewType::Repo, Some(SelectedRow::Branch(b))) => {
                 if let Some(command) = find(&kb.branches) {
-                    let mut vars = HashMap::from([(s("HeadRefName"), b.b.name.clone())]);
+                    let mut vars = HashMap::from([(s("headRefName"), b.b.name.clone())]);
                     if let Some(p) = &self.repo_path {
-                        vars.insert(s("RepoPath"), p.display().to_string());
+                        vars.insert(s("repoPath"), p.display().to_string());
                     }
                     if let Some(pr) = &b.pr {
-                        vars.insert(s("RepoName"), pr.repository.name_with_owner.clone());
-                        vars.insert(s("PrNumber"), pr.number.to_string());
-                        vars.insert(s("BaseRefName"), pr.base_ref_name.clone());
-                        vars.insert(s("Author"), Login::of(&pr.author).to_string());
+                        vars.insert(s("repoName"), pr.repository.name_with_owner.clone());
+                        vars.insert(s("prNumber"), pr.number.to_string());
+                        vars.insert(s("baseRefName"), pr.base_ref_name.clone());
+                        vars.insert(s("author"), Login::of(&pr.author).to_string());
                     }
                     self.run_custom_command(&command, vars);
                 }
@@ -2539,8 +2546,8 @@ impl App {
             (ViewType::Notifications, Some(SelectedRow::Notification(n))) => {
                 if let Some(command) = find(&kb.notifications) {
                     let vars = HashMap::from([
-                        (s("RepoName"), n.repo().to_string()),
-                        (s("Number"), n.number().to_string()),
+                        (s("repoName"), n.repo().to_string()),
+                        (s("number"), n.number().to_string()),
                     ]);
                     self.run_custom_command(&command, vars);
                     return;
@@ -2549,13 +2556,13 @@ impl App {
                     SubjectType::PullRequest => {
                         if let Some(command) = find(&kb.prs) {
                             let mut vars = HashMap::from([
-                                (s("RepoName"), n.repo().to_string()),
-                                (s("PrNumber"), n.number().to_string()),
+                                (s("repoName"), n.repo().to_string()),
+                                (s("prNumber"), n.number().to_string()),
                             ]);
                             if let Some(pr) = &self.subject_pr {
-                                vars.insert(s("HeadRefName"), pr.primary.head_ref_name.clone());
-                                vars.insert(s("BaseRefName"), pr.primary.base_ref_name.clone());
-                                vars.insert(s("Author"), Login::of(&pr.primary.author).to_string());
+                                vars.insert(s("headRefName"), pr.primary.head_ref_name.clone());
+                                vars.insert(s("baseRefName"), pr.primary.base_ref_name.clone());
+                                vars.insert(s("author"), Login::of(&pr.primary.author).to_string());
                             }
                             self.run_custom_command(&command, vars);
                         }
@@ -2563,11 +2570,11 @@ impl App {
                     SubjectType::Issue => {
                         if let Some(command) = find(&kb.issues) {
                             let mut vars = HashMap::from([
-                                (s("RepoName"), n.repo().to_string()),
-                                (s("IssueNumber"), n.number().to_string()),
+                                (s("repoName"), n.repo().to_string()),
+                                (s("issueNumber"), n.number().to_string()),
                             ]);
                             if let Some(i) = &self.subject_issue {
-                                vars.insert(s("Author"), Login::of(&i.author).to_string());
+                                vars.insert(s("author"), Login::of(&i.author).to_string());
                             }
                             self.run_custom_command(&command, vars);
                         }
@@ -2580,20 +2587,20 @@ impl App {
     }
 
     fn run_custom_command(&mut self, template: &str, mut vars: HashMap<String, String>) {
-        if let Some(repo) = vars.get("RepoName").cloned()
+        if let Some(repo) = vars.get("repoName").cloned()
             && let Some(p) = util::repo_local_path(&repo, &self.cfg.repo_paths)
         {
-            vars.insert("RepoPath".into(), p);
+            vars.insert("repoPath".into(), p);
         }
-        if !vars.contains_key("RepoPath")
+        if !vars.contains_key("repoPath")
             && let Some(p) = &self.repo_path
         {
-            vars.insert("RepoPath".into(), p.display().to_string());
+            vars.insert("repoPath".into(), p.display().to_string());
         }
         let cmd = match crate::template::render(template, &vars) {
             Ok(c) => c,
-            Err(_) => {
-                self.error = Some(format!("failed to parsetemplate {template}"));
+            Err(e) => {
+                self.error = Some(format!("invalid command template: {e}"));
                 return;
             }
         };

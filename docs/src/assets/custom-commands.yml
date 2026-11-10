@@ -23,12 +23,12 @@ keybindings:
     - key: g
       name: lazygit
       command: >
-        cd {{.RepoPath}} && lazygit
+        cd {{ repoPath }} && lazygit
     - key: C
       name: code review
       command: >
-        tmux new-window -c {{.RepoPath}} '
-        nvim -c ":silent Octo pr edit {{.PrNumber}}"
+        tmux new-window -c {{ repoPath }} '
+        nvim -c ":silent Octo pr edit {{ prNumber }}"
         '
 repoPaths:
   juanibiapina/*: ~/workspace/juanibiapina/*

@@ -223,14 +223,15 @@ dashboard fetches results for the updated query immediately.
 | :----- | :--------: |
 | String | "relative" |
 
-This setting defines how dates are formatted. The format either be "relative" or a [go time format].
+This setting defines how dates are formatted. The format is either "relative" or a [strftime format]
+such as `"%Y-%m-%d %H:%M"`. ghtui checks the format when it loads the config.
 
 By default, the format is "relative" which fits just inside the default column width of
 updated at in the issues and pull request layouts.
 
 You may need to adjust the layout column width depending on your format.
 
-[go time format]: https://pkg.go.dev/time#pkg-constants
+[strftime format]: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
 
 ### Default View (`view`)
 

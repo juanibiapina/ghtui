@@ -1,115 +1,157 @@
-//! The subset of Go text/template used by ghtui: `{{ .Field }}` in custom
-//! keybinding commands (missing fields are errors) and `{{ nowModify "-2w" }}`
-//! in section filters.
+//! `{{ … }}` expressions in custom keybinding commands and section filters:
+//! `{{ prNumber }}` inserts a variable, and `{{ now }}`, `{{ now-2w }}` or
+//! `{{ now+1mo2d }}` insert a date as `YYYY-MM-DD`.
 
 use std::collections::HashMap;
 
 use anyhow::{Result, anyhow, bail};
-use chrono::{Duration, Local};
+use chrono::{Days, Local, Months, NaiveDate};
 
-pub fn render(tpl: &str, vars: &HashMap<String, String>) -> Result<String> {
+pub fn render(template: &str, vars: &HashMap<String, String>) -> Result<String> {
+    render_on(template, vars, Local::now().date_naive())
+}
+
+fn render_on(template: &str, vars: &HashMap<String, String>, today: NaiveDate) -> Result<String> {
     let mut out = String::new();
-    let mut rest = tpl;
+    let mut rest = template;
     while let Some(start) = rest.find("{{") {
         out.push_str(&rest[..start]);
         let after = &rest[start + 2..];
         let end = after
             .find("}}")
-            .ok_or_else(|| anyhow!("unclosed action in template"))?;
-        let expr = after[..end]
-            .trim()
-            .trim_start_matches('-')
-            .trim_end_matches('-')
-            .trim();
-        out.push_str(&eval(expr, vars)?);
+            .ok_or_else(|| anyhow!("'{{{{' without a closing '}}}}' in: {template}"))?;
+        out.push_str(&eval(after[..end].trim(), vars, today)?);
         rest = &after[end + 2..];
     }
     out.push_str(rest);
     Ok(out)
 }
 
-fn eval(expr: &str, vars: &HashMap<String, String>) -> Result<String> {
-    if let Some(field) = expr.strip_prefix('.') {
-        return vars
-            .get(field)
-            .cloned()
-            .ok_or_else(|| anyhow!("map has no entry for key \"{field}\""));
+fn eval(expr: &str, vars: &HashMap<String, String>, today: NaiveDate) -> Result<String> {
+    if let Some(offset) = expr.strip_prefix("now") {
+        let date = shift(today, offset.trim()).ok_or_else(|| {
+            anyhow!("invalid date '{{{{ {expr} }}}}': write now, now-2w or now+1mo2d")
+        })?;
+        return Ok(date.format("%Y-%m-%d").to_string());
     }
-    if let Some(arg) = expr.strip_prefix("nowModify") {
-        let arg = arg.trim().trim_matches('"');
-        let dur = parse_duration(arg)?;
-        return Ok((Local::now() + dur).format("%Y-%m-%d").to_string());
+    match vars.get(expr) {
+        Some(value) => Ok(value.clone()),
+        None if vars.is_empty() => bail!("unknown expression '{{{{ {expr} }}}}'"),
+        None => {
+            let mut names: Vec<&str> = vars.keys().map(String::as_str).collect();
+            names.sort();
+            bail!("unknown variable '{expr}': use one of {}", names.join(", "))
+        }
     }
-    bail!("unsupported template expression: {expr}")
 }
 
-/// "10d", "-1.5w", "3Y4M5d"; units d/D, w/W, mo/M, y/Y, plus Go's h/m/s.
-pub fn parse_duration(s: &str) -> Result<Duration> {
-    let (neg, s) = match s.strip_prefix('-') {
-        Some(r) => (true, r),
-        None => (false, s),
+/// Moves `date` by an offset like `-2w` or `+1mo2d`, in calendar units: d, w, mo, y.
+fn shift(date: NaiveDate, offset: &str) -> Option<NaiveDate> {
+    if offset.is_empty() {
+        return Some(date);
+    }
+    let (back, mut rest) = match offset.split_at(1) {
+        ("-", r) => (true, r),
+        ("+", r) => (false, r),
+        _ => return None,
     };
-    let re = regex::Regex::new(r"(\d*\.\d+|\d+)([^\d.]*)").unwrap();
-    let mut total_secs = 0f64;
-    let mut matched = false;
-    for cap in re.captures_iter(s) {
-        matched = true;
-        let n: f64 = cap[1].parse()?;
-        let unit = &cap[2];
-        let hours = if unit.contains("mo") || unit.contains('M') {
-            30.0 * 24.0
-        } else if unit.contains('d') || unit.contains('D') {
-            24.0
-        } else if unit.contains('w') || unit.contains('W') {
-            7.0 * 24.0
-        } else if unit.contains('y') || unit.contains('Y') {
-            365.0 * 24.0
-        } else {
-            match unit {
-                "h" => 1.0,
-                "m" => 1.0 / 60.0,
-                "s" => 1.0 / 3600.0,
-                _ => bail!("time: missing unit in duration \"{s}\""),
-            }
+    if rest.is_empty() {
+        return None;
+    }
+    let mut date = date;
+    while !rest.is_empty() {
+        let digits = rest
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(rest.len());
+        let n: u32 = rest[..digits].parse().ok()?;
+        rest = &rest[digits..];
+        let (unit, tail) = ["mo", "d", "w", "y"]
+            .iter()
+            .find_map(|u| rest.strip_prefix(u).map(|t| (*u, t)))?;
+        rest = tail;
+        date = match (unit, back) {
+            ("d", true) => date.checked_sub_days(Days::new(n.into()))?,
+            ("d", false) => date.checked_add_days(Days::new(n.into()))?,
+            ("w", true) => date.checked_sub_days(Days::new(7 * u64::from(n)))?,
+            ("w", false) => date.checked_add_days(Days::new(7 * u64::from(n)))?,
+            ("mo", true) => date.checked_sub_months(Months::new(n))?,
+            ("mo", false) => date.checked_add_months(Months::new(n))?,
+            (_, true) => date.checked_sub_months(Months::new(n.checked_mul(12)?))?,
+            (_, false) => date.checked_add_months(Months::new(n.checked_mul(12)?))?,
         };
-        total_secs += n * hours * 3600.0;
     }
-    if !matched {
-        bail!("time: invalid duration \"{s}\"");
-    }
-    let d = Duration::milliseconds((total_secs * 1000.0) as i64);
-    Ok(if neg { -d } else { d })
+    Some(date)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn day(s: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+    }
+
+    fn render_at(template: &str, today: &str) -> Result<String> {
+        render_on(template, &HashMap::new(), day(today))
+    }
+
     #[test]
-    fn substitutes_fields_and_errors_on_missing() {
-        let mut v = HashMap::new();
-        v.insert("PrNumber".to_string(), "42".to_string());
+    fn substitutes_variables() {
+        let vars = HashMap::from([("prNumber".to_string(), "42".to_string())]);
         assert_eq!(
-            render("gh pr view {{.PrNumber}}", &v).unwrap(),
-            "gh pr view 42"
+            render("gh pr view {{prNumber}} && echo {{ prNumber }}", &vars).unwrap(),
+            "gh pr view 42 && echo 42"
         );
-        assert_eq!(render("x {{ .PrNumber }} y", &v).unwrap(), "x 42 y");
-        assert!(render("cd {{.RepoPath}}", &v).is_err());
     }
 
     #[test]
-    fn durations() {
-        assert_eq!(parse_duration("-2w").unwrap(), -Duration::days(14));
-        assert_eq!(parse_duration("1mo").unwrap(), Duration::days(30));
-        assert_eq!(parse_duration("3d").unwrap(), Duration::days(3));
+    fn an_unknown_variable_names_itself_and_the_known_ones() {
+        let vars = HashMap::from([("prNumber".to_string(), "42".to_string())]);
+        let e = render("cd {{ repoPath }}", &vars).unwrap_err().to_string();
+        assert!(e.contains("'repoPath'") && e.contains("prNumber"), "{e}");
     }
 
     #[test]
-    fn now_modify_renders_a_date() {
-        let out = render("updated:>={{ nowModify \"-2w\" }}", &HashMap::new()).unwrap();
-        let want = (Local::now() - Duration::days(14))
-            .format("%Y-%m-%d")
-            .to_string();
-        assert_eq!(out, format!("updated:>={want}"));
+    fn now_renders_dates_with_calendar_offsets() {
+        assert_eq!(render_at("{{ now }}", "2025-02-02").unwrap(), "2025-02-02");
+        assert_eq!(
+            render_at("{{ now-1mo }}", "2025-02-02").unwrap(),
+            "2025-01-02"
+        );
+        assert_eq!(
+            render_at("{{ now-2w }}", "2025-02-02").unwrap(),
+            "2025-01-19"
+        );
+        assert_eq!(
+            render_at("{{now+1y1d}}", "2024-02-28").unwrap(),
+            "2025-03-01"
+        );
+    }
+
+    #[test]
+    fn a_month_back_from_the_31st_lands_on_the_last_day() {
+        assert_eq!(
+            render_at("{{ now-1mo }}", "2025-03-31").unwrap(),
+            "2025-02-28"
+        );
+    }
+
+    #[test]
+    fn invalid_offsets_are_errors() {
+        for t in [
+            "{{ now-2 }}",
+            "{{ now-1.5w }}",
+            "{{ now-2h }}",
+            "{{ now2w }}",
+            "{{ now- }}",
+        ] {
+            assert!(render_at(t, "2025-02-02").is_err(), "{t}");
+        }
+    }
+
+    #[test]
+    fn go_template_syntax_is_an_error() {
+        assert!(render_at("{{ nowModify \"-2w\" }}", "2025-02-02").is_err());
+        assert!(render_at("{{ .PrNumber }}", "2025-02-02").is_err());
     }
 }

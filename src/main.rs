@@ -27,7 +27,6 @@ mod text;
 mod theme;
 mod ui;
 mod util;
-mod util_time;
 mod views;
 
 use std::io::Write;

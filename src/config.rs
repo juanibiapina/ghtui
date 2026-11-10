@@ -8,6 +8,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
+use chrono::format::{Item, StrftimeItems};
+use chrono::{DateTime, Local, Utc};
 use ratatui::style::Color;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_yaml::{Mapping, Value};
@@ -186,7 +188,54 @@ pub struct Defaults {
     pub view: ViewType,
     pub layout: LayoutConfig,
     pub refetch_interval_minutes: u64,
-    pub date_format: String,
+    pub date_format: DateFormat,
+}
+
+/// How tables show dates: relative to now (`3d`) or a chrono strftime format.
+#[derive(Clone, Debug, Default)]
+pub enum DateFormat {
+    #[default]
+    Relative,
+    Strftime {
+        format: String,
+        items: Vec<Item<'static>>,
+    },
+}
+
+impl DateFormat {
+    pub fn format(&self, t: DateTime<Utc>) -> String {
+        match self {
+            DateFormat::Relative => crate::util::time_elapsed(t),
+            DateFormat::Strftime { items, .. } => t
+                .with_timezone(&Local)
+                .format_with_items(items.iter())
+                .to_string(),
+        }
+    }
+}
+
+impl Serialize for DateFormat {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            DateFormat::Relative => s.serialize_str("relative"),
+            DateFormat::Strftime { format, .. } => s.serialize_str(format),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DateFormat {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let format = String::deserialize(d)?;
+        if format == "relative" {
+            return Ok(DateFormat::Relative);
+        }
+        let items = StrftimeItems::new(&format).parse_to_owned().map_err(|_| {
+            serde::de::Error::custom(format!(
+                "'{format}' is not a strftime format like \"%Y-%m-%d %H:%M\""
+            ))
+        })?;
+        Ok(DateFormat::Strftime { format, items })
+    }
 }
 
 impl Default for Defaults {
@@ -200,7 +249,7 @@ impl Default for Defaults {
             notifications_limit: 20,
             view: ViewType::Prs,
             refetch_interval_minutes: 30,
-            date_format: String::new(),
+            date_format: DateFormat::Relative,
             layout: LayoutConfig {
                 prs: PrsLayoutConfig {
                     updated_at: ColumnConfig::with_width(time_w),
@@ -769,6 +818,32 @@ fn validate(cfg: &Config) -> Result<()> {
     if cfg.defaults.preview.height <= 0.0 {
         anyhow::bail!("defaults.preview.height must be greater than 0");
     }
+    let filters = [
+        (
+            "prSections",
+            cfg.pr_sections
+                .iter()
+                .map(|s| &s.filters)
+                .collect::<Vec<_>>(),
+        ),
+        (
+            "issuesSections",
+            cfg.issues_sections.iter().map(|s| &s.filters).collect(),
+        ),
+        (
+            "notificationsSections",
+            cfg.notifications_sections
+                .iter()
+                .map(|s| &s.filters)
+                .collect(),
+        ),
+    ];
+    for (list, filters) in filters {
+        for (i, f) in filters.into_iter().enumerate() {
+            crate::template::render(f, &HashMap::new())
+                .map_err(|e| anyhow!("invalid config at {list}[{i}].filters: {e}"))?;
+        }
+    }
     Ok(())
 }
 
@@ -889,6 +964,23 @@ mod tests {
             neither.contains("needs a builtin or a command"),
             "{neither}"
         );
+    }
+
+    #[test]
+    fn date_format_takes_strftime_and_rejects_invalid_formats() {
+        let cfg = layers(&["defaults:\n  dateFormat: '%Y-%m-%d'\n"]);
+        let t = DateTime::parse_from_rfc3339("2025-02-02T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert_eq!(cfg.defaults.date_format.format(t).len(), "2025-02-02".len());
+        let e = error("defaults:\n  dateFormat: '%Q'\n");
+        assert!(e.contains("defaults.dateFormat"), "{e}");
+    }
+
+    #[test]
+    fn an_invalid_filter_template_names_its_section() {
+        let e = error("prSections:\n- title: A\n  filters: 'updated:>={{ nowModify \"-2w\" }}'\n");
+        assert!(e.contains("prSections[0].filters"), "{e}");
     }
 
     #[test]

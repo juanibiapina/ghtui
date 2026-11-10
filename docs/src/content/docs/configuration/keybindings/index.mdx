@@ -45,7 +45,7 @@ keybindings:
     - key: g
       name: lazygit
       command: >
-        cd {{.RepoPath}} && lazygit
+        cd {{ repoPath }} && lazygit
     - key: s
       builtin: search
 ```
@@ -89,27 +89,27 @@ keybindings:
     - key: O
       builtin: checkout
     - key: m
-      command: gh pr merge --admin --repo {{.RepoName}} {{.PrNumber}}
+      command: gh pr merge --admin --repo {{ repoName }} {{ prNumber }}
     - key: g
       name: lazygit add
       command: >
-        cd {{.RepoPath}} && git add -A && lazygit
+        cd {{ repoPath }} && git add -A && lazygit
     - key: v
       name: approve
       command: >
-        gh pr review --repo {{.RepoName}} --approve --body "$(gum input --prompt='Approval Comment: ')" {{.PrNumber}}
+        gh pr review --repo {{ repoName }} --approve --body "$(gum input --prompt='Approval Comment: ')" {{ prNumber }}
 ```
 
 ### Available Command Arguments
 
 | Argument      | Description                                                                     |
 | ------------- | ------------------------------------------------------------------------------- |
-| `RepoName`    | The full name of the repo (e.g. `juanibiapina/ghtui`)                               |
-| `RepoPath`    | The path to the Repo, using the `config.yml` `repoPaths` key to get the mapping |
-| `PrNumber`    | The PR number                                                                   |
-| `HeadRefName` | The PR's head branch name                                                       |
-| `BaseRefName` | The PR's base branch name                                                       |
-| `Author`      | The username of the PR author                                                   |
+| `repoName`    | The full name of the repo (e.g. `juanibiapina/ghtui`)                               |
+| `repoPath`    | The path to the Repo, using the `config.yml` `repoPaths` key to get the mapping |
+| `prNumber`    | The PR number                                                                   |
+| `headRefName` | The PR's head branch name                                                       |
+| `baseRefName` | The PR's base branch name                                                       |
+| `author`      | The username of the PR author                                                   |
 
 ### Built-in Commands
 
@@ -148,18 +148,18 @@ keybindings:
   issues:
     key: "P"
     command: >
-      gh issue pin {{ .IssueNumber }} --repo {{ .RepoName }}
+      gh issue pin {{ issueNumber }} --repo {{ repoName }}
 ```
 
 ### Available Command Arguments
 
 | Argument      | Description                                                                     |
 | ------------- | ------------------------------------------------------------------------------- |
-| `RepoName`    | The full name of the repo (e.g. `juanibiapina/ghtui`)                               |
-| `RepoPath`    | The path to the Repo, using the `config.yml` `repoPaths` key to get the mapping |
-| `IssueNumber` | The issue number                                                                |
-| `IssueTitle`  | The issue title                                                                 |
-| `Author`      | The username of the issue author                                                |
+| `repoName`    | The full name of the repo (e.g. `juanibiapina/ghtui`)                               |
+| `repoPath`    | The path to the Repo, using the `config.yml` `repoPaths` key to get the mapping |
+| `issueNumber` | The issue number                                                                |
+| `issueTitle`  | The issue title                                                                 |
+| `author`      | The username of the issue author                                                |
 
 ### Built-in Commands
 
@@ -199,15 +199,15 @@ The command template receives different fields depending on whether the sidebar 
 
 | State            | PR template fields                       |
 | ---------------- | ---------------------------------------- |
-| Sidebar not open | `RepoName`, `PrNumber`, `RepoPath`       |
-| Sidebar open     | + `HeadRefName`, `BaseRefName`, `Author` |
+| Sidebar not open | `repoName`, `prNumber`, `repoPath`       |
+| Sidebar open     | + `headRefName`, `baseRefName`, `author` |
 
 | State            | Issue template fields                 |
 | ---------------- | ------------------------------------- |
-| Sidebar not open | `RepoName`, `IssueNumber`, `RepoPath` |
-| Sidebar open     | + `Author`                            |
+| Sidebar not open | `repoName`, `issueNumber`, `repoPath` |
+| Sidebar open     | + `author`                            |
 
-If a template references a sidebar-only field (e.g., `{{.HeadRefName}}`) before the sidebar is opened, the command fails with an error that names the missing field. Open the notification first to load the full data.
+If a template references a sidebar-only field (e.g., `{{ headRefName }}`) before the sidebar is opened, the command fails with an error that names the missing field. Open the notification first to load the full data.
 
 ### Built-in Commands
 

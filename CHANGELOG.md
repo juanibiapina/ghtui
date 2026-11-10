@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reject a `view` or `preview.position` value ghtui doesn't know, instead of falling back to the default.
 - Reject a keybinding that sets both `builtin` and `command`, or neither.
 - Rename the theme keys `newcontributor` and `unknownrole` to `newContributor` and `unknownRole`.
+- Change custom command variables to camelCase without a dot: write `{{ prNumber }}` instead of `{{.PrNumber}}`. A command that uses an unknown variable shows the error.
+- Replace `{{ nowModify "-2w" }}` in filters with `{{ now-2w }}`. Offsets take whole days, weeks, months and years, and months follow the calendar.
+- Change `dateFormat` from Go layouts to strftime formats, such as `%Y-%m-%d` instead of `2006-01-02`. An invalid format fails at launch.
+- Check section filter templates at launch, and show an error instead of searching for the raw `{{ }}` text.
 
 ### Fixed
 

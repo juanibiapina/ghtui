@@ -112,7 +112,7 @@ export function GET() {
                 {
                   key: "P",
                   command:
-                    "gh issue pin {{ .IssueNumber }} --repo {{ .RepoName }}",
+                    "gh issue pin {{ issueNumber }} --repo {{ repoName }}",
                 },
               ],
             },
@@ -121,12 +121,12 @@ export function GET() {
                 {
                   key: "c",
                   command:
-                    "tmux new-window -c {{.RepoPath}} '\n  gh pr checkout {{.PrNumber}} &&\n  nvim -c \":DiffviewOpen master...{{.HeadRefName}}\"\n'\n",
+                    "tmux new-window -c {{ repoPath }} '\n  gh pr checkout {{ prNumber }} &&\n  nvim -c \":DiffviewOpen master...{{ headRefName }}\"\n'\n",
                 },
                 {
                   key: "v",
                   command:
-                    "cd {{.RepoPath}} && code . && gh pr checkout {{.PrNumber}}\n",
+                    "cd {{ repoPath }} && code . && gh pr checkout {{ prNumber }}\n",
                 },
               ],
             },

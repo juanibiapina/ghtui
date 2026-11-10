@@ -461,7 +461,7 @@ mod tests {
             prs: vec![Keybinding {
                 key: "O".into(),
                 name: None,
-                action: Action::Command("echo {{.PrNumber}}".into()),
+                action: Action::Command("echo {{ prNumber }}".into()),
             }],
             ..Default::default()
         })
@@ -469,7 +469,7 @@ mod tests {
         assert!(k.u.page_down.matches("J"));
         assert!(!k.u.page_down.matches("ctrl+d"));
         assert_eq!(k.u.page_down.help_desc, "preview page down");
-        assert_eq!(k.custom_pr[0].help_desc, "echo {{.PrNumber}}");
+        assert_eq!(k.custom_pr[0].help_desc, "echo {{ prNumber }}");
     }
 
     #[test]
