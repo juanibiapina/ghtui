@@ -147,7 +147,7 @@ pub struct App {
 }
 
 /// A config size: a fraction of `total` when between 0 and 1, otherwise cells, capped at `total`.
-fn fraction_of(size: f64, total: usize) -> usize {
+fn resolve_size(size: f64, total: usize) -> usize {
     let cells = if size > 0.0 && size < 1.0 {
         size * total as f64
     } else {
@@ -373,7 +373,7 @@ impl App {
                 "right" => Position::Right,
                 "bottom" => Position::Bottom,
                 _ => {
-                    let pw = fraction_of(preview.width, self.width);
+                    let pw = resolve_size(preview.width, self.width);
                     if self.width.saturating_sub(pw) < MIN_TABLE_WIDTH_FOR_RIGHT_PREVIEW {
                         Position::Bottom
                     } else {
@@ -407,13 +407,13 @@ impl App {
         let (sections, rule, body) = match position {
             Position::Bottom => {
                 let avail = main.height.saturating_sub(1);
-                let ph = fraction_of(preview.height, avail as usize) as u16;
+                let ph = resolve_size(preview.height, avail as usize) as u16;
                 let [sections, rule, body] =
                     Layout::vertical([Fill(1), Length(1), Length(ph)]).areas(main);
                 (sections, rule, body)
             }
             Position::Right => {
-                let pw = fraction_of(preview.width, self.width) as u16;
+                let pw = resolve_size(preview.width, self.width) as u16;
                 let [sections, outer] = Layout::horizontal([Fill(1), Length(pw)]).areas(main);
                 let [rule, body] = Layout::horizontal([Length(1), Fill(1)]).areas(outer);
                 (sections, rule, body)
@@ -768,7 +768,7 @@ impl App {
         let Some(RowRef::Notification(n)) = self.current_row() else {
             return;
         };
-        self.want_subject(&n);
+        self.fetch_subject_now(&n);
     }
 
     fn request_quit(&mut self) {
@@ -795,10 +795,10 @@ impl App {
                     self.apply_global_payload(payload);
                 }
                 if self.live.full_running.remove(&task_id) {
-                    self.pump_full();
+                    self.start_queued_full_searches();
                 }
                 if let Some(e) = &err {
-                    self.note_error(e);
+                    self.report_error(e);
                 }
             }
             Msg::PrDetail { url, result } => self.on_pr_detail(url, result),
@@ -807,8 +807,8 @@ impl App {
             Msg::DetailsLoaded(d) => self.on_details_loaded(*d),
             Msg::Synced(results) => self.on_synced(results),
             Msg::Checked(Ok(versions)) => self.on_checked(versions),
-            Msg::Checked(Err(e)) => self.note_error(&format!("checking PRs failed: {e}")),
-            Msg::CheckSelected { url } => self.check_selected(&url),
+            Msg::Checked(Err(e)) => self.report_error(&format!("checking PRs failed: {e}")),
+            Msg::CheckSelected { url } => self.check_selected_pr(&url),
             Msg::NotifUrl { id, url } => {
                 for s in self.notifs.iter_mut() {
                     if let Some(n) = s.notifs.iter_mut().find(|n| n.id() == id) {
@@ -1337,7 +1337,7 @@ impl App {
             self.scroll_preview(-3);
         }
 
-        self.section_key(key);
+        self.handle_section_key(key);
     }
 
     fn prev_section(&mut self) {
@@ -1527,7 +1527,7 @@ impl App {
         total.saturating_sub(self.preview_viewport_height())
     }
 
-    fn section_key(&mut self, key: &str) {
+    fn handle_section_key(&mut self, key: &str) {
         let k = self.keys.clone();
         let gh = self.gh_repo.clone();
         let (view, id) = (self.view, self.curr);
@@ -1572,12 +1572,12 @@ impl App {
                 }
             }
             Kind::Issue => {}
-            Kind::Notification => self.notification_section_key(key),
-            Kind::Branch => self.branch_section_key(key),
+            Kind::Notification => self.handle_notification_key(key),
+            Kind::Branch => self.handle_branch_key(key),
         }
     }
 
-    fn notification_section_key(&mut self, key: &str) {
+    fn handle_notification_key(&mut self, key: &str) {
         let k = self.keys.notif.clone();
         let (view, id) = (self.view, self.curr);
         let body_h = self.body_height();
@@ -2370,7 +2370,7 @@ impl App {
                 self.queue_notifications_if_due(false);
             }
         }
-        self.pump_full();
+        self.start_queued_full_searches();
         self.change_check(view);
         self.on_viewed_row_changed();
     }
@@ -2841,7 +2841,7 @@ impl App {
         self.sync_views(&[view]);
         if view == ViewType::Notifications {
             self.queue_notifications_if_due(false);
-            self.pump_full();
+            self.start_queued_full_searches();
         }
     }
 }
@@ -3040,7 +3040,7 @@ impl App {
         false
     }
 
-    fn branch_section_key(&mut self, key: &str) {
+    fn handle_branch_key(&mut self, key: &str) {
         let br = self.keys.branch.clone();
         let Some(b) = self.current_branch() else {
             return;

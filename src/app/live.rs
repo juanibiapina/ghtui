@@ -146,7 +146,7 @@ fn age_of(at: DateTime<Utc>) -> Duration {
     (Utc::now() - at).to_std().unwrap_or_default()
 }
 
-fn wall_of(t: Instant) -> DateTime<Utc> {
+fn utc_of_instant(t: Instant) -> DateTime<Utc> {
     Utc::now() - chrono::Duration::from_std(t.elapsed()).unwrap_or_default()
 }
 
@@ -353,9 +353,9 @@ impl App {
                         .live
                         .last_sync
                         .get(&ViewType::Repo)
-                        .map(|t| wall_of(*t)),
+                        .map(|t| utc_of_instant(*t)),
                     (Kind::Branch, _) => None,
-                    (_, t) => t.map(wall_of),
+                    (_, t) => t.map(utc_of_instant),
                 };
                 let Some(fetched_at) = fetched_at else {
                     continue;
@@ -385,7 +385,7 @@ impl App {
                 .live
                 .last_check
                 .iter()
-                .map(|(v, t)| (*v, wall_of(*t)))
+                .map(|(v, t)| (*v, utc_of_instant(*t)))
                 .collect(),
             sections,
             conditional: github::conditional_snapshot(),
@@ -455,7 +455,7 @@ impl App {
             self.sync_views(&due);
             self.queue_notifications_if_due(false);
         }
-        self.pump_full();
+        self.start_queued_full_searches();
         self.change_check(self.view);
         self.refresh_prefetch();
     }
@@ -487,7 +487,7 @@ impl App {
             if self.live.focused {
                 let views = self.views_current_first();
                 self.queue_full_refresh(&views);
-                self.pump_full();
+                self.start_queued_full_searches();
                 changed = true;
             } else {
                 self.live.refresh_due = true;
@@ -517,7 +517,7 @@ impl App {
                 && s.last_fetch_at.is_none()
                 && !s.is_loading
             {
-                self.queue_full(SectionKey { view, id });
+                self.queue_full_search(SectionKey { view, id });
             }
         }
     }
@@ -527,7 +527,7 @@ impl App {
             let n = self.sections_for(*v).len();
             for id in 0..n {
                 if matches!(self.sections_for(*v)[id].kind, Kind::Pr | Kind::Issue) {
-                    self.queue_full(SectionKey { view: *v, id });
+                    self.queue_full_search(SectionKey { view: *v, id });
                 }
             }
         }
@@ -541,7 +541,7 @@ impl App {
         }
         for id in 0..self.notifs.len() {
             if self.notifs[id].last_fetch_at.is_some() {
-                self.queue_full(SectionKey {
+                self.queue_full_search(SectionKey {
                     view: ViewType::Notifications,
                     id,
                 });
@@ -549,14 +549,14 @@ impl App {
         }
     }
 
-    fn queue_full(&mut self, key: SectionKey) {
+    fn queue_full_search(&mut self, key: SectionKey) {
         if !self.live.full_queue.contains(&key) {
             self.live.full_queue.push_back(key);
         }
     }
 
-    /// Starts queued full searches, up to `MAX_FULL_SEARCHES` at a time.
-    pub(super) fn pump_full(&mut self) {
+    /// Runs up to `MAX_FULL_SEARCHES` at a time.
+    pub(super) fn start_queued_full_searches(&mut self) {
         while self.live.full_running.len() < MAX_FULL_SEARCHES {
             let Some(key) = self.live.full_queue.pop_front() else {
                 return;
@@ -653,7 +653,7 @@ impl App {
         for sec in results {
             match sec.result {
                 Ok(rows) => self.apply_sync(sec.key, rows),
-                Err(e) => self.note_error(&format!("sync failed: {e}")),
+                Err(e) => self.report_error(&format!("sync failed: {e}")),
             }
         }
         self.live.dirty = true;
@@ -713,7 +713,7 @@ impl App {
         }
     }
 
-    fn check_ids(&self, view: ViewType) -> Vec<String> {
+    fn change_check_ids(&self, view: ViewType) -> Vec<String> {
         let mut ids: Vec<String> = match view {
             ViewType::Prs => self
                 .prs
@@ -753,7 +753,7 @@ impl App {
         {
             return;
         }
-        let ids = self.check_ids(view);
+        let ids = self.change_check_ids(view);
         if ids.is_empty() {
             // Notification subjects' IDs arrive with the details.
             if self.live.details_loaded {
@@ -763,10 +763,10 @@ impl App {
         }
         self.live.last_check.insert(view, Instant::now());
         self.live.dirty = true;
-        self.spawn_check(ids);
+        self.spawn_change_check(ids);
     }
 
-    fn spawn_check(&mut self, ids: Vec<String>) {
+    fn spawn_change_check(&mut self, ids: Vec<String>) {
         let now = Instant::now();
         for id in &ids {
             self.live.pr_checked.insert(id.clone(), now);
@@ -801,7 +801,7 @@ impl App {
     }
 
     /// The selection rested on a PR: check it alone if its last check is old.
-    pub(super) fn check_selected(&mut self, url: &str) {
+    pub(super) fn check_selected_pr(&mut self, url: &str) {
         if !self.live.focused {
             return;
         }
@@ -822,7 +822,7 @@ impl App {
         {
             return;
         }
-        self.spawn_check(vec![id]);
+        self.spawn_change_check(vec![id]);
     }
 
     fn schedule_check_selected(&mut self, url: String) {
@@ -909,8 +909,7 @@ impl App {
         self.live.subject_wanted = None;
     }
 
-    /// Fetches the selected notification's subject now.
-    pub(super) fn want_subject(&mut self, n: &NotifRow) {
+    pub(super) fn fetch_subject_now(&mut self, n: &NotifRow) {
         self.live.subject_wanted = Some(n.id().to_string());
         match n.subject_type() {
             "PullRequest" => self.live.pr_store.fetch_now(&n.url()),
@@ -948,7 +947,7 @@ impl App {
                 {
                     self.error = Some(format!("failed enriching pr: {e}"));
                 }
-                self.note_error(&e);
+                self.report_error(&e);
             }
         }
     }
@@ -974,7 +973,7 @@ impl App {
                     self.live.subject_wanted = None;
                     self.error = Some(format!("failed fetching notification Issue: {e}"));
                 }
-                self.note_error(&e);
+                self.report_error(&e);
             }
         }
     }
@@ -1127,7 +1126,7 @@ impl App {
     }
 
     /// Logs an error; a rate limit shows once a minute in the footer.
-    pub(super) fn note_error(&mut self, e: &str) {
+    pub(super) fn report_error(&mut self, e: &str) {
         crate::error!("{e}");
         if e.contains("rate limit")
             && self
