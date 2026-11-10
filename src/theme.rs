@@ -95,7 +95,7 @@ pub fn parse_color(s: &str) -> Option<Color> {
     s.parse::<u8>().ok().map(Color::Indexed)
 }
 
-/// lipgloss.Darken: scales each channel down, truncating.
+/// Scales each channel down by `pct`, truncating.
 pub fn darken(c: Color, pct: f64) -> Color {
     let mult = 1.0 - pct.clamp(0.0, 1.0);
     match c {
@@ -107,7 +107,7 @@ pub fn darken(c: Color, pct: f64) -> Color {
     }
 }
 
-/// lipgloss.Lighten: adds 255 * pct to each channel, capped at 255.
+/// Adds 255 * `pct` to each channel, capped at 255.
 pub fn lighten(c: Color, pct: f64) -> Color {
     let add = 255.0 * pct.clamp(0.0, 1.0);
     match c {

@@ -158,7 +158,7 @@ impl<T: Clone + Send + 'static> DetailStore<T> {
         g.stale_during.extend(in_flight);
     }
 
-    /// false: the background lane finishes its current batch and starts no new one.
+    /// When inactive, the background lane finishes its current batch and starts no new one.
     pub fn set_active(&self, active: bool) {
         self.shared.inner.lock().unwrap().active = active;
         self.shared.wake.notify_all();

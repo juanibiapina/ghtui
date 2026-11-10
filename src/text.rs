@@ -269,7 +269,7 @@ pub fn wrap_str(text: &str, width: usize, style: Style) -> Block {
     wrap_spans(&[Span::styled(text.to_string(), style)], width)
 }
 
-/// Prefixes every line of a block (lipgloss Padding-left / margin).
+/// Prefixes every line of a block with `n` spaces.
 pub fn indent(block: Block, n: usize) -> Block {
     let pad = " ".repeat(n);
     block

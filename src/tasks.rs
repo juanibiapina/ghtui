@@ -55,7 +55,7 @@ fn run_gh_task(
     });
 }
 
-/// close / reopen / ready / update-branch
+/// `verb` is close, reopen, ready or update-branch.
 pub fn simple_pr(app: &mut App, verb: &str, n: i64, repo: &str, key: SectionKey) {
     let (prefix, start, done, update) = match verb {
         "close" => (

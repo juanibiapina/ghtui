@@ -170,7 +170,7 @@ pub fn activity_description(reason: &str, subject_type: &str, actor: &str) -> St
     }
 }
 
-/// Selected row data, handed to the preview and to actions.
+/// Handed to the preview and to actions.
 #[derive(Clone, Debug)]
 pub enum SelectedRow {
     Pr(Box<PrRow>),

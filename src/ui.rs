@@ -17,7 +17,7 @@ use crate::text::*;
 use crate::theme;
 use crate::util::short_number;
 
-/// ansi.TruncateLeft: drops `n` cells from the left, prefixing `prefix` when something was cut.
+/// Drops `n` cells from the left, prefixing `prefix` when something was cut.
 fn truncate_left(l: &Line<'static>, n: usize, prefix: Option<Span<'static>>) -> Line<'static> {
     if n == 0 {
         return l.clone();

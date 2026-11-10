@@ -1189,7 +1189,7 @@ pub struct NotificationsPage {
     pub page_info: PageInfo,
 }
 
-/// Pages are numbered; EndCursor carries the next page number.
+/// Pages are numbered; `end_cursor` carries the next page number.
 pub fn fetch_notifications(
     limit: usize,
     repo_filters: &[String],

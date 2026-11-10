@@ -1255,7 +1255,7 @@ pub fn registry() -> &'static Registry {
             &["*.md", "*.mkd", "*.markdown"],
             markdown_rules,
         ));
-        // Analysers attached to XML lexers in Go code.
+        // Chroma attaches these analysers to XML lexers in its Go code.
         for (name, f) in [
             ("mysql", mysql_analyser as fn(&str) -> f32),
             ("dns", dns_analyser),
