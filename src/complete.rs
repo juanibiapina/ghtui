@@ -32,7 +32,7 @@ pub struct Suggestion {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct Ctx {
+pub struct CursorToken {
     pub start: (usize, usize),
     pub end: (usize, usize),
     pub content: String,
@@ -60,24 +60,24 @@ pub struct Completer {
     pub repo: Option<(String, String)>,
 }
 
-fn is_ws(c: char) -> bool {
+fn is_whitespace(c: char) -> bool {
     matches!(c, ' ' | '\t' | '\n' | '\r')
 }
 
 fn is_boundary(c: char) -> bool {
-    is_ws(c) || ",.!?;:()[]{}<>\"'`".contains(c)
+    is_whitespace(c) || ",.!?;:()[]{}<>\"'`".contains(c)
 }
 
 fn line_chars(input: &str, y: usize) -> Vec<char> {
     input.split('\n').nth(y).unwrap_or("").chars().collect()
 }
 
-pub fn word_at(input: &str, (x, y): (usize, usize)) -> Ctx {
+pub fn word_at(input: &str, (x, y): (usize, usize)) -> CursorToken {
     let runes = line_chars(input, y);
     let x = x.min(runes.len());
     let mut start = 0;
     for i in (0..x).rev() {
-        if is_ws(runes[i]) {
+        if is_whitespace(runes[i]) {
             start = i + 1;
             break;
         }
@@ -85,12 +85,12 @@ pub fn word_at(input: &str, (x, y): (usize, usize)) -> Ctx {
     }
     let mut end = runes.len();
     for (i, c) in runes.iter().enumerate().skip(x) {
-        if is_ws(*c) {
+        if is_whitespace(*c) {
             end = i;
             break;
         }
     }
-    Ctx {
+    CursorToken {
         start: (start, y),
         end: (end, y),
         content: runes[start..end]
@@ -102,7 +102,7 @@ pub fn word_at(input: &str, (x, y): (usize, usize)) -> Ctx {
 }
 
 /// The comma-separated item around the cursor.
-fn label_at(input: &str, (x, y): (usize, usize)) -> (Ctx, bool) {
+fn label_at(input: &str, (x, y): (usize, usize)) -> (CursorToken, bool) {
     let runes = line_chars(input, y);
     let x = x.min(runes.len());
     let start = (0..x)
@@ -119,7 +119,7 @@ fn label_at(input: &str, (x, y): (usize, usize)) -> (Ctx, bool) {
         .trim()
         .to_string();
     (
-        Ctx {
+        CursorToken {
             start: (start, y),
             end: (end, y),
             content,
@@ -226,7 +226,7 @@ impl Completer {
         }
     }
 
-    pub fn context(&self, input: &str, pos: (usize, usize)) -> Ctx {
+    pub fn context(&self, input: &str, pos: (usize, usize)) -> CursorToken {
         match self.kind {
             SourceKind::Search => {
                 let w = word_at(input, pos);
@@ -234,7 +234,7 @@ impl Completer {
                     .or(prefix_of(&w.content, ["label:", "-label:"]))
                 {
                     let plen = p.chars().count();
-                    return Ctx {
+                    return CursorToken {
                         start: (w.start.0 + plen, w.start.1),
                         end: w.end,
                         content: w.content[p.len()..].to_string(),
@@ -245,7 +245,7 @@ impl Completer {
             SourceKind::Labels => label_at(input, pos).0,
             SourceKind::Mention { with_at } => {
                 if input.is_empty() {
-                    return Ctx::default();
+                    return CursorToken::default();
                 }
                 let runes = line_chars(input, pos.1);
                 let x = pos.0.min(runes.len());
@@ -263,13 +263,13 @@ impl Completer {
                 if start > runes.len()
                     || (start > 0 && start < runes.len() && with_at && runes[start - 1] != '@')
                 {
-                    return Ctx::default();
+                    return CursorToken::default();
                 }
                 let end = (x..runes.len())
                     .find(|i| is_boundary(runes[*i]))
                     .unwrap_or(runes.len());
                 let end = end.max(start.min(runes.len()));
-                Ctx {
+                CursorToken {
                     start: (start.min(runes.len()), pos.1),
                     end: (end, pos.1),
                     content: runes[start.min(runes.len())..end].iter().collect(),
@@ -397,7 +397,7 @@ impl Completer {
         self.filtered.get(self.selected).map(|s| s.value.clone())
     }
 
-    fn insert(&self, input: &str, value: &str, ctx: &Ctx) -> (String, (usize, usize)) {
+    fn insert(&self, input: &str, value: &str, ctx: &CursorToken) -> (String, (usize, usize)) {
         let lines: Vec<&str> = input.split('\n').collect();
         let y = ctx.start.1;
         let runes: Vec<char> = lines.get(y).unwrap_or(&"").chars().collect();
@@ -494,7 +494,7 @@ impl Completer {
         self.filter(&text, pos);
         let after = self.context(&text, pos);
         if after != before {
-            if self.hide_on_empty && after == Ctx::default() {
+            if self.hide_on_empty && after == CursorToken::default() {
                 self.visible = false;
             } else if !self.hidden_by_user {
                 self.show_completions(&text, pos);

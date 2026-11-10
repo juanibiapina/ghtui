@@ -291,7 +291,7 @@ struct Entry {
 }
 
 /// The markdown theme's code block colors.
-fn entry(t: TT) -> Option<Entry> {
+fn theme_entry(t: TT) -> Option<Entry> {
     let fg = |c: u32| {
         Some(Entry {
             fg: Some(c),
@@ -347,18 +347,18 @@ fn entry(t: TT) -> Option<Entry> {
 fn token_style(t: TT) -> Style {
     let chain: Vec<Entry> = [t, sub_category(t), category(t), chroma::TEXT]
         .iter()
-        .filter_map(|x| entry(*x))
+        .filter_map(|x| theme_entry(*x))
         .collect();
     let fg = chain.iter().find_map(|e| e.fg);
-    let bg = entry(t).and_then(|e| e.bg);
+    let bg = theme_entry(t).and_then(|e| e.bg);
     let mut s = Style::default();
     if let Some(c) = fg {
-        s = s.fg(c256(c));
+        s = s.fg(hex_to_256(c));
     }
     if let Some(c) = bg {
-        s = s.bg(c256(c));
+        s = s.bg(hex_to_256(c));
     }
-    if chain.iter().find(|e| e.bold).is_some() && entry(t).map(|e| e.bold).unwrap_or(true) {
+    if chain.iter().find(|e| e.bold).is_some() && theme_entry(t).map(|e| e.bold).unwrap_or(true) {
         s = s.add_modifier(Modifier::BOLD);
     }
     if chain.iter().any(|e| e.italic) {
@@ -370,7 +370,7 @@ fn token_style(t: TT) -> Style {
     s
 }
 
-fn c256(hex: u32) -> Color {
+fn hex_to_256(hex: u32) -> Color {
     Color::Indexed(nearest_256((hex >> 16) as u8, (hex >> 8) as u8, hex as u8))
 }
 

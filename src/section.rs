@@ -172,7 +172,7 @@ pub fn activity_description(reason: &str, subject_type: &str, actor: &str) -> St
 
 /// Selected row data, handed to the preview and to actions.
 #[derive(Clone, Debug)]
-pub enum RowRef {
+pub enum SelectedRow {
     Pr(Box<PrRow>),
     Issue(Box<Issue>),
     Notification(Box<NotifRow>),
@@ -186,29 +186,29 @@ pub struct BranchRow {
     pub pr: Option<PullRequest>,
 }
 
-impl RowRef {
+impl SelectedRow {
     pub fn number(&self) -> i64 {
         match self {
-            RowRef::Pr(p) => p.primary.number,
-            RowRef::Issue(i) => i.number,
-            RowRef::Notification(n) => n.number(),
-            RowRef::Branch(b) => b.pr.as_ref().map(|p| p.number).unwrap_or(0),
+            SelectedRow::Pr(p) => p.primary.number,
+            SelectedRow::Issue(i) => i.number,
+            SelectedRow::Notification(n) => n.number(),
+            SelectedRow::Branch(b) => b.pr.as_ref().map(|p| p.number).unwrap_or(0),
         }
     }
     pub fn url(&self) -> String {
         match self {
-            RowRef::Pr(p) => p.primary.url.clone(),
-            RowRef::Issue(i) => i.url.clone(),
-            RowRef::Notification(n) => n.url(),
-            RowRef::Branch(b) => b.pr.as_ref().map(|p| p.url.clone()).unwrap_or_default(),
+            SelectedRow::Pr(p) => p.primary.url.clone(),
+            SelectedRow::Issue(i) => i.url.clone(),
+            SelectedRow::Notification(n) => n.url(),
+            SelectedRow::Branch(b) => b.pr.as_ref().map(|p| p.url.clone()).unwrap_or_default(),
         }
     }
     pub fn repo(&self) -> String {
         match self {
-            RowRef::Pr(p) => p.primary.repository.name_with_owner.clone(),
-            RowRef::Issue(i) => i.repository.name_with_owner.clone(),
-            RowRef::Notification(n) => n.repo().to_string(),
-            RowRef::Branch(b) => b.b.remotes.first().cloned().unwrap_or_default(),
+            SelectedRow::Pr(p) => p.primary.repository.name_with_owner.clone(),
+            SelectedRow::Issue(i) => i.repository.name_with_owner.clone(),
+            SelectedRow::Notification(n) => n.repo().to_string(),
+            SelectedRow::Branch(b) => b.b.remotes.first().cloned().unwrap_or_default(),
         }
     }
 }
@@ -222,7 +222,7 @@ pub struct Column {
     pub align: Alignment,
 }
 
-fn col(title: &str, width: Option<usize>, hidden: bool) -> Column {
+fn column(title: &str, width: Option<usize>, hidden: bool) -> Column {
     Column {
         title: title.into(),
         width,
@@ -249,27 +249,27 @@ pub fn pr_columns(cfg: &Config, section_layout: &PrsLayoutConfig) -> Vec<Column>
     let ci = m(&d.ci, &s.ci);
     let labels = m(&d.labels, &s.labels);
     let lines = m(&d.lines, &s.lines);
-    let mut title_col = col("Title", None, title.is_hidden());
+    let mut title_col = column("Title", None, title.is_hidden());
     title_col.grow = true;
     let compact = cfg.theme.ui.table.compact;
-    let mut cols = vec![col(icons::STATE_COL, Some(3), state.is_hidden())];
+    let mut cols = vec![column(icons::STATE_COL, Some(3), state.is_hidden())];
     if compact {
-        cols.push(col(icons::REPO, repo.width, repo.is_hidden()));
+        cols.push(column(icons::REPO, repo.width, repo.is_hidden()));
     }
     cols.push(title_col);
     if compact {
-        cols.push(col("Author", author.width, author.is_hidden()));
+        cols.push(column("Author", author.width, author.is_hidden()));
     }
     cols.extend([
-        col(icons::LABELS, labels.width, labels.is_hidden()),
-        col("Assignees", assignees.width, assignees.is_hidden()),
-        col("Base", base.width, base.is_hidden()),
-        col(icons::COMMENTS, Some(4), comments.is_hidden()),
-        col(icons::REVIEW_STATUS, Some(4), review.is_hidden()),
-        col(icons::CHECKS, Some(" CI ".len()), ci.is_hidden()),
-        col(icons::LINES, lines.width, lines.is_hidden()),
-        col(icons::UPDATED_AT, updated.width, updated.is_hidden()),
-        col(icons::CREATED_AT, created.width, created.is_hidden()),
+        column(icons::LABELS, labels.width, labels.is_hidden()),
+        column("Assignees", assignees.width, assignees.is_hidden()),
+        column("Base", base.width, base.is_hidden()),
+        column(icons::COMMENTS, Some(4), comments.is_hidden()),
+        column(icons::REVIEW_STATUS, Some(4), review.is_hidden()),
+        column(icons::CHECKS, Some(" CI ".len()), ci.is_hidden()),
+        column(icons::LINES, lines.width, lines.is_hidden()),
+        column(icons::UPDATED_AT, updated.width, updated.is_hidden()),
+        column(icons::CREATED_AT, created.width, created.is_hidden()),
     ]);
     cols
 }
@@ -286,18 +286,18 @@ pub fn issue_columns(cfg: &Config, section_layout: &IssuesLayoutConfig) -> Vec<C
     let reactions = d.reactions.merged(&s.reactions);
     let updated = d.updated_at.merged(&s.updated_at);
     let created = d.created_at.merged(&s.created_at);
-    let mut title_col = col("Title", None, title.is_hidden());
+    let mut title_col = column("Title", None, title.is_hidden());
     title_col.grow = true;
     vec![
-        col(icons::ISSUE_OPEN, state.width, state.is_hidden()),
-        col(icons::REPO, repo.width, repo.is_hidden()),
+        column(icons::ISSUE_OPEN, state.width, state.is_hidden()),
+        column(icons::REPO, repo.width, repo.is_hidden()),
         title_col,
-        col("Creator", creator.width, creator.is_hidden()),
-        col("Assignees", assignees.width, assignees.is_hidden()),
-        col(icons::COMMENTS, Some(6), comments.is_hidden()),
-        col(icons::REACTIONS, Some(6), reactions.is_hidden()),
-        col(icons::UPDATED_AT, updated.width, updated.is_hidden()),
-        col(icons::CREATED_AT, created.width, created.is_hidden()),
+        column("Creator", creator.width, creator.is_hidden()),
+        column("Assignees", assignees.width, assignees.is_hidden()),
+        column(icons::COMMENTS, Some(6), comments.is_hidden()),
+        column(icons::REACTIONS, Some(6), reactions.is_hidden()),
+        column(icons::UPDATED_AT, updated.width, updated.is_hidden()),
+        column(icons::CREATED_AT, created.width, created.is_hidden()),
     ]
 }
 
@@ -463,27 +463,27 @@ impl Section {
             .collect()
     }
 
-    pub fn current(&self) -> Option<RowRef> {
+    pub fn current(&self) -> Option<SelectedRow> {
         match self.kind {
             Kind::Pr => self
                 .prs
                 .get(self.cursor)
                 .cloned()
-                .map(|p| RowRef::Pr(Box::new(p))),
+                .map(|p| SelectedRow::Pr(Box::new(p))),
             Kind::Issue => self
                 .issues
                 .get(self.cursor)
                 .cloned()
-                .map(|i| RowRef::Issue(Box::new(i))),
+                .map(|i| SelectedRow::Issue(Box::new(i))),
             Kind::Notification => self
                 .notifs
                 .get(self.cursor)
                 .cloned()
-                .map(|n| RowRef::Notification(Box::new(n))),
+                .map(|n| SelectedRow::Notification(Box::new(n))),
             Kind::Branch => self
                 .filtered_branches()
                 .get(self.cursor)
-                .map(|b| RowRef::Branch(Box::new((*b).clone()))),
+                .map(|b| SelectedRow::Branch(Box::new((*b).clone()))),
         }
     }
 
@@ -963,7 +963,7 @@ impl Section {
     }
 }
 
-fn one(spans: Vec<Span<'static>>) -> Block {
+fn single_line(spans: Vec<Span<'static>>) -> Block {
     vec![Line::from(spans)]
 }
 
@@ -1148,39 +1148,39 @@ fn pr_row(
             icons::ELLIPSIS,
         );
         return vec![
-            one(vec![pr_state_icon(pr, t)]),
+            single_line(vec![pr_state_icon(pr, t)]),
             vec![top, title],
             labels,
-            one(vec![assignees]),
-            one(vec![span(pr.base_ref_name.clone(), t.primary())]),
-            one(vec![comments]),
-            one(vec![review]),
-            one(vec![ci]),
-            one(render_lines(pr, t)),
-            one(vec![updated]),
-            one(vec![created]),
+            single_line(vec![assignees]),
+            single_line(vec![span(pr.base_ref_name.clone(), t.primary())]),
+            single_line(vec![comments]),
+            single_line(vec![review]),
+            single_line(vec![ci]),
+            single_line(render_lines(pr, t)),
+            single_line(vec![updated]),
+            single_line(vec![created]),
         ];
     }
 
     vec![
-        one(vec![pr_state_icon(pr, t)]),
-        one(vec![span(pr.head_repository.name.clone(), t.faint())]),
-        one(issue_title(cfg, t, &pr.state, &pr.title, pr.number)),
-        one(author_with_icon(
+        single_line(vec![pr_state_icon(pr, t)]),
+        single_line(vec![span(pr.head_repository.name.clone(), t.faint())]),
+        single_line(issue_title(cfg, t, &pr.state, &pr.title, pr.number)),
+        single_line(author_with_icon(
             &pr.author.login,
             &pr.author_association,
             t,
             show_icon,
         )),
         labels,
-        one(vec![assignees]),
-        one(vec![span(pr.base_ref_name.clone(), t.primary())]),
-        one(vec![comments]),
-        one(vec![review]),
-        one(vec![ci]),
-        one(render_lines(pr, t)),
-        one(vec![updated]),
-        one(vec![created]),
+        single_line(vec![assignees]),
+        single_line(vec![span(pr.base_ref_name.clone(), t.primary())]),
+        single_line(vec![comments]),
+        single_line(vec![review]),
+        single_line(vec![ci]),
+        single_line(render_lines(pr, t)),
+        single_line(vec![updated]),
+        single_line(vec![created]),
     ]
 }
 
@@ -1193,22 +1193,22 @@ fn issue_row(issue: &Issue, rc: &RenderCtx) -> Vec<Block> {
         span(icons::ISSUE_CLOSED, t.primary())
     };
     vec![
-        one(vec![status]),
-        one(vec![span(issue.repository.name.clone(), t.primary())]),
-        one(issue_title(
+        single_line(vec![status]),
+        single_line(vec![span(issue.repository.name.clone(), t.primary())]),
+        single_line(issue_title(
             cfg,
             t,
             &issue.state,
             &issue.title,
             issue.number,
         )),
-        one(author_with_icon(
+        single_line(author_with_icon(
             &issue.author.login,
             &issue.author_association,
             t,
             cfg.show_author_icons,
         )),
-        one(vec![span(
+        single_line(vec![span(
             issue
                 .assignees
                 .nodes
@@ -1218,16 +1218,16 @@ fn issue_row(issue: &Issue, rc: &RenderCtx) -> Vec<Block> {
                 .join(","),
             t.primary(),
         )]),
-        one(vec![span(
+        single_line(vec![span(
             issue.comments.total_count.to_string(),
             t.primary(),
         )]),
-        one(vec![span(
+        single_line(vec![span(
             issue.reactions.total_count.to_string(),
             t.primary(),
         )]),
-        one(vec![span(time_cell(issue.updated_at, cfg), t.primary())]),
-        one(vec![span(time_cell(issue.created_at, cfg), t.primary())]),
+        single_line(vec![span(time_cell(issue.updated_at, cfg), t.primary())]),
+        single_line(vec![span(time_cell(issue.created_at, cfg), t.primary())]),
     ]
 }
 
@@ -1351,19 +1351,19 @@ fn notification_row(row: &NotifRow, rc: &RenderCtx) -> Vec<Block> {
 
 pub fn branch_columns(cfg: &Config) -> Vec<Column> {
     let d = &cfg.defaults.layout.prs;
-    let mut title_col = col("Title", None, d.title.is_hidden());
+    let mut title_col = column("Title", None, d.title.is_hidden());
     title_col.grow = true;
-    let ci = col(icons::CHECKS, Some(" CI ".len()), d.ci.is_hidden());
+    let ci = column(icons::CHECKS, Some(" CI ".len()), d.ci.is_hidden());
     if !cfg.theme.ui.table.compact {
         return vec![
-            col(icons::STATE_COL, Some(3), d.state.is_hidden()),
+            column(icons::STATE_COL, Some(3), d.state.is_hidden()),
             title_col,
-            col("Assignees", d.assignees.width, d.assignees.is_hidden()),
-            col("Base", d.base.width, d.base.is_hidden()),
-            col(icons::REVIEW_STATUS, Some(4), d.review_status.is_hidden()),
+            column("Assignees", d.assignees.width, d.assignees.is_hidden()),
+            column("Base", d.base.width, d.base.is_hidden()),
+            column(icons::REVIEW_STATUS, Some(4), d.review_status.is_hidden()),
             ci,
-            col(icons::LINES, d.lines.width, d.lines.is_hidden()),
-            col(
+            column(icons::LINES, d.lines.width, d.lines.is_hidden()),
+            column(
                 icons::PENDING_CHECKS,
                 d.updated_at.width,
                 d.updated_at.is_hidden(),
@@ -1371,16 +1371,16 @@ pub fn branch_columns(cfg: &Config) -> Vec<Column> {
         ];
     }
     vec![
-        col(icons::STATE_COL, Some(3), d.state.is_hidden()),
-        col(icons::REPO, d.repo.width, d.repo.is_hidden()),
+        column(icons::STATE_COL, Some(3), d.state.is_hidden()),
+        column(icons::REPO, d.repo.width, d.repo.is_hidden()),
         title_col,
-        col("Author", d.author.width, d.author.is_hidden()),
-        col("Assignees", d.assignees.width, d.assignees.is_hidden()),
-        col("Base", d.base.width, d.base.is_hidden()),
-        col(icons::REVIEW_STATUS, Some(4), d.review_status.is_hidden()),
+        column("Author", d.author.width, d.author.is_hidden()),
+        column("Assignees", d.assignees.width, d.assignees.is_hidden()),
+        column("Base", d.base.width, d.base.is_hidden()),
+        column(icons::REVIEW_STATUS, Some(4), d.review_status.is_hidden()),
         ci,
-        col(icons::LINES, d.lines.width, d.lines.is_hidden()),
-        col(
+        column(icons::LINES, d.lines.width, d.lines.is_hidden()),
+        column(
             icons::PENDING_CHECKS,
             d.updated_at.width,
             d.updated_at.is_hidden(),
@@ -1392,9 +1392,9 @@ fn branch_row(row: &BranchRow, rc: &RenderCtx, columns: &[Column], widths: &[usi
     let t = rc.theme;
     let cfg = rc.cfg;
     let pr = row.pr.as_ref();
-    let dash = || one(vec![raw("-")]);
+    let dash = || single_line(vec![raw("-")]);
     let state = match pr {
-        None => one(vec![span(
+        None => single_line(vec![span(
             icons::NO_DATA,
             Style::default().fg(t.success_text),
         )]),
@@ -1406,22 +1406,22 @@ fn branch_row(row: &BranchRow, rc: &RenderCtx, columns: &[Column], widths: &[usi
                 "MERGED" => (icons::MERGED, theme::MERGED_PR),
                 _ => ("-", t.faint_text),
             };
-            one(vec![span(icon, Style::default().fg(color))])
+            single_line(vec![span(icon, Style::default().fg(color))])
         }
     };
     let review = match pr {
         None => dash(),
-        Some(p) if p.review_decision == "APPROVED" => one(vec![span(
+        Some(p) if p.review_decision == "APPROVED" => single_line(vec![span(
             icons::APPROVED,
             Style::default().fg(t.success_text),
         )]),
-        Some(p) if p.review_decision == "CHANGES_REQUESTED" => one(vec![span(
+        Some(p) if p.review_decision == "CHANGES_REQUESTED" => single_line(vec![span(
             icons::CHANGES_REQUESTED,
             Style::default().fg(t.error_text),
         )]),
         Some(_) => {
             let (g, s) = t.waiting_glyph();
-            one(vec![span(g, s)])
+            single_line(vec![span(g, s)])
         }
     };
     let ci = match pr {
@@ -1434,15 +1434,15 @@ fn branch_row(row: &BranchRow, rc: &RenderCtx, columns: &[Column], widths: &[usi
                 .map(|c| c.commit.status_check_rollup.state.as_str())
                 .unwrap_or("UNKNOWN");
             match rollup {
-                "SUCCESS" => one(vec![span(
+                "SUCCESS" => single_line(vec![span(
                     icons::SUCCESS,
                     Style::default().fg(t.success_text),
                 )]),
                 "PENDING" => {
                     let (g, s) = t.waiting_glyph();
-                    one(vec![span(g, s)])
+                    single_line(vec![span(g, s)])
                 }
-                _ => one(vec![span(
+                _ => single_line(vec![span(
                     icons::FAILURE,
                     Style::default().fg(t.error_text),
                 )]),
@@ -1451,20 +1451,20 @@ fn branch_row(row: &BranchRow, rc: &RenderCtx, columns: &[Column], widths: &[usi
     };
     let lines = match pr {
         None => dash(),
-        Some(p) => one(render_lines(p, t)),
+        Some(p) => single_line(render_lines(p, t)),
     };
     let updated = {
         let at = pr.map(|p| p.updated_at).or(row.b.last_updated_at);
         match at {
-            Some(at) => one(vec![span(time_cell(at, cfg), t.faint())]),
-            None => one(vec![]),
+            Some(at) => single_line(vec![span(time_cell(at, cfg), t.faint())]),
+            None => single_line(vec![]),
         }
     };
-    let base = one(vec![span(
+    let base = single_line(vec![span(
         pr.map(|p| p.base_ref_name.clone()).unwrap_or_default(),
         t.primary(),
     )]);
-    let assignees = one(vec![span(
+    let assignees = single_line(vec![span(
         pr.map(|p| {
             p.assignees
                 .nodes
@@ -1518,14 +1518,14 @@ fn branch_row(row: &BranchRow, rc: &RenderCtx, columns: &[Column], widths: &[usi
     }
     let (repo, title, author) = match pr {
         Some(p) => (
-            one(vec![span(p.head_repository.name.clone(), t.faint())]),
-            one(issue_title(cfg, t, &p.state, &p.title, p.number)),
-            one(vec![span(p.author.login.clone(), t.primary())]),
+            single_line(vec![span(p.head_repository.name.clone(), t.faint())]),
+            single_line(issue_title(cfg, t, &p.state, &p.title, p.number)),
+            single_line(vec![span(p.author.login.clone(), t.primary())]),
         ),
         None => (
-            one(vec![]),
-            one(vec![span(row.b.name.clone(), t.primary())]),
-            one(vec![]),
+            single_line(vec![]),
+            single_line(vec![span(row.b.name.clone(), t.primary())]),
+            single_line(vec![]),
         ),
     };
     vec![

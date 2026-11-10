@@ -266,7 +266,7 @@ struct ChecksStats {
     awaiting_approval: i64,
 }
 
-fn tally(stats: &mut ChecksStats, counts: &[CountByState]) {
+fn add_check_counts(stats: &mut ChecksStats, counts: &[CountByState]) {
     for c in counts {
         let s = c.state.as_str();
         if is_status_waiting(s) {
@@ -289,8 +289,8 @@ fn checks_stats(e: &PullRequestDetails) -> ChecksStats {
         return s;
     };
     let ctx = &last.commit.status_check_rollup.contexts;
-    tally(&mut s, &ctx.check_run_counts_by_state);
-    tally(&mut s, &ctx.status_context_counts_by_state);
+    add_check_counts(&mut s, &ctx.check_run_counts_by_state);
+    add_check_counts(&mut s, &ctx.status_context_counts_by_state);
     for suite in &last.commit.check_suites.nodes {
         if suite.conclusion == "ACTION_REQUIRED" {
             s.awaiting_approval += 1;
@@ -1045,11 +1045,11 @@ fn pr_activity(t: &Theme, row: &PrRow, w: usize) -> Block {
     let Some(e) = &row.details else {
         return vec![Line::from("Loading...")];
     };
-    struct Act {
+    struct Activity {
         at: chrono::DateTime<chrono::Utc>,
         block: Block,
     }
-    let mut acts: Vec<Act> = vec![];
+    let mut acts: Vec<Activity> = vec![];
     let comment_header = |author: &str, at: chrono::DateTime<chrono::Utc>| -> Block {
         let content = Line::from(vec![
             span(author.to_string(), t.main_text()),
@@ -1072,7 +1072,7 @@ fn pr_activity(t: &Theme, row: &PrRow, w: usize) -> Block {
             )));
             b.push(Line::default());
             b.extend(markdown::render(&markdown::clean_body(&c.body), w));
-            acts.push(Act {
+            acts.push(Activity {
                 at: c.updated_at,
                 block: b,
             });
@@ -1081,7 +1081,7 @@ fn pr_activity(t: &Theme, row: &PrRow, w: usize) -> Block {
     for c in &e.comments.nodes {
         let mut b = comment_header(&c.author.login, c.updated_at);
         b.extend(markdown::render(&markdown::clean_body(&c.body), w));
-        acts.push(Act {
+        acts.push(Activity {
             at: c.updated_at,
             block: b,
         });
@@ -1105,7 +1105,7 @@ fn pr_activity(t: &Theme, row: &PrRow, w: usize) -> Block {
             ),
         ])];
         b.extend(markdown::render(&r.body, w));
-        acts.push(Act {
+        acts.push(Activity {
             at: r.updated_at,
             block: b,
         });
@@ -1175,8 +1175,8 @@ fn pr_commits(t: &Theme, row: &PrRow, w: usize) -> Block {
         let ctx = &c.status_check_rollup.contexts;
         if ctx.total_count > 0 {
             let mut s = ChecksStats::default();
-            tally(&mut s, &ctx.check_run_counts_by_state);
-            tally(&mut s, &ctx.status_context_counts_by_state);
+            add_check_counts(&mut s, &ctx.check_run_counts_by_state);
+            add_check_counts(&mut s, &ctx.status_context_counts_by_state);
             let sign = match c.status_check_rollup.state.as_str() {
                 "ERROR" | "FAILURE" => glyph(t.failure_glyph()),
                 "SUCCESS" => glyph(t.success_glyph()),

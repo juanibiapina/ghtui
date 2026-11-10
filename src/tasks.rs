@@ -33,7 +33,7 @@ pub fn run_gh(args: &[&str], dir: Option<&str>) -> std::result::Result<String, S
     }
 }
 
-fn fire(
+fn run_gh_task(
     app: &mut App,
     id: String,
     args: Vec<String>,
@@ -53,10 +53,6 @@ fn fire(
             payload,
         })
     });
-}
-
-fn s(v: &str) -> String {
-    v.to_string()
 }
 
 /// close / reopen / ready / update-branch
@@ -96,8 +92,14 @@ pub fn simple_pr(app: &mut App, verb: &str, n: i64, repo: &str, key: SectionKey)
             UpdatePr::default(),
         ),
     };
-    let args = vec![s("pr"), s(verb), n.to_string(), s("-R"), s(repo)];
-    fire(
+    let args = vec![
+        String::from("pr"),
+        String::from(verb),
+        n.to_string(),
+        String::from("-R"),
+        String::from(repo),
+    ];
+    run_gh_task(
         app,
         format!("{prefix}_{n}"),
         args,
@@ -124,13 +126,19 @@ pub fn simple_issue(app: &mut App, verb: &str, n: i64, repo: &str, key: SectionK
             format!("Issue #{n} has been reopened"),
         )
     };
-    let args = vec![s("issue"), s(verb), n.to_string(), s("-R"), s(repo)];
+    let args = vec![
+        String::from("issue"),
+        String::from(verb),
+        n.to_string(),
+        String::from("-R"),
+        String::from(repo),
+    ];
     let payload = Payload::UpdateIssue(UpdateIssue {
         number: n,
         is_closed: Some(closed),
         ..Default::default()
     });
-    fire(
+    run_gh_task(
         app,
         format!("issue_{verb}_{n}"),
         args,
@@ -290,15 +298,15 @@ pub fn comment(app: &mut App, is_pr: bool, n: i64, repo: &str, body: &str, key: 
         })
     };
     let args = vec![
-        s(noun),
-        s("comment"),
+        String::from(noun),
+        String::from("comment"),
         n.to_string(),
-        s("-R"),
-        s(repo),
-        s("-b"),
-        s(body),
+        String::from("-R"),
+        String::from(repo),
+        String::from("-b"),
+        String::from(body),
     ];
-    fire(
+    run_gh_task(
         app,
         format!("{noun}_comment_{n}"),
         args,
@@ -311,18 +319,18 @@ pub fn comment(app: &mut App, is_pr: bool, n: i64, repo: &str, body: &str, key: 
 
 pub fn approve(app: &mut App, n: i64, repo: &str, comment: &str, key: SectionKey) {
     let mut args = vec![
-        s("pr"),
-        s("review"),
-        s("-R"),
-        s(repo),
+        String::from("pr"),
+        String::from("review"),
+        String::from("-R"),
+        String::from(repo),
         n.to_string(),
-        s("--approve"),
+        String::from("--approve"),
     ];
     if !comment.is_empty() {
-        args.push(s("--body"));
-        args.push(s(comment));
+        args.push(String::from("--body"));
+        args.push(String::from(comment));
     }
-    fire(
+    run_gh_task(
         app,
         format!("pr_approve_{n}"),
         args,
@@ -345,14 +353,20 @@ pub fn assign(
     add: bool,
     key: SectionKey,
 ) {
-    let mut args = vec![s(noun), s("edit"), n.to_string(), s("-R"), s(repo)];
+    let mut args = vec![
+        String::from(noun),
+        String::from("edit"),
+        n.to_string(),
+        String::from("-R"),
+        String::from(repo),
+    ];
     let flag = if add {
         "--add-assignee"
     } else {
         "--remove-assignee"
     };
     for u in &users {
-        args.push(s(flag));
+        args.push(String::from(flag));
         args.push(u.clone());
     }
     let list = format!("[{}]", users.join(" "));
@@ -384,7 +398,7 @@ pub fn assign(
             ..Default::default()
         })
     };
-    fire(app, id, args, start, done, key, payload);
+    run_gh_task(app, id, args, start, done, key, payload);
 }
 
 pub fn label(
@@ -396,15 +410,21 @@ pub fn label(
     existing: &[Label],
     key: SectionKey,
 ) {
-    let mut args = vec![s(noun), s("edit"), n.to_string(), s("-R"), s(repo)];
+    let mut args = vec![
+        String::from(noun),
+        String::from("edit"),
+        n.to_string(),
+        String::from("-R"),
+        String::from(repo),
+    ];
     for l in existing {
         if !labels.contains(&l.name) {
-            args.push(s("--remove-label"));
+            args.push(String::from("--remove-label"));
             args.push(l.name.clone());
         }
     }
     for l in &labels {
-        args.push(s("--add-label"));
+        args.push(String::from("--add-label"));
         args.push(l.clone());
     }
     let colors: HashMap<&str, &str> = existing
@@ -436,7 +456,7 @@ pub fn label(
             ..Default::default()
         })
     };
-    fire(
+    run_gh_task(
         app,
         format!("{noun}_label_{n}"),
         args,

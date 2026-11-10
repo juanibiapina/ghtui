@@ -59,19 +59,19 @@ pub struct ColumnConfig {
 }
 
 impl ColumnConfig {
-    fn w(width: usize) -> Self {
+    fn with_width(width: usize) -> Self {
         Self {
             width: Some(width),
             hidden: None,
         }
     }
-    fn wh(width: usize, hidden: bool) -> Self {
+    fn with_width_and_hidden(width: usize, hidden: bool) -> Self {
         Self {
             width: Some(width),
             hidden: Some(hidden),
         }
     }
-    fn h(hidden: bool) -> Self {
+    fn with_hidden(hidden: bool) -> Self {
         Self {
             width: None,
             hidden: Some(hidden),
@@ -221,24 +221,24 @@ impl Default for Defaults {
             date_format: String::new(),
             layout: LayoutConfig {
                 prs: PrsLayoutConfig {
-                    updated_at: ColumnConfig::w(time_w),
-                    created_at: ColumnConfig::w(time_w),
-                    repo: ColumnConfig::w(20),
-                    author: ColumnConfig::w(15),
-                    author_icon: ColumnConfig::h(false),
-                    labels: ColumnConfig::wh(22, true),
-                    assignees: ColumnConfig::wh(20, true),
-                    base: ColumnConfig::wh(15, true),
-                    lines: ColumnConfig::w(" +31.4k -31.6k ".len()),
+                    updated_at: ColumnConfig::with_width(time_w),
+                    created_at: ColumnConfig::with_width(time_w),
+                    repo: ColumnConfig::with_width(20),
+                    author: ColumnConfig::with_width(15),
+                    author_icon: ColumnConfig::with_hidden(false),
+                    labels: ColumnConfig::with_width_and_hidden(22, true),
+                    assignees: ColumnConfig::with_width_and_hidden(20, true),
+                    base: ColumnConfig::with_width_and_hidden(15, true),
+                    lines: ColumnConfig::with_width(" +31.4k -31.6k ".len()),
                     ..Default::default()
                 },
                 issues: IssuesLayoutConfig {
-                    updated_at: ColumnConfig::w(time_w),
-                    created_at: ColumnConfig::w(time_w),
-                    repo: ColumnConfig::w(15),
-                    creator: ColumnConfig::w(10),
-                    creator_icon: ColumnConfig::h(false),
-                    assignees: ColumnConfig::wh(20, true),
+                    updated_at: ColumnConfig::with_width(time_w),
+                    created_at: ColumnConfig::with_width(time_w),
+                    repo: ColumnConfig::with_width(15),
+                    creator: ColumnConfig::with_width(10),
+                    creator_icon: ColumnConfig::with_hidden(false),
+                    assignees: ColumnConfig::with_width_and_hidden(20, true),
                     ..Default::default()
                 },
             },

@@ -353,7 +353,7 @@ fn rate_headers(resp: &ureq::http::Response<ureq::Body>) -> RateHeaders {
     }
 }
 
-fn op_name(query: &str) -> &str {
+fn operation_name(query: &str) -> &str {
     query
         .trim_start()
         .strip_prefix("query ")
@@ -488,7 +488,7 @@ impl Client {
         let elapsed = started.elapsed();
         crate::info!(
             "api graphql op={} lane={:?} status={status} ms={} remaining={}",
-            op_name(query),
+            operation_name(query),
             lane(),
             elapsed.as_millis(),
             h.remaining.map(|r| r.to_string()).unwrap_or_default()
@@ -1112,12 +1112,8 @@ pub fn current_login() -> Result<String> {
 #[serde(default)]
 struct User {
     login: String,
-    #[serde(deserialize_with = "null_str")]
+    #[serde(deserialize_with = "crate::model::null_as_default")]
     name: String,
-}
-
-fn null_str<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<String, D::Error> {
-    Ok(Option::<String>::deserialize(d)?.unwrap_or_default())
 }
 
 /// Mentionable users as (login, name), cached per repo.

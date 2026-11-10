@@ -21,8 +21,8 @@ use crate::model::*;
 use crate::mouse::{HitMap, Target};
 use crate::msg::*;
 use crate::section::{
-    self, Kind, NotifRow, PrRow, RowRef, Section, SectionSpec, issue_columns, notification_columns,
-    pr_columns,
+    self, Kind, NotifRow, PrRow, Section, SectionSpec, SelectedRow, issue_columns,
+    notification_columns, pr_columns,
 };
 use crate::tasks;
 use crate::text::Block;
@@ -345,13 +345,13 @@ impl App {
         self.sections_mut().get_mut(c)
     }
 
-    pub fn current_row(&self) -> Option<RowRef> {
+    pub fn current_row(&self) -> Option<SelectedRow> {
         self.section().and_then(|s| s.current())
     }
 
     fn selected_notification_id(&self) -> String {
         match self.current_row() {
-            Some(RowRef::Notification(n)) => n.id().to_string(),
+            Some(SelectedRow::Notification(n)) => n.id().to_string(),
             _ => String::new(),
         }
     }
@@ -746,7 +746,7 @@ impl App {
         if !self.preview_open {
             return;
         }
-        if let Some(RowRef::Notification(n)) = self.current_row() {
+        if let Some(SelectedRow::Notification(n)) = self.current_row() {
             if self.subject_id == n.id() {
                 return;
             }
@@ -765,7 +765,7 @@ impl App {
     }
 
     fn preview_notification(&mut self) {
-        let Some(RowRef::Notification(n)) = self.current_row() else {
+        let Some(SelectedRow::Notification(n)) = self.current_row() else {
             return;
         };
         self.fetch_subject_now(&n);
@@ -1558,15 +1558,15 @@ impl App {
         match kind {
             Kind::Pr => {
                 if k.pr.diff.matches(key) {
-                    if let Some(RowRef::Pr(pr)) = self.current_row() {
+                    if let Some(SelectedRow::Pr(pr)) = self.current_row() {
                         self.diff_pr(pr.primary.number, &pr.primary.repository.name_with_owner);
                     }
                 } else if k.pr.checkout.matches(key) {
-                    if let Some(RowRef::Pr(pr)) = self.current_row() {
+                    if let Some(SelectedRow::Pr(pr)) = self.current_row() {
                         self.checkout_pr(pr.primary.number, &pr.primary.repository.name_with_owner);
                     }
                 } else if k.pr.watch_checks.matches(key)
-                    && let Some(RowRef::Pr(pr)) = self.current_row()
+                    && let Some(SelectedRow::Pr(pr)) = self.current_row()
                 {
                     self.watch_checks(&pr);
                 }
@@ -1795,8 +1795,8 @@ impl App {
                     let notifs: Vec<String> = s.notifs.iter().map(|n| n.id().to_string()).collect();
                     let key = SectionKey { view, id };
                     match row {
-                        Some(RowRef::Pr(pr)) => self.pr_action(&action, &pr, key),
-                        Some(RowRef::Issue(i)) => {
+                        Some(SelectedRow::Pr(pr)) => self.pr_action(&action, &pr, key),
+                        Some(SelectedRow::Issue(i)) => {
                             self.issue_action(&action, i.number, &i.repository.name_with_owner, key)
                         }
                         _ => {}
@@ -1872,15 +1872,18 @@ impl App {
         }
     }
 
-    fn editor_target(&self, is_pr: bool) -> Option<RowRef> {
+    fn editor_target(&self, is_pr: bool) -> Option<SelectedRow> {
         if self.view == ViewType::Notifications {
             if is_pr {
-                return self.subject_pr.clone().map(|p| RowRef::Pr(Box::new(p)));
+                return self
+                    .subject_pr
+                    .clone()
+                    .map(|p| SelectedRow::Pr(Box::new(p)));
             }
             return self
                 .subject_issue
                 .clone()
-                .map(|i| RowRef::Issue(Box::new(i)));
+                .map(|i| SelectedRow::Issue(Box::new(i)));
         }
         self.current_row()
     }
@@ -1895,17 +1898,17 @@ impl App {
             return;
         };
         let (number, repo, labels_now) = match &row {
-            RowRef::Pr(p) => (
+            SelectedRow::Pr(p) => (
                 p.primary.number,
                 p.primary.repository.name_with_owner.clone(),
                 p.primary.labels.nodes.clone(),
             ),
-            RowRef::Issue(i) => (
+            SelectedRow::Issue(i) => (
                 i.number,
                 i.repository.name_with_owner.clone(),
                 i.labels.nodes.clone(),
             ),
-            RowRef::Notification(_) | RowRef::Branch(_) => return,
+            SelectedRow::Notification(_) | SelectedRow::Branch(_) => return,
         };
         let noun = if is_pr { "pr" } else { "issue" };
         let words: Vec<String> = value.split_whitespace().map(String::from).collect();
@@ -1952,7 +1955,7 @@ impl App {
             }
         };
         let (assignees, labels) = match &row {
-            RowRef::Pr(p) => (
+            SelectedRow::Pr(p) => (
                 p.primary
                     .assignees
                     .nodes
@@ -1966,7 +1969,7 @@ impl App {
                     .map(|l| l.name.clone())
                     .collect::<Vec<_>>(),
             ),
-            RowRef::Issue(i) => (
+            SelectedRow::Issue(i) => (
                 i.assignees.nodes.iter().map(|a| a.login.clone()).collect(),
                 i.labels.nodes.iter().map(|l| l.name.clone()).collect(),
             ),
@@ -2127,7 +2130,7 @@ impl App {
             }
         }
         if i.checkout.matches(key) {
-            if let Some(RowRef::Issue(issue)) = self.current_row() {
+            if let Some(SelectedRow::Issue(issue)) = self.current_row() {
                 self.checkout_issue(issue.number, &issue.repository.name_with_owner);
             }
             return true;
@@ -2459,7 +2462,7 @@ impl App {
                     return true;
                 }
                 match self.current_row() {
-                    Some(RowRef::Notification(n)) => match n.subject_type() {
+                    Some(SelectedRow::Notification(n)) => match n.subject_type() {
                         "PullRequest" => custom(&kb.prs),
                         "Issue" => custom(&kb.issues),
                         _ => false,
@@ -2488,7 +2491,7 @@ impl App {
         };
         let s = |v: &str| v.to_string();
         match (self.view, row) {
-            (ViewType::Issues, Some(RowRef::Issue(i))) => {
+            (ViewType::Issues, Some(SelectedRow::Issue(i))) => {
                 if let Some(b) = kb.issues.iter().find(|b| b.key == key) {
                     let vars = HashMap::from([
                         (s("RepoName"), i.repository.name_with_owner.clone()),
@@ -2499,7 +2502,7 @@ impl App {
                     self.run_custom_command(&b.command, vars);
                 }
             }
-            (ViewType::Prs, Some(RowRef::Pr(p))) => {
+            (ViewType::Prs, Some(SelectedRow::Pr(p))) => {
                 if let Some(b) = find(&kb.prs) {
                     let vars = HashMap::from([
                         (s("RepoName"), p.primary.repository.name_with_owner.clone()),
@@ -2511,7 +2514,7 @@ impl App {
                     self.run_custom_command(&b.command, vars);
                 }
             }
-            (ViewType::Repo, Some(RowRef::Branch(b))) => {
+            (ViewType::Repo, Some(SelectedRow::Branch(b))) => {
                 if let Some(binding) = find(&kb.branches) {
                     let mut vars = HashMap::from([(s("HeadRefName"), b.b.name.clone())]);
                     if let Some(p) = &self.repo_path {
@@ -2526,7 +2529,7 @@ impl App {
                     self.run_custom_command(&binding.command, vars);
                 }
             }
-            (ViewType::Notifications, Some(RowRef::Notification(n))) => {
+            (ViewType::Notifications, Some(SelectedRow::Notification(n))) => {
                 if let Some(b) = find(&kb.notifications) {
                     let vars = HashMap::from([
                         (s("RepoName"), n.repo().to_string()),
@@ -2773,15 +2776,15 @@ impl App {
             approve_workflows_key: approve_key,
         };
         match row {
-            RowRef::Pr(pr) => {
+            SelectedRow::Pr(pr) => {
                 let (lines, tabs) = views::pr_view(t, &pr, width, &pr_state);
                 (lines, Some(tabs))
             }
-            RowRef::Issue(i) => (
+            SelectedRow::Issue(i) => (
                 views::issue_view(t, &i, width, self.issue_editor.as_ref()),
                 None,
             ),
-            RowRef::Notification(n) => {
+            SelectedRow::Notification(n) => {
                 if self.subject_id == n.id() {
                     if let Some(pr) = &self.subject_pr {
                         let (lines, tabs) = views::pr_view(t, pr, width, &pr_state);
@@ -2800,7 +2803,7 @@ impl App {
                     (views::notification_prompt(t, &n), None)
                 }
             }
-            RowRef::Branch(b) => {
+            SelectedRow::Branch(b) => {
                 let preview_w = self.areas().preview.map_or(0, |p| p.outer().width);
                 let rule_w = (preview_w as usize).saturating_sub(5);
                 (
@@ -2991,7 +2994,7 @@ impl App {
 
     fn current_branch(&self) -> Option<section::BranchRow> {
         match self.current_row() {
-            Some(RowRef::Branch(b)) => Some(*b),
+            Some(SelectedRow::Branch(b)) => Some(*b),
             _ => None,
         }
     }

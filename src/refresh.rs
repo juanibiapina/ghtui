@@ -36,7 +36,7 @@ impl SyncRow for Issue {
 }
 
 /// The ID and update time of each row, as the list sync compares them.
-pub fn known<R: SyncRow>(rows: &[R]) -> Vec<(String, DateTime<Utc>)> {
+pub fn row_versions<R: SyncRow>(rows: &[R]) -> Vec<(String, DateTime<Utc>)> {
     rows.iter()
         .map(|r| (r.node_id().to_string(), r.updated_at()))
         .collect()
@@ -210,7 +210,7 @@ mod tests {
             row("gone", t0, "gone"),
         ];
         let m = membership(&[("new", t1), ("a", t1), ("b", t0)]);
-        assert_eq!(changed_ids(&known(&cached), &m), vec!["new", "a"]);
+        assert_eq!(changed_ids(&row_versions(&cached), &m), vec!["new", "a"]);
         let fetched = vec![row("a", t1, "new a"), row("new", t1, "new")];
         let rows = apply_membership(&cached, &m, &fetched);
         let titles: Vec<&str> = rows.iter().map(|r| r.primary.title.as_str()).collect();

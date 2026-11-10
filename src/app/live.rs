@@ -13,7 +13,7 @@ use crate::github::{self, Membership, PrVersion, SyncQuery};
 use crate::model::*;
 use crate::msg::*;
 use crate::refresh::{self, PrefetchRows, Subject};
-use crate::section::{Kind, NotifRow, PrRow, RowRef, Section};
+use crate::section::{Kind, NotifRow, PrRow, Section, SelectedRow};
 use crate::store::{DetailStore, LanePolicy, Retry};
 
 /// Full searches running at once in the background.
@@ -592,11 +592,14 @@ impl App {
                     let filters = s.search_value_for_fetch(self.gh_repo.as_ref(), true);
                     let limit = s.limit.unwrap_or(default_limit);
                     let (query, known) = if s.kind == Kind::Pr {
-                        (SyncQuery::prs(&filters, limit), refresh::known(&s.prs))
+                        (
+                            SyncQuery::prs(&filters, limit),
+                            refresh::row_versions(&s.prs),
+                        )
                     } else {
                         (
                             SyncQuery::issues(&filters, limit),
-                            refresh::known(&s.issues),
+                            refresh::row_versions(&s.issues),
                         )
                     };
                     out.push(SyncTarget {
@@ -622,7 +625,7 @@ impl App {
                             &self.branch_pr_filters(),
                             self.cfg.defaults.prs_limit,
                         ),
-                        known: refresh::known(&s.prs),
+                        known: refresh::row_versions(&s.prs),
                     });
                 }
             }
@@ -806,11 +809,13 @@ impl App {
             return;
         }
         let id = match self.current_row() {
-            Some(RowRef::Pr(pr)) if pr.primary.url == url => pr.primary.id.clone(),
-            Some(RowRef::Notification(n)) if n.url() == url => match self.live.pr_store.get(url) {
-                Some(e) => e.value.id,
-                None => return,
-            },
+            Some(SelectedRow::Pr(pr)) if pr.primary.url == url => pr.primary.id.clone(),
+            Some(SelectedRow::Notification(n)) if n.url() == url => {
+                match self.live.pr_store.get(url) {
+                    Some(e) => e.value.id,
+                    None => return,
+                }
+            }
             _ => return,
         };
         if id.is_empty()
@@ -837,7 +842,7 @@ impl App {
         if !self.live.details_loaded {
             return;
         }
-        let Some(RowRef::Pr(pr)) = self.current_row() else {
+        let Some(SelectedRow::Pr(pr)) = self.current_row() else {
             return;
         };
         let url = pr.primary.url.clone();
@@ -924,7 +929,7 @@ impl App {
         result: Result<Box<PullRequestDetails>, String>,
     ) {
         let selected = match self.current_row() {
-            Some(RowRef::Notification(n)) if n.url() == url => Some(n.id().to_string()),
+            Some(SelectedRow::Notification(n)) if n.url() == url => Some(n.id().to_string()),
             _ => None,
         };
         match result {
@@ -943,7 +948,7 @@ impl App {
                 if selected.is_some() && self.live.subject_wanted == selected {
                     self.live.subject_wanted = None;
                     self.error = Some(format!("failed fetching notification PR: {e}"));
-                } else if matches!(self.current_row(), Some(RowRef::Pr(p)) if p.primary.url == url)
+                } else if matches!(self.current_row(), Some(SelectedRow::Pr(p)) if p.primary.url == url)
                 {
                     self.error = Some(format!("failed enriching pr: {e}"));
                 }
@@ -954,7 +959,7 @@ impl App {
 
     pub(super) fn on_issue_detail(&mut self, url: String, result: Result<Box<Issue>, String>) {
         let selected = match self.current_row() {
-            Some(RowRef::Notification(n)) if n.url() == url => Some(n.id().to_string()),
+            Some(SelectedRow::Notification(n)) if n.url() == url => Some(n.id().to_string()),
             _ => None,
         };
         match result {
