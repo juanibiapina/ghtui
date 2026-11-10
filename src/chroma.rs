@@ -11,20 +11,20 @@ use fancy_regex::{Regex, RegexBuilder};
 
 include!(concat!(env!("OUT_DIR"), "/chroma_lexers.rs"));
 
-pub type TT = i32;
+pub type TokenType = i32;
 
-pub const ERROR: TT = -11;
-pub const OTHER: TT = -12;
-pub const IGNORE: TT = -14;
-pub const TEXT: TT = 8000;
+pub const ERROR: TokenType = -11;
+pub const OTHER: TokenType = -12;
+pub const IGNORE: TokenType = -14;
+pub const TEXT: TokenType = 8000;
 
-fn token_types() -> &'static HashMap<&'static str, TT> {
-    static T: OnceLock<HashMap<&'static str, TT>> = OnceLock::new();
+fn token_types() -> &'static HashMap<&'static str, TokenType> {
+    static T: OnceLock<HashMap<&'static str, TokenType>> = OnceLock::new();
     T.get_or_init(|| {
         let mut m = HashMap::new();
-        let mut add = |base: TT, names: &[&'static str]| {
+        let mut add = |base: TokenType, names: &[&'static str]| {
             for (i, n) in names.iter().enumerate() {
-                m.insert(*n, base + i as TT);
+                m.insert(*n, base + i as TokenType);
             }
         };
         add(-11, &["Error", "Other", "None", "Ignore"]);
@@ -147,14 +147,14 @@ fn token_types() -> &'static HashMap<&'static str, TT> {
     })
 }
 
-fn tt(name: &str) -> TT {
+fn token_type(name: &str) -> TokenType {
     *token_types().get(name).unwrap_or(&ERROR)
 }
 
-pub fn sub_category(t: TT) -> TT {
+pub fn sub_category(t: TokenType) -> TokenType {
     t / 100 * 100
 }
-pub fn category(t: TT) -> TT {
+pub fn category(t: TokenType) -> TokenType {
     t / 1000 * 1000
 }
 
@@ -267,7 +267,7 @@ fn compile(pattern: &str) -> Option<Regex> {
 
 #[derive(Clone, Debug)]
 pub enum Emitter {
-    Token(TT),
+    Token(TokenType),
     ByGroups(Vec<Option<Emitter>>),
     Using(String),
     UsingSelf(String),
@@ -278,8 +278,8 @@ pub enum Emitter {
     },
     UsingRemap {
         lexer: String,
-        from: TT,
-        to: TT,
+        from: TokenType,
+        to: TokenType,
     },
 }
 
@@ -339,14 +339,14 @@ pub struct Lexer {
 }
 
 #[derive(Debug, Default)]
-struct El {
+struct XmlElement {
     name: String,
     attrs: Vec<(String, String)>,
-    children: Vec<El>,
+    children: Vec<XmlElement>,
     text: String,
 }
 
-impl El {
+impl XmlElement {
     fn attr(&self, k: &str) -> Option<&str> {
         self.attrs
             .iter()
@@ -360,15 +360,15 @@ impl El {
             .map(|(_, v)| v.clone())
             .collect()
     }
-    fn child(&self, n: &str) -> Option<&El> {
+    fn child(&self, n: &str) -> Option<&XmlElement> {
         self.children.iter().find(|c| c.name == n)
     }
 }
 
-fn parse_xml(src: &str) -> Option<El> {
+fn parse_xml(src: &str) -> Option<XmlElement> {
     use quick_xml::events::Event;
     let mut reader = quick_xml::Reader::from_str(src);
-    let mut stack: Vec<El> = vec![El::default()];
+    let mut stack: Vec<XmlElement> = vec![XmlElement::default()];
     loop {
         match reader.read_event().ok()? {
             Event::Start(e) => stack.push(element(&e)),
@@ -406,7 +406,7 @@ fn parse_xml(src: &str) -> Option<El> {
     stack.pop()?.children.into_iter().next()
 }
 
-fn element(e: &quick_xml::events::BytesStart) -> El {
+fn element(e: &quick_xml::events::BytesStart) -> XmlElement {
     let name = e.name().as_ref().to_string();
     let attrs = e
         .attributes()
@@ -421,7 +421,7 @@ fn element(e: &quick_xml::events::BytesStart) -> El {
             (k, v)
         })
         .collect();
-    El {
+    XmlElement {
         name,
         attrs,
         children: vec![],
@@ -429,7 +429,7 @@ fn element(e: &quick_xml::events::BytesStart) -> El {
     }
 }
 
-fn parse_config(el: &El) -> Config {
+fn parse_config(el: &XmlElement) -> Config {
     let mut c = Config::default();
     for ch in &el.children {
         let t = ch.text.trim().to_string();
@@ -459,9 +459,11 @@ fn parse_config(el: &El) -> Config {
     c
 }
 
-fn parse_emitter(el: &El) -> Option<Emitter> {
+fn parse_emitter(el: &XmlElement) -> Option<Emitter> {
     match el.name.as_str() {
-        "token" => Some(Emitter::Token(tt(el.attr("type").unwrap_or("Error")))),
+        "token" => Some(Emitter::Token(token_type(
+            el.attr("type").unwrap_or("Error"),
+        ))),
         "bygroups" => Some(Emitter::ByGroups(
             el.children.iter().map(parse_emitter).collect(),
         )),
@@ -489,7 +491,7 @@ fn parse_emitter(el: &El) -> Option<Emitter> {
     }
 }
 
-fn parse_mutator(el: &El) -> Option<Mutator> {
+fn parse_mutator(el: &XmlElement) -> Option<Mutator> {
     match el.name.as_str() {
         "push" => Some(Mutator::Push(el.attrs_all("state"))),
         "pop" => Some(Mutator::Pop(
@@ -504,7 +506,7 @@ fn parse_mutator(el: &El) -> Option<Mutator> {
     }
 }
 
-fn parse_rules(el: &El) -> Vec<(String, Vec<Rule>)> {
+fn parse_rules(el: &XmlElement) -> Vec<(String, Vec<Rule>)> {
     let Some(rules) = el.child("rules") else {
         return vec![];
     };
@@ -679,7 +681,7 @@ fn expand(map: &mut HashMap<String, Vec<Arc<Rule>>>) {
     }
 }
 
-pub type Token = (TT, String);
+pub type Token = (TokenType, String);
 
 fn ensure_lf(t: &str) -> String {
     t.replace("\r\n", "\n").replace('\r', "\n")
@@ -851,8 +853,8 @@ fn words(prefix: &str, suffix: &str, words: &[&str]) -> String {
     format!("{prefix}({}){suffix}", quoted.join("|"))
 }
 
-fn tok(name: &str) -> Option<Emitter> {
-    Some(Emitter::Token(tt(name)))
+fn token(name: &str) -> Option<Emitter> {
+    Some(Emitter::Token(token_type(name)))
 }
 
 fn bygroups(names: &[Option<Emitter>]) -> Option<Emitter> {
@@ -929,15 +931,15 @@ fn go_rules() -> Vec<(String, Vec<Rule>)> {
     vec![(
         "root".into(),
         vec![
-            r(r"\n", tok("TextWhitespace")),
-            r(r"\s+", tok("TextWhitespace")),
-            r(r"//[^\s][^\n\r]*", tok("CommentPreproc")),
-            r(r"//\s+[^\n\r]*", tok("CommentSingle")),
-            r(r"/(\\\n)?[*](.|\n)*?[*](\\\n)?/", tok("CommentMultiline")),
-            r(r"(import|package)\b", tok("KeywordNamespace")),
+            r(r"\n", token("TextWhitespace")),
+            r(r"\s+", token("TextWhitespace")),
+            r(r"//[^\s][^\n\r]*", token("CommentPreproc")),
+            r(r"//\s+[^\n\r]*", token("CommentSingle")),
+            r(r"/(\\\n)?[*](.|\n)*?[*](\\\n)?/", token("CommentMultiline")),
+            r(r"(import|package)\b", token("KeywordNamespace")),
             r(
                 r"(var|func|struct|map|chan|type|interface|const)\b",
-                tok("KeywordDeclaration"),
+                token("KeywordDeclaration"),
             ),
             r(
                 &words(
@@ -961,58 +963,58 @@ fn go_rules() -> Vec<(String, Vec<Rule>)> {
                         "return",
                     ],
                 ),
-                tok("Keyword"),
+                token("Keyword"),
             ),
-            r(r"(true|false|iota|nil)\b", tok("KeywordConstant")),
+            r(r"(true|false|iota|nil)\b", token("KeywordConstant")),
             r(
                 &words("", r"\b(\()", &builtins),
-                bygroups(&[tok("NameBuiltin"), tok("Punctuation")]),
+                bygroups(&[token("NameBuiltin"), token("Punctuation")]),
             ),
-            r(&words("", r"\b", &types), tok("KeywordType")),
-            r(r"\d+i", tok("LiteralNumber")),
-            r(r"\d+\.\d*([Ee][-+]\d+)?i", tok("LiteralNumber")),
-            r(r"\.\d+([Ee][-+]\d+)?i", tok("LiteralNumber")),
-            r(r"\d+[Ee][-+]\d+i", tok("LiteralNumber")),
+            r(&words("", r"\b", &types), token("KeywordType")),
+            r(r"\d+i", token("LiteralNumber")),
+            r(r"\d+\.\d*([Ee][-+]\d+)?i", token("LiteralNumber")),
+            r(r"\.\d+([Ee][-+]\d+)?i", token("LiteralNumber")),
+            r(r"\d+[Ee][-+]\d+i", token("LiteralNumber")),
             r(
                 r"\d+(\.\d+[eE][+\-]?\d+|\.\d*|[eE][+\-]?\d+)",
-                tok("LiteralNumberFloat"),
+                token("LiteralNumberFloat"),
             ),
-            r(r"\.\d+([eE][+\-]?\d+)?", tok("LiteralNumberFloat")),
-            r(r"0[0-7]+", tok("LiteralNumberOct")),
-            r(r"0[xX][0-9a-fA-F_]+", tok("LiteralNumberHex")),
-            r(r"0b[01_]+", tok("LiteralNumberBin")),
-            r(r"(0|[1-9][0-9_]*)", tok("LiteralNumberInteger")),
+            r(r"\.\d+([eE][+\-]?\d+)?", token("LiteralNumberFloat")),
+            r(r"0[0-7]+", token("LiteralNumberOct")),
+            r(r"0[xX][0-9a-fA-F_]+", token("LiteralNumberHex")),
+            r(r"0b[01_]+", token("LiteralNumberBin")),
+            r(r"(0|[1-9][0-9_]*)", token("LiteralNumberInteger")),
             r(
                 r#"'(\\['"\\abfnrtv]|\\x[0-9a-fA-F]{2}|\\[0-7]{1,3}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8}|[^\\])'"#,
-                tok("LiteralStringChar"),
+                token("LiteralStringChar"),
             ),
             r(
                 "(`)([^`]*)(`)",
                 bygroups(&[
-                    tok("LiteralString"),
+                    token("LiteralString"),
                     Some(Emitter::UsingRemap {
                         lexer: "Go Text Template".into(),
                         from: OTHER,
-                        to: tt("LiteralString"),
+                        to: token_type("LiteralString"),
                     }),
-                    tok("LiteralString"),
+                    token("LiteralString"),
                 ]),
             ),
-            r(r#""(\\\\|\\"|[^"])*""#, tok("LiteralString")),
+            r(r#""(\\\\|\\"|[^"])*""#, token("LiteralString")),
             r(
                 r"(<<=|>>=|<<|>>|<=|>=|&\^=|&\^|\+=|-=|\*=|/=|%=|&=|\|=|&&|\|\||<-|\+\+|--|==|!=|:=|\.\.\.|[+\-*/%&])",
-                tok("Operator"),
+                token("Operator"),
             ),
             r(
                 r"([a-zA-Z_]\w*)(\s*)(\()",
                 bygroups(&[
-                    tok("NameFunction"),
+                    token("NameFunction"),
                     Some(Emitter::UsingSelf("root".into())),
-                    tok("Punctuation"),
+                    token("Punctuation"),
                 ]),
             ),
-            r(r"[|^<>=!()\[\]{}.,;:~]", tok("Punctuation")),
-            r(r"[^\W\d]\w*", tok("NameOther")),
+            r(r"[|^<>=!()\[\]{}.,;:~]", token("Punctuation")),
+            r(r"[^\W\d]\w*", token("NameOther")),
         ],
     )]
 }
@@ -1024,37 +1026,41 @@ fn markdown_rules() -> Vec<(String, Vec<Rule>)> {
         (
             "root".into(),
             vec![
-                r(r"^(#[^#].+\n)", bygroups(&[tok("GenericHeading")])),
-                r(r"^(#{2,6}.+\n)", bygroups(&[tok("GenericSubheading")])),
+                r(r"^(#[^#].+\n)", bygroups(&[token("GenericHeading")])),
+                r(r"^(#{2,6}.+\n)", bygroups(&[token("GenericSubheading")])),
                 r(
                     r"^(\s*)([*-] )(\[[ xX]\])( .+\n)",
                     bygroups(&[
-                        tok("Text"),
-                        tok("Keyword"),
-                        tok("Keyword"),
+                        token("Text"),
+                        token("Keyword"),
+                        token("Keyword"),
                         inline_self.clone(),
                     ]),
                 ),
                 r(
                     r"^(\s*)([*-])(\s)(.+\n)",
                     bygroups(&[
-                        tok("Text"),
-                        tok("Keyword"),
-                        tok("Text"),
+                        token("Text"),
+                        token("Keyword"),
+                        token("Text"),
                         inline_self.clone(),
                     ]),
                 ),
                 r(
                     r"^(\s*)([0-9]+\.)( .+\n)",
-                    bygroups(&[tok("Text"), tok("Keyword"), inline_self.clone()]),
+                    bygroups(&[token("Text"), token("Keyword"), inline_self.clone()]),
                 ),
                 r(
                     r"^(\s*>\s)(.+\n)",
-                    bygroups(&[tok("Keyword"), tok("GenericEmph")]),
+                    bygroups(&[token("Keyword"), token("GenericEmph")]),
                 ),
                 r(
                     "^(```\\n)([\\w\\W]*?)(^```$)",
-                    bygroups(&[tok("LiteralString"), tok("Text"), tok("LiteralString")]),
+                    bygroups(&[
+                        token("LiteralString"),
+                        token("Text"),
+                        token("LiteralString"),
+                    ]),
                 ),
                 r(
                     "^(```)(\\w+)(\\n)([\\w\\W]*?)(^```$)",
@@ -1062,11 +1068,11 @@ fn markdown_rules() -> Vec<(String, Vec<Rule>)> {
                         name_group: 2,
                         code_group: 4,
                         emitters: vec![
-                            tok("LiteralString"),
-                            tok("LiteralString"),
-                            tok("LiteralString"),
-                            tok("Text"),
-                            tok("LiteralString"),
+                            token("LiteralString"),
+                            token("LiteralString"),
+                            token("LiteralString"),
+                            token("Text"),
+                            token("LiteralString"),
                         ],
                     }),
                 ),
@@ -1076,44 +1082,44 @@ fn markdown_rules() -> Vec<(String, Vec<Rule>)> {
         (
             "inline".into(),
             vec![
-                r(r"\\.", tok("Text")),
+                r(r"\\.", token("Text")),
                 r(
                     r"(\s)(\*|_)((?:(?!\2).)*)(\2)((?=\W|\n))",
                     bygroups(&[
-                        tok("Text"),
-                        tok("GenericEmph"),
-                        tok("GenericEmph"),
-                        tok("GenericEmph"),
-                        tok("Text"),
+                        token("Text"),
+                        token("GenericEmph"),
+                        token("GenericEmph"),
+                        token("GenericEmph"),
+                        token("Text"),
                     ]),
                 ),
                 r(
                     r"(\s)((\*\*|__).*?)\3((?=\W|\n))",
                     bygroups(&[
-                        tok("Text"),
-                        tok("GenericStrong"),
-                        tok("GenericStrong"),
-                        tok("Text"),
+                        token("Text"),
+                        token("GenericStrong"),
+                        token("GenericStrong"),
+                        token("Text"),
                     ]),
                 ),
                 r(
                     r"(\s)(~~[^~]+~~)((?=\W|\n))",
-                    bygroups(&[tok("Text"), tok("GenericDeleted"), tok("Text")]),
+                    bygroups(&[token("Text"), token("GenericDeleted"), token("Text")]),
                 ),
-                r("`[^`]+`", tok("LiteralStringBacktick")),
-                r(r"[@#][\w/:]+", tok("NameEntity")),
+                r("`[^`]+`", token("LiteralStringBacktick")),
+                r(r"[@#][\w/:]+", token("NameEntity")),
                 r(
                     r"(!?\[)([^]]+)(\])(\()([^)]+)(\))",
                     bygroups(&[
-                        tok("Text"),
-                        tok("NameTag"),
-                        tok("Text"),
-                        tok("Text"),
-                        tok("NameAttribute"),
-                        tok("Text"),
+                        token("Text"),
+                        token("NameTag"),
+                        token("Text"),
+                        token("Text"),
+                        token("NameAttribute"),
+                        token("Text"),
                     ]),
                 ),
-                r(r".|\n", tok("Text")),
+                r(r".|\n", token("Text")),
             ],
         ),
     ]
@@ -1123,8 +1129,8 @@ fn plaintext_rules() -> Vec<(String, Vec<Rule>)> {
     vec![(
         "root".into(),
         vec![
-            Rule::new(".+", tok("Text"), None),
-            Rule::new(r"\n", tok("Text"), None),
+            Rule::new(".+", token("Text"), None),
+            Rule::new(r"\n", token("Text"), None),
         ],
     )]
 }
@@ -1190,7 +1196,7 @@ fn zed_analyser(text: &str) -> f32 {
     }
 }
 
-fn coded(
+fn go_lexer(
     name: &str,
     aliases: &[&str],
     filenames: &[&str],
@@ -1231,7 +1237,7 @@ pub fn registry() -> &'static Registry {
                 add(l);
             }
         }
-        let mut go = coded("Go", &["go", "golang"], &["*.go"], go_rules);
+        let mut go = go_lexer("Go", &["go", "golang"], &["*.go"], go_rules);
         go.analyser = Some(go_analyser);
         add(go);
         if let Some((_, src)) = EMBEDDED.iter().find(|(n, _)| *n == "go_template.xml")
@@ -1243,7 +1249,7 @@ pub fn registry() -> &'static Registry {
             l.config.analyse.clear();
             add(l);
         }
-        add(coded(
+        add(go_lexer(
             "markdown",
             &["md", "mkd"],
             &["*.md", "*.mkd", "*.markdown"],
@@ -1261,7 +1267,7 @@ pub fn registry() -> &'static Registry {
                 l.analyser = Some(f);
             }
         }
-        let mut fallback = coded("fallback", &[], &["*"], plaintext_rules);
+        let mut fallback = go_lexer("fallback", &[], &["*"], plaintext_rules);
         fallback.config.priority = -1.0;
         Registry { lexers, fallback }
     })
@@ -1500,7 +1506,7 @@ mod tests {
     #[test]
     fn tokenises_go() {
         let toks = tokenise_code("func main() {}\n", "go");
-        assert_eq!(toks[0], (tt("KeywordDeclaration"), "func".into()));
+        assert_eq!(toks[0], (token_type("KeywordDeclaration"), "func".into()));
     }
 
     #[test]

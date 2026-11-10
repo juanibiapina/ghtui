@@ -5,7 +5,7 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::chroma::{self, TT, category, sub_category};
+use crate::chroma::{self, TokenType, category, sub_category};
 use crate::text::Block;
 
 /// Chroma's terminal256 foreground table (formatters/tty_indexed.go); repeated colours keep the later index.
@@ -291,7 +291,7 @@ struct Entry {
 }
 
 /// The markdown theme's code block colors.
-fn theme_entry(t: TT) -> Option<Entry> {
+fn theme_entry(t: TokenType) -> Option<Entry> {
     let fg = |c: u32| {
         Some(Entry {
             fg: Some(c),
@@ -344,7 +344,7 @@ fn theme_entry(t: TT) -> Option<Entry> {
 }
 
 /// Style.Get inheritance (type, sub-category, category, Text; the background is cleared).
-fn token_style(t: TT) -> Style {
+fn token_style(t: TokenType) -> Style {
     let chain: Vec<Entry> = [t, sub_category(t), category(t), chroma::TEXT]
         .iter()
         .filter_map(|x| theme_entry(*x))
