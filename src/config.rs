@@ -410,6 +410,7 @@ pub struct Config {
     pub pager: Pager,
     pub confirm_quit: bool,
     pub quit_on_esc: bool,
+    pub mouse: bool,
     pub show_author_icons: bool,
     pub smart_filtering_at_launch: bool,
 }
@@ -465,6 +466,7 @@ impl Default for Config {
             pager: Pager::default(),
             confirm_quit: false,
             quit_on_esc: false,
+            mouse: true,
             show_author_icons: true,
             smart_filtering_at_launch: true,
         }

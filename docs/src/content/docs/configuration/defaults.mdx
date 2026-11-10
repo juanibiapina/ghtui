@@ -278,5 +278,17 @@ When this is on, pressing <kbd>Esc</kbd> also quits `ghtui`.
 <kbd>Esc</kbd> first closes whatever is open, such as a popup, prompt, search, or an opened notification, and quits only when nothing is left to close.
 If [`confirmQuit`](#confirm-quit-confirmquit) is on, `ghtui` asks for confirmation first.
 
+## Mouse (`mouse`)
+
+| Type    | Default |
+| :------ | :-----: |
+| Boolean |  true   |
+
+When this is on, `ghtui` handles the mouse: the wheel scrolls the list or preview under the pointer, and clicks select rows, tabs and buttons.
+See [Mouse](/ghtui/getting-started/keybindings/navigation/#mouse) for everything you can click.
+
+While `ghtui` handles the mouse, hold <kbd>Shift</kbd> while you drag to select text in most terminals, or <kbd>Option</kbd> in iTerm2.
+Set this to `false` to select text without a modifier key.
+
 [approving a PR]: /ghtui/getting-started/keybindings/selected-pr/#v---approve-pr
 

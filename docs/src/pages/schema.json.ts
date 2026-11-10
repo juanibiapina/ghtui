@@ -190,6 +190,13 @@ export function GET() {
           type: "boolean",
           default: "false",
         },
+        mouse: {
+          title: "Mouse",
+          description:
+            "Specifies whether `ghtui` handles the mouse. Set this to `false` to select text in the terminal without holding a modifier key.",
+          type: "boolean",
+          default: "true",
+        },
       },
     }),
   );

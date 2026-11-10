@@ -316,7 +316,29 @@ pub struct PrViewState<'a> {
     pub approve_workflows_key: String,
 }
 
-pub fn pr_view(t: &Theme, row: &PrRow, width: usize, st: &PrViewState) -> Block {
+/// Each PR tab that fits in `width`: its label, start column and width.
+fn pr_tabs(width: usize) -> Vec<(String, usize, usize)> {
+    let mut tabs = vec![];
+    let mut used = 0;
+    for (i, name) in PR_TABS.iter().enumerate() {
+        let label = format!(" {} {} ", PR_TAB_ICONS[i], name);
+        let w = str_width(&label);
+        if used + w > width {
+            break;
+        }
+        tabs.push((label, used, w));
+        used += w;
+    }
+    tabs
+}
+
+/// The start column and width of each PR tab that fits in `width`.
+pub fn pr_tab_ranges(width: usize) -> Vec<(usize, usize)> {
+    pr_tabs(width).into_iter().map(|(_, x, w)| (x, w)).collect()
+}
+
+/// A PR preview and the index of its tabs line.
+pub fn pr_view(t: &Theme, row: &PrRow, width: usize, st: &PrViewState) -> (Block, usize) {
     let pr = &row.primary;
     let mut out: Block = vec![];
     out.extend(preview_header(
@@ -361,22 +383,19 @@ pub fn pr_view(t: &Theme, row: &PrRow, width: usize, st: &PrViewState) -> Block 
     out.push(Line::default());
 
     // Tabs carousel with a faint bottom border.
-    let mut tab_spans = vec![];
-    let mut used = 0;
-    for (i, name) in PR_TABS.iter().enumerate() {
-        let label = format!(" {} {} ", PR_TAB_ICONS[i], name);
-        let style = if i == st.tab {
-            Style::default().add_modifier(Modifier::BOLD)
-        } else {
-            t.faint()
-        };
-        let w = str_width(&label);
-        if used + w > width {
-            break;
-        }
-        used += w;
-        tab_spans.push(span(label, style));
-    }
+    let tab_spans: Vec<Span<'static>> = pr_tabs(width)
+        .into_iter()
+        .enumerate()
+        .map(|(i, (label, _, _))| {
+            let style = if i == st.tab {
+                Style::default().add_modifier(Modifier::BOLD)
+            } else {
+                t.faint()
+            };
+            span(label, style)
+        })
+        .collect();
+    let tabs_line = out.len();
     out.push(fit_line(&Line::from(tab_spans), width, Style::default()));
     out.push(Line::from(span(
         "─".repeat(width),
@@ -399,7 +418,7 @@ pub fn pr_view(t: &Theme, row: &PrRow, width: usize, st: &PrViewState) -> Block 
         _ => changed_files(t, row, w),
     };
     out.extend(indent(body, CONTENT_PADDING));
-    out
+    (out, tabs_line)
 }
 
 fn pr_overview(t: &Theme, row: &PrRow, w: usize, st: &PrViewState) -> Block {

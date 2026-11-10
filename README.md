@@ -14,6 +14,7 @@
 
 - User-defined, per-repo, PRs & issues sections
 - Overridable vim-style keyboard hotkeys
+- Mouse support: scroll and click
 - Custom actions to perform your specific workflow needs
 - Everything you can do on GitHub - diff, comment, checkout, push, update etc.
 - Control every setting with a YAML config file

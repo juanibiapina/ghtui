@@ -11,6 +11,7 @@ use ratatui::widgets::{Block, BorderType, Clear, Widget};
 use crate::icons;
 use crate::input::Editable;
 use crate::model::Label;
+use crate::mouse::{HitMap, Target};
 use crate::section::SPINNER;
 use crate::text::{raw, span, truncate_line};
 use crate::theme::{self, Theme};
@@ -511,6 +512,32 @@ impl Completer {
         let no_results = rows == 0 && matches!(self.fetch, FetchState::Idle | FetchState::Success);
         let status = matches!(self.fetch, FetchState::Loading | FetchState::Error(_));
         (rows + usize::from(no_results) + usize::from(status) + 4) as u16
+    }
+
+    pub fn record_hits(&self, area: Rect, hits: &mut HitMap) {
+        if !self.visible {
+            return;
+        }
+        let area = Rect {
+            height: area.height.min(self.height()),
+            ..area
+        };
+        let inner = Block::bordered().inner(area);
+        let rows = self.filtered.len().min(MAX_VISIBLE);
+        for i in 0..rows.min(inner.height as usize) {
+            let row = Rect {
+                y: inner.y + i as u16,
+                height: 1,
+                ..inner
+            };
+            hits.push(row, Target::Suggestion(i));
+        }
+    }
+
+    pub fn select(&mut self, i: usize) {
+        if i < self.filtered.len() {
+            self.selected = i;
+        }
     }
 
     /// Draws the rows, status and help in a rounded box whose top border joins any

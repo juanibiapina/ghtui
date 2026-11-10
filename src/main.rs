@@ -16,6 +16,7 @@ mod keys;
 mod log;
 mod markdown;
 mod model;
+mod mouse;
 mod msg;
 mod refresh;
 mod section;
@@ -35,7 +36,11 @@ use std::process::Command;
 use std::time::Duration;
 
 use clap::Parser;
-use ratatui::crossterm::event::{self, DisableFocusChange, EnableFocusChange, Event, KeyEventKind};
+use ratatui::DefaultTerminal;
+use ratatui::crossterm::event::{
+    self, DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture, Event,
+    KeyEventKind,
+};
 use ratatui::crossterm::execute;
 
 use crate::app::App;
@@ -113,6 +118,23 @@ fn current_gh_repo() -> Option<(String, String)> {
     None
 }
 
+fn enter_terminal(mouse: bool) -> DefaultTerminal {
+    let terminal = ratatui::init();
+    let _ = execute!(std::io::stdout(), EnableFocusChange);
+    if mouse {
+        let _ = execute!(std::io::stdout(), EnableMouseCapture);
+    }
+    terminal
+}
+
+fn leave_terminal(mouse: bool) {
+    if mouse {
+        let _ = execute!(std::io::stdout(), DisableMouseCapture);
+    }
+    let _ = execute!(std::io::stdout(), DisableFocusChange);
+    ratatui::restore();
+}
+
 fn fatal(prefix: &str, err: impl std::fmt::Display) -> ! {
     crate::error!("{prefix}: failed parsing config file err={err}");
     eprintln!(
@@ -186,9 +208,16 @@ fn main() {
     }
 
     let (pool, rx) = msg::Pool::new(12);
-    let mut terminal = ratatui::init();
-    // Report focus to refetch on return.
-    let _ = execute!(std::io::stdout(), EnableFocusChange);
+    let mouse = cfg.mouse;
+    if mouse {
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let _ = execute!(std::io::stdout(), DisableMouseCapture);
+            hook(info);
+        }));
+    }
+    // Focus reports refetch on return.
+    let mut terminal = enter_terminal(mouse);
     let size = terminal.size().unwrap_or_default();
     let mut app = App::new(
         cfg,
@@ -205,6 +234,7 @@ fn main() {
 
     let mut dirty = true;
     let mut first_frame = true;
+    let mut hits = mouse::HitMap::default();
     loop {
         // A resize before crossterm listens for SIGWINCH sends no event; compare sizes instead.
         if let Ok(size) = terminal.size()
@@ -217,7 +247,7 @@ fn main() {
             let started = std::time::Instant::now();
             app.ensure_sidebar_cache();
             let sidebar = started.elapsed();
-            let _ = terminal.draw(|f| ui::draw(f, &app));
+            let _ = terminal.draw(|f| hits = ui::draw(f, &app));
             let frame = started.elapsed();
             if first_frame {
                 crate::info!(
@@ -245,6 +275,11 @@ fn main() {
                     app.handle_key(&keys::key_string(&k));
                     dirty = true;
                 }
+                Ok(Event::Mouse(m)) => {
+                    if app.handle_mouse(&m, &hits) {
+                        dirty = true;
+                    }
+                }
                 Ok(Event::FocusGained) => {
                     app.on_focus(true);
                     dirty = true;
@@ -268,12 +303,10 @@ fn main() {
             dirty = true;
         }
         if let Some(mut req) = app.exec.take() {
-            let _ = execute!(std::io::stdout(), DisableFocusChange);
-            ratatui::restore();
+            leave_terminal(mouse);
             let _ = std::io::stdout().flush();
             let res = req.cmd.status();
-            terminal = ratatui::init();
-            let _ = execute!(std::io::stdout(), EnableFocusChange);
+            terminal = enter_terminal(mouse);
             let _ = terminal.clear();
             for m in (req.on_done)(res) {
                 app.handle_msg(m);
@@ -285,7 +318,6 @@ fn main() {
             break;
         }
     }
-    let _ = execute!(std::io::stdout(), DisableFocusChange);
-    ratatui::restore();
+    leave_terminal(mouse);
     app.save_cache(true);
 }

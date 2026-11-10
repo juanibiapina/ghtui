@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add the `quitOnEsc` setting to quit with `esc`.
+- Add mouse support: scroll the list or preview under the pointer, and click rows, tabs and buttons. Turn it off with the `mouse` setting.
 
 ### Removed
 
@@ -27,7 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refresh PRs in the branches view every 5 minutes instead of every minute, and right away when the terminal regains focus.
 - Show help in a popup that groups keys by category and closes with `esc`.
 - Show fetched PRs, issues and notifications up to 100 ms sooner.
-- Stop capturing the mouse, so you can select and copy text in the terminal again.
 - Mark a notification as done with `d`, and view a PR diff with `D`.
 - Remove a notification from the list as soon as you mark it done, and put it back if GitHub rejects the change.
 - Count a notification's new comments from when you last marked it done.

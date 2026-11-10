@@ -11,6 +11,7 @@ use unicode_width::UnicodeWidthChar;
 use crate::app::{App, Position, TaskState};
 use crate::config::ViewType;
 use crate::icons;
+use crate::mouse::{HitMap, Target};
 use crate::section::{RenderCtx, SPINNER};
 use crate::text::*;
 use crate::theme;
@@ -43,8 +44,32 @@ fn truncate_left(l: &Line<'static>, n: usize, prefix: Option<Span<'static>>) -> 
     Line::from(out)
 }
 
-/// The section tabs carousel.
-fn carousel(items: &[String], cursor: usize, width: usize, app: &App) -> Line<'static> {
+/// What each cell of a line belongs to.
+type Owners = Vec<Option<Target>>;
+
+fn fit_owners(mut owners: Owners, width: usize) -> Owners {
+    owners.resize(width, None);
+    owners
+}
+
+/// Records each run of cells with the same owner, on the row `area`, starting at its left edge.
+fn record_owners(hits: &mut HitMap, area: Rect, owners: &[Option<Target>]) {
+    let mut start = 0;
+    while start < owners.len() {
+        let end = owners[start..]
+            .iter()
+            .position(|o| *o != owners[start])
+            .map_or(owners.len(), |n| start + n);
+        if let Some(t) = owners[start] {
+            let r = Rect::new(area.x + start as u16, area.y, (end - start) as u16, 1);
+            hits.push(r.intersection(area), t);
+        }
+        start = end;
+    }
+}
+
+/// The section tabs carousel, and the section each cell selects.
+fn carousel(items: &[String], cursor: usize, width: usize, app: &App) -> (Line<'static>, Owners) {
     let t = &app.theme;
     let item_style = Style::default().add_modifier(Modifier::DIM);
     let selected_style = Style::default()
@@ -56,8 +81,17 @@ fn carousel(items: &[String], cursor: usize, width: usize, app: &App) -> Line<'s
     let ellipsis = || span(icons::ELLIPSIS, item_style);
     let n = items.len();
     if n == 0 {
-        return Line::from(raw(" ".repeat(width)));
+        return (Line::from(raw(" ".repeat(width))), vec![None; width]);
     }
+    let item_owners = |i: usize, l: &Line<'static>| -> Owners {
+        let mut o = vec![Some(Target::SectionTab(i)); l.width()];
+        if i != n - 1
+            && let Some(last) = o.last_mut()
+        {
+            *last = None;
+        }
+        o
+    };
     let render_item = |i: usize, max_w: i64| -> Line<'static> {
         let sep = if i != n - 1 {
             Some(span("|", sep_style))
@@ -88,6 +122,7 @@ fn carousel(items: &[String], cursor: usize, width: usize, app: &App) -> Line<'s
 
     let mut leftover = width as i64;
     let mut content: Vec<Span<'static>> = vec![];
+    let mut owners: Owners = vec![];
     let mut dir: i64 = -1;
     let mut left = cursor as i64;
     let mut last_left = left;
@@ -97,6 +132,9 @@ fn carousel(items: &[String], cursor: usize, width: usize, app: &App) -> Line<'s
         if dir < 0 && left >= 0 {
             let it = render_item(left as usize, leftover);
             leftover -= it.width() as i64;
+            let mut o = item_owners(left as usize, &it);
+            o.extend(owners);
+            owners = o;
             let mut s = it.spans;
             s.extend(content);
             content = s;
@@ -105,6 +143,7 @@ fn carousel(items: &[String], cursor: usize, width: usize, app: &App) -> Line<'s
         } else if dir > 0 && right < n as i64 {
             let it = render_item(right as usize, leftover);
             leftover -= it.width() as i64;
+            owners.extend(item_owners(right as usize, &it));
             content.extend(it.spans);
             last_right = right;
             right += 1;
@@ -132,20 +171,36 @@ fn carousel(items: &[String], cursor: usize, width: usize, app: &App) -> Line<'s
         let cut = items_line.width() as i64 - leftover + 1;
         if cut > 0 {
             items_line = truncate_left(&items_line, cut as usize, Some(ellipsis()));
+            let mut o = vec![None];
+            o.extend(owners.into_iter().skip(cut as usize));
+            owners = fit_owners(o, items_line.width());
         }
     } else if items_line.width() as i64 > leftover {
         let mut l = truncate_line(&items_line, leftover.max(0) as usize, "");
+        owners.truncate(l.width());
         l.spans.push(ellipsis());
         items_line = l;
+        owners = fit_owners(owners, items_line.width());
     }
+    let mut cells: Owners = vec![];
     let mut spans = vec![];
-    spans.extend(lo);
+    if let Some(s) = lo {
+        cells.extend(vec![Some(Target::PrevSectionArrow); s.width()]);
+        spans.push(s);
+    }
+    cells.extend(fit_owners(owners, items_line.width()));
     spans.extend(items_line.spans);
-    spans.extend(ro);
-    pad_line(Line::from(spans), width, Style::default())
+    if let Some(s) = ro {
+        cells.extend(vec![Some(Target::NextSectionArrow); s.width()]);
+        spans.push(s);
+    }
+    (
+        pad_line(Line::from(spans), width, Style::default()),
+        fit_owners(cells, width),
+    )
 }
 
-fn tabs_line(app: &App) -> Line<'static> {
+fn tabs_line(app: &App) -> (Line<'static>, Owners) {
     let t = &app.theme;
     let logo = Line::from(vec![
         raw("  "),
@@ -196,8 +251,11 @@ fn tabs_line(app: &App) -> Line<'static> {
         })
         .collect();
     // The carousel can overflow its width by a cell; the screen edge clips the logo instead.
-    let car = carousel(&titles, app.curr, cw, app);
-    Line::from_iter([car, button, logo].into_iter().flat_map(|l| l.spans))
+    let (car, mut owners) = carousel(&titles, app.curr, cw, app);
+    owners = fit_owners(owners, car.width());
+    owners.extend(vec![Some(Target::NewSection); button.width()]);
+    let line = Line::from_iter([car, button, logo].into_iter().flat_map(|l| l.spans));
+    (line, owners)
 }
 
 fn view_button(app: &App, view: ViewType) -> Vec<Span<'static>> {
@@ -237,7 +295,7 @@ fn view_button(app: &App, view: ViewType) -> Vec<Span<'static>> {
     }
 }
 
-fn view_switcher(app: &App) -> Line<'static> {
+fn view_switcher(app: &App) -> (Line<'static>, Owners) {
     let t = &app.theme;
     let sep = Style::default()
         .bg(t.faint_border)
@@ -247,11 +305,20 @@ fn view_switcher(app: &App) -> Line<'static> {
         .bg(t.selected_background)
         .add_modifier(Modifier::BOLD);
     let mut spans = vec![span(" ", sep)];
-    spans.extend(view_button(app, ViewType::Notifications));
-    spans.push(span(" │ ", sep));
-    spans.extend(view_button(app, ViewType::Prs));
-    spans.push(span(" │ ", sep));
-    spans.extend(view_button(app, ViewType::Issues));
+    let mut owners: Owners = vec![None];
+    for (i, view) in [ViewType::Notifications, ViewType::Prs, ViewType::Issues]
+        .into_iter()
+        .enumerate()
+    {
+        if i > 0 {
+            spans.push(span(" │ ", sep));
+            owners.extend([None; 3]);
+        }
+        let button = view_button(app, view);
+        let w: usize = button.iter().map(|s| s.width()).sum();
+        owners.extend(vec![Some(Target::View(view)); w]);
+        spans.extend(button);
+    }
     spans.push(span(
         format!("{} ", icons::POWERLINE_RIGHT),
         footer.fg(t.faint_border),
@@ -275,7 +342,7 @@ fn view_switcher(app: &App) -> Line<'static> {
         spans.push(span(format!("@{}", app.user), footer.fg(t.inverted_text)));
     }
     spans.push(span(" │", footer.fg(t.faint_border)));
-    Line::from(spans)
+    (Line::from(spans), owners)
 }
 
 fn running_task(app: &App) -> Option<Line<'static>> {
@@ -326,7 +393,7 @@ fn running_task(app: &App) -> Option<Line<'static>> {
     Some(Line::from(spans))
 }
 
-fn render_footer(app: &App, area: Rect, buf: &mut Buffer) {
+fn render_footer(app: &App, area: Rect, buf: &mut Buffer, hits: &mut HitMap) {
     let t = &app.theme;
     if let Some(e) = &app.error {
         let first = e.lines().next().unwrap_or_default().to_string();
@@ -382,9 +449,10 @@ fn render_footer(app: &App, area: Rect, buf: &mut Buffer) {
         " ? help ",
         Style::default().bg(t.faint_text).fg(t.selected_background),
     ));
-    let switcher = view_switcher(app);
+    let (switcher, owners) = view_switcher(app);
     let right = running_task(app).unwrap_or_default();
     let left = Line::from_iter(switcher.spans.into_iter().chain(left.spans));
+    let help_w = help.width();
     let right = Line::from_iter(right.spans.into_iter().chain(help.spans));
     let [left_area, right_area] = Layout::horizontal([
         Constraint::Fill(1),
@@ -394,6 +462,17 @@ fn render_footer(app: &App, area: Rect, buf: &mut Buffer) {
     buf.set_style(left_area, Style::default().bg(t.selected_background));
     left.render(left_area, buf);
     right.render(right_area, buf);
+    record_owners(hits, left_area, &owners);
+    let help_x = right_area.right().saturating_sub(help_w as u16);
+    hits.push(
+        Rect {
+            x: help_x,
+            width: help_w as u16,
+            ..right_area
+        }
+        .intersection(right_area),
+        Target::Help,
+    );
 }
 
 /// One row in the middle of `area`.
@@ -405,7 +484,9 @@ fn middle_row(area: Rect) -> Rect {
     }
 }
 
-pub fn draw(f: &mut Frame, app: &App) {
+/// Draws the screen and returns the regions the mouse can act on.
+pub fn draw(f: &mut Frame, app: &App) -> HitMap {
+    let mut hits = HitMap::default();
     let area = f.area();
     let buf = f.buffer_mut();
     let t = &app.theme;
@@ -419,7 +500,10 @@ pub fn draw(f: &mut Frame, app: &App) {
     // The repo view has no tabs, leaving one empty line.
     if app.view != ViewType::Repo {
         let [tabs, rule] = Layout::vertical([Constraint::Length(1); 2]).areas(areas.tabs);
-        tabs_line(app).render(tabs, buf);
+        let (line, owners) = tabs_line(app);
+        line.render(tabs, buf);
+        hits.push(tabs, Target::TabsRow);
+        record_owners(&mut hits, tabs, &owners);
         thick_rule.clone().render(rule, buf);
     }
 
@@ -430,7 +514,7 @@ pub fn draw(f: &mut Frame, app: &App) {
                 theme: t,
                 spinner: app.spinner,
             };
-            s.render(&rc, areas.sections, buf);
+            s.render(&rc, areas.sections, buf, &mut hits);
         }
         None => Line::from("No sections defined")
             .centered()
@@ -445,6 +529,20 @@ pub fn draw(f: &mut Frame, app: &App) {
             .unwrap_or_default();
         let vh = p.content.height as usize;
         let scroll = app.sidebar_scroll.min(content.len().saturating_sub(vh));
+        hits.push(p.body(), Target::Preview);
+        if let Some(line) = app
+            .sidebar_tabs_line
+            .filter(|l| (scroll..scroll + vh).contains(l))
+        {
+            let y = p.content.y + (line - scroll) as u16;
+            for (i, (x, w)) in crate::views::pr_tab_ranges(p.content.width as usize)
+                .into_iter()
+                .enumerate()
+            {
+                let r = Rect::new(p.content.x + x as u16, y, w as u16, 1);
+                hits.push(r.intersection(p.content), Target::PreviewTab(i));
+            }
+        }
         match areas.position {
             Position::Bottom => thick_rule.render(p.rule, buf),
             Position::Right => Block::new()
@@ -488,6 +586,7 @@ pub fn draw(f: &mut Frame, app: &App) {
             sections.height.saturating_sub(2),
         );
         c.render(t, app.spinner, below_search, buf);
+        c.record_hits(below_search, &mut hits);
     }
     let editor = app.pr_editor.as_ref().or(app.issue_editor.as_ref());
     if let (Some(p), Some(ed)) = (areas.preview, editor)
@@ -508,12 +607,16 @@ pub fn draw(f: &mut Frame, app: &App) {
         let rect = Rect::new(p.outer().x + 3, py, width, c.height()).intersection(area);
         Clear.render(rect, buf);
         c.render(t, app.spinner, rect, buf);
+        c.record_hits(rect, &mut hits);
     }
 
-    render_footer(app, areas.footer, buf);
+    render_footer(app, areas.footer, buf, &mut hits);
     if let Some(help) = &app.help {
         help.render(area, buf, t);
+        hits.push(area, Target::Backdrop);
+        hits.push(help.popup(area), Target::HelpPopup);
     }
+    hits
 }
 
 #[cfg(test)]
@@ -521,6 +624,7 @@ mod tests {
     use chrono::{Duration, Utc};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
     use super::*;
     use crate::complete::{Completer, FetchState, SourceKind, Suggestion};
@@ -607,8 +711,133 @@ mod tests {
         let (w, h) = (app.width as u16, app.height as u16);
         app.ensure_sidebar_cache();
         let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
-        terminal.draw(|f| draw(f, &app)).unwrap();
+        terminal
+            .draw(|f| {
+                draw(f, &app);
+            })
+            .unwrap();
         format!("{:?}", terminal.backend().buffer())
+    }
+
+    fn frame(app: &mut App) -> (Buffer, HitMap) {
+        let (w, h) = (app.width as u16, app.height as u16);
+        app.ensure_sidebar_cache();
+        let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+        let mut hits = HitMap::default();
+        terminal.draw(|f| hits = draw(f, app)).unwrap();
+        (terminal.backend().buffer().clone(), hits)
+    }
+
+    /// The first cell of the first row, from the top, that contains `text`.
+    fn find(buf: &Buffer, text: &str) -> (u16, u16) {
+        for y in 0..buf.area.height {
+            let cells: Vec<&str> = (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect();
+            for x in 0..cells.len() {
+                if cells[x..].concat().starts_with(text) {
+                    return (x as u16, y);
+                }
+            }
+        }
+        panic!("{text:?} is not on screen");
+    }
+
+    fn mouse(app: &mut App, kind: MouseEventKind, (column, row): (u16, u16)) -> bool {
+        let (_, hits) = frame(app);
+        let ev = MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        };
+        app.handle_mouse(&ev, &hits)
+    }
+
+    fn click(app: &mut App, at: (u16, u16)) -> bool {
+        mouse(app, MouseEventKind::Down(MouseButton::Left), at)
+    }
+
+    fn right_preview(width: u16, height: u16) -> App {
+        let mut cfg = Config::default();
+        cfg.defaults.preview.position = "right".into();
+        with_prs(app(width, height, cfg))
+    }
+
+    #[test]
+    fn clicking_a_row_selects_it() {
+        let mut app = right_preview(160, 30);
+        let (buf, _) = frame(&mut app);
+        assert!(click(&mut app, find(&buf, "Fix the footer")));
+        assert_eq!(app.section().unwrap().cursor, 2);
+    }
+
+    #[test]
+    fn the_wheel_moves_the_selection_over_the_list() {
+        let mut app = right_preview(160, 30);
+        let (buf, _) = frame(&mut app);
+        let at = find(&buf, "Fix the footer");
+        assert!(mouse(&mut app, MouseEventKind::ScrollDown, at));
+        assert_eq!(app.section().unwrap().cursor, 1);
+        assert!(mouse(&mut app, MouseEventKind::ScrollUp, at));
+        assert!(!mouse(&mut app, MouseEventKind::ScrollUp, at));
+        assert_eq!(app.section().unwrap().cursor, 0);
+    }
+
+    #[test]
+    fn the_wheel_scrolls_the_preview_under_the_pointer() {
+        let mut app = right_preview(160, 12);
+        let (buf, _) = frame(&mut app);
+        let at = find(&buf, "· #1");
+        assert!(mouse(&mut app, MouseEventKind::ScrollDown, at));
+        app.ensure_sidebar_cache();
+        assert!(app.sidebar_scroll > 0);
+        assert_eq!(app.section().unwrap().cursor, 0);
+    }
+
+    #[test]
+    fn clicking_a_section_tab_switches_to_it() {
+        let mut app = right_preview(160, 30);
+        let (buf, _) = frame(&mut app);
+        let title = app.sections()[1].title.clone();
+        assert!(click(&mut app, find(&buf, &title)));
+        assert_eq!(app.curr, 1);
+    }
+
+    #[test]
+    fn clicking_a_preview_tab_shows_it() {
+        let mut app = right_preview(160, 30);
+        let (buf, _) = frame(&mut app);
+        assert!(click(&mut app, find(&buf, "Activity")));
+        assert_eq!(app.pr_tab, 1);
+    }
+
+    #[test]
+    fn clicking_outside_help_closes_it() {
+        let mut app = right_preview(160, 30);
+        let (buf, _) = frame(&mut app);
+        assert!(click(&mut app, find(&buf, "? help")));
+        assert!(app.help.is_some());
+        let (buf, _) = frame(&mut app);
+        assert!(!click(&mut app, find(&buf, "Keybindings")));
+        assert!(app.help.is_some());
+        assert!(click(&mut app, (0, 0)));
+        assert!(app.help.is_none());
+    }
+
+    #[test]
+    fn clicks_do_nothing_while_a_confirmation_is_open() {
+        let mut app = right_preview(160, 30);
+        app.confirm_quit_shown = true;
+        let (buf, _) = frame(&mut app);
+        assert!(!click(&mut app, find(&buf, "Fix the footer")));
+        assert_eq!(app.section().unwrap().cursor, 0);
+    }
+
+    #[test]
+    fn pointer_motion_changes_nothing() {
+        let mut app = right_preview(160, 30);
+        let (buf, _) = frame(&mut app);
+        let at = find(&buf, "Fix the footer");
+        assert!(!mouse(&mut app, MouseEventKind::Moved, at));
     }
 
     #[test]

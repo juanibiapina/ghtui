@@ -299,6 +299,16 @@ impl Help {
         false
     }
 
+    pub fn popup(&self, area: Rect) -> Rect {
+        self.placement(area).popup
+    }
+
+    pub fn scroll_by(&mut self, delta: i16, area: Rect) {
+        let p = self.placement(area);
+        let scroll = self.scroll.min(p.max_scroll);
+        self.scroll = scroll.saturating_add_signed(delta).min(p.max_scroll);
+    }
+
     /// Draws the popup over everything already in `buf`.
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
         buf.set_style(area, Style::new().add_modifier(Modifier::DIM));

@@ -7,6 +7,7 @@ use std::process::{Command, ExitStatus};
 use std::time::{Duration, Instant};
 
 use chrono::Local;
+use ratatui::crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Constraint, Layout, Rect};
 
 use crate::bookmarks;
@@ -17,6 +18,7 @@ use crate::help::Help;
 use crate::input::{TextArea, TextInput};
 use crate::keys::{Keys, NotificationSubject};
 use crate::model::*;
+use crate::mouse::{HitMap, Target};
 use crate::msg::*;
 use crate::section::{
     self, Kind, NotifRow, PrRow, RowRef, Section, SectionSpec, issue_columns, notification_columns,
@@ -112,6 +114,7 @@ pub struct App {
     pub sidebar_open: bool,
     pub sidebar_scroll: usize,
     pub sidebar_cache: Option<(usize, Block)>,
+    pub sidebar_tabs_line: Option<usize>,
     pub position_override: Option<Position>,
     pub help: Option<Help>,
     pub confirm_quit_shown: bool,
@@ -191,6 +194,7 @@ impl App {
             sidebar_open,
             sidebar_scroll: 0,
             sidebar_cache: None,
+            sidebar_tabs_line: None,
             position_override: None,
             help: None,
             confirm_quit_shown: false,
@@ -1229,34 +1233,13 @@ impl App {
         } else if u.section_mode.matches(key) {
             self.section_mode = true;
         } else if u.prev_section.matches(key) {
-            let prev = self.curr.saturating_sub(1);
-            if prev < self.sections().len() {
-                self.curr = prev;
-                self.on_viewed_row_changed();
-            }
+            self.prev_section();
         } else if u.next_section.matches(key) {
-            let n = self.sections().len();
-            if n > 0 {
-                self.curr = (self.curr + 1).min(n - 1);
-                self.on_viewed_row_changed();
-            }
+            self.next_section();
         } else if u.down.matches(key) {
-            if let Some(s) = self.section_mut() {
-                let prev = s.cursor;
-                s.next_row(&cfg, body_h);
-                let fetch_more =
-                    prev != s.cursor && s.cursor + 1 == s.num_rows() && s.kind != Kind::Branch;
-                let (view, id) = (self.view, self.curr);
-                if fetch_more {
-                    self.fetch_next_page(view, id);
-                }
-                self.on_viewed_row_changed();
-            }
+            self.move_down();
         } else if u.up.matches(key) {
-            if let Some(s) = self.section_mut() {
-                s.prev_row();
-                self.on_viewed_row_changed();
-            }
+            self.move_up();
         } else if u.first_line.matches(key) {
             if let Some(s) = self.section_mut() {
                 s.first_row();
@@ -1315,11 +1298,7 @@ impl App {
             self.start_search();
             return;
         } else if u.help.matches(key) {
-            self.help = Some(Help::new(
-                &self.keys,
-                self.view,
-                self.notification_subject(),
-            ));
+            self.open_help();
         } else if u.copy_number.matches(key) {
             match self.current_row() {
                 None => self.notify_err("Current selection isn't associated with a PR/Issue"),
@@ -1365,15 +1344,192 @@ impl App {
 
         // Page up/down scroll the preview.
         if u.page_down.matches(key) {
-            self.sidebar_scroll = self.sidebar_scroll.saturating_add(3);
+            self.scroll_preview(3);
         } else if u.page_up.matches(key) {
-            if self.sidebar_scroll == usize::MAX {
-                self.sidebar_scroll = self.sidebar_max_scroll();
-            }
-            self.sidebar_scroll = self.sidebar_scroll.saturating_sub(3);
+            self.scroll_preview(-3);
         }
 
         self.section_key(key);
+    }
+
+    fn prev_section(&mut self) {
+        let prev = self.curr.saturating_sub(1);
+        if prev < self.sections().len() {
+            self.curr = prev;
+            self.on_viewed_row_changed();
+        }
+    }
+
+    fn next_section(&mut self) {
+        let n = self.sections().len();
+        if n > 0 {
+            self.curr = (self.curr + 1).min(n - 1);
+            self.on_viewed_row_changed();
+        }
+    }
+
+    fn select_section(&mut self, i: usize) {
+        if i != self.curr && i < self.sections().len() {
+            self.curr = i;
+            self.on_viewed_row_changed();
+        }
+    }
+
+    /// Moves the selection down a row, loading the next page at the last row.
+    fn move_down(&mut self) {
+        let body_h = self.body_height();
+        let cfg = self.cfg.clone();
+        let (view, id) = (self.view, self.curr);
+        let Some(s) = self.section_mut() else { return };
+        let prev = s.cursor;
+        s.next_row(&cfg, body_h);
+        if prev != s.cursor && s.cursor + 1 == s.num_rows() && s.kind != Kind::Branch {
+            self.fetch_next_page(view, id);
+        }
+        self.on_viewed_row_changed();
+    }
+
+    fn move_up(&mut self) {
+        let Some(s) = self.section_mut() else { return };
+        s.prev_row();
+        self.on_viewed_row_changed();
+    }
+
+    /// Selects visible row `i`, loading the next page when it is the last row.
+    fn select_row(&mut self, i: usize) {
+        let (view, id) = (self.view, self.curr);
+        let Some(s) = self.section_mut() else { return };
+        if i == s.cursor || i >= s.num_rows() {
+            return;
+        }
+        s.cursor = i;
+        if s.cursor + 1 == s.num_rows() && s.kind != Kind::Branch {
+            self.fetch_next_page(view, id);
+        }
+        self.on_viewed_row_changed();
+    }
+
+    fn open_help(&mut self) {
+        self.help = Some(Help::new(
+            &self.keys,
+            self.view,
+            self.notification_subject(),
+        ));
+    }
+
+    fn scroll_preview(&mut self, delta: isize) {
+        if self.sidebar_scroll == usize::MAX {
+            self.sidebar_scroll = self.sidebar_max_scroll();
+        }
+        self.sidebar_scroll = self.sidebar_scroll.saturating_add_signed(delta);
+    }
+
+    // ---------------- mouse ----------------
+
+    /// True while a search, prompt, editor or confirmation takes every key.
+    fn input_captured(&self) -> bool {
+        self.section()
+            .is_some_and(|s| s.search.is_some() || s.prompt.is_some())
+            || self.pr_editor.is_some()
+            || self.issue_editor.is_some()
+            || self.confirm_quit_shown
+            || self.pending_notif_action.is_some()
+            || self.section_mode
+    }
+
+    /// Acts on a mouse event over the regions of the last frame. Returns true when
+    /// something changed.
+    pub fn handle_mouse(&mut self, ev: &MouseEvent, hits: &HitMap) -> bool {
+        let changed = match ev.kind {
+            MouseEventKind::ScrollUp => self.handle_wheel(-1, ev, hits),
+            MouseEventKind::ScrollDown => self.handle_wheel(1, ev, hits),
+            MouseEventKind::Down(MouseButton::Left) => self.handle_click(ev, hits),
+            _ => false,
+        };
+        if changed {
+            self.error = None;
+            self.invalidate_sidebar();
+        }
+        changed
+    }
+
+    fn handle_wheel(&mut self, delta: i16, ev: &MouseEvent, hits: &HitMap) -> bool {
+        if let Some(help) = self.help.as_mut() {
+            let area = Rect::new(0, 0, self.width as u16, self.height as u16);
+            help.scroll_by(delta, area);
+            return true;
+        }
+        if self.input_captured() {
+            return false;
+        }
+        match hits.scrollable_at(ev.column, ev.row) {
+            Some(Target::TabsRow) if delta < 0 => self.prev_section(),
+            Some(Target::TabsRow) => self.next_section(),
+            Some(Target::List) => {
+                let Some(s) = self.section() else {
+                    return false;
+                };
+                if delta < 0 && s.cursor > 0 {
+                    self.move_up();
+                } else if delta > 0 && s.cursor + 1 < s.num_rows() {
+                    self.move_down();
+                } else {
+                    return false;
+                }
+            }
+            Some(Target::Preview) => self.scroll_preview(3 * delta as isize),
+            _ => return false,
+        }
+        true
+    }
+
+    fn handle_click(&mut self, ev: &MouseEvent, hits: &HitMap) -> bool {
+        let target = hits.at(ev.column, ev.row);
+        if let Some(Target::Suggestion(i)) = target {
+            return self.accept_suggestion(i);
+        }
+        if self.help.is_some() {
+            if target == Some(Target::Backdrop) {
+                self.help = None;
+                return true;
+            }
+            return false;
+        }
+        if self.input_captured() {
+            return false;
+        }
+        match target {
+            Some(Target::SectionTab(i)) => self.select_section(i),
+            Some(Target::PrevSectionArrow) => self.prev_section(),
+            Some(Target::NextSectionArrow) => self.next_section(),
+            Some(Target::NewSection) => self.add_new_section(),
+            Some(Target::SearchBar) => self.start_search(),
+            Some(Target::Row(i)) => self.select_row(i),
+            Some(Target::PreviewTab(i)) => self.pr_tab = i.min(views::PR_TABS.len() - 1),
+            Some(Target::View(v)) if v != self.view => self.switch_view(v),
+            Some(Target::Help) => self.open_help(),
+            _ => return false,
+        }
+        true
+    }
+
+    fn accept_suggestion(&mut self, i: usize) -> bool {
+        let target = if self.section().is_some_and(|s| s.search_cmp.is_some()) {
+            CmpTarget::Search(SectionKey {
+                view: self.view,
+                id: self.curr,
+            })
+        } else if self.pr_editor.is_some() {
+            CmpTarget::PrEditor
+        } else {
+            CmpTarget::IssueEditor
+        };
+        let Some(c) = self.completer_mut(target).filter(|c| c.visible) else {
+            return false;
+        };
+        c.select(i);
+        self.handle_key("ctrl+y");
+        true
     }
 
     pub fn sidebar_max_scroll(&self) -> usize {
@@ -2193,19 +2349,24 @@ impl App {
     // ---------------- view switching / sections ----------------
 
     fn switch_selected_view(&mut self) {
-        if self.view == ViewType::Notifications {
-            self.subject_pr = None;
-            self.subject_issue = None;
-            self.subject_id.clear();
-        }
         // With FF_REPO_VIEW the cycle passes through the branches view.
         let repo_ff = crate::config::feature_enabled("FF_REPO_VIEW");
-        self.view = match self.view {
+        let next = match self.view {
             ViewType::Notifications => ViewType::Prs,
             ViewType::Prs => ViewType::Issues,
             ViewType::Issues if repo_ff => ViewType::Repo,
             _ => ViewType::Notifications,
         };
+        self.switch_view(next);
+    }
+
+    fn switch_view(&mut self, target: ViewType) {
+        if self.view == ViewType::Notifications {
+            self.subject_pr = None;
+            self.subject_issue = None;
+            self.subject_id.clear();
+        }
+        self.view = target;
         self.curr = 0;
         let view = self.view;
         if view == ViewType::Repo {
@@ -2611,10 +2772,11 @@ impl App {
 
     // ---------------- sidebar content ----------------
 
-    pub fn sidebar_content(&self) -> Block {
+    /// The preview lines, and the index of the PR tabs line when it shows a PR.
+    pub fn sidebar_content(&self) -> (Block, Option<usize>) {
         let width = self.sidebar_content_width();
         let Some(row) = self.current_row() else {
-            return vec![];
+            return (vec![], None);
         };
         let t = &self.theme;
         let approve_key = self
@@ -2632,27 +2794,40 @@ impl App {
             approve_workflows_key: approve_key,
         };
         match row {
-            RowRef::Pr(pr) => views::pr_view(t, &pr, width, &pr_state),
-            RowRef::Issue(i) => views::issue_view(t, &i, width, self.issue_editor.as_ref()),
+            RowRef::Pr(pr) => {
+                let (lines, tabs) = views::pr_view(t, &pr, width, &pr_state);
+                (lines, Some(tabs))
+            }
+            RowRef::Issue(i) => (
+                views::issue_view(t, &i, width, self.issue_editor.as_ref()),
+                None,
+            ),
             RowRef::Notification(n) => {
                 if self.subject_id == n.id() {
                     if let Some(pr) = &self.subject_pr {
-                        return views::pr_view(t, pr, width, &pr_state);
+                        let (lines, tabs) = views::pr_view(t, pr, width, &pr_state);
+                        return (lines, Some(tabs));
                     }
                     if let Some(i) = &self.subject_issue {
-                        return views::issue_view(t, i, width, self.issue_editor.as_ref());
+                        return (
+                            views::issue_view(t, i, width, self.issue_editor.as_ref()),
+                            None,
+                        );
                     }
                 }
                 if matches!(n.subject_type(), "PullRequest" | "Issue") {
-                    views::notification_loading(t, &n, width)
+                    (views::notification_loading(t, &n, width), None)
                 } else {
-                    views::notification_prompt(t, &n)
+                    (views::notification_prompt(t, &n), None)
                 }
             }
             RowRef::Branch(b) => {
                 let preview_w = self.areas().preview.map_or(0, |p| p.outer().width);
                 let rule_w = (preview_w as usize).saturating_sub(5);
-                views::branch_view(t, &b, self.branch_status.as_ref(), rule_w)
+                (
+                    views::branch_view(t, &b, self.branch_status.as_ref(), rule_w),
+                    None,
+                )
             }
         }
     }
@@ -2661,8 +2836,9 @@ impl App {
         let width = self.sidebar_content_width();
         let valid = matches!(&self.sidebar_cache, Some((w, _)) if *w == width);
         if !valid {
-            let content = self.sidebar_content();
+            let (content, tabs) = self.sidebar_content();
             self.sidebar_cache = Some((width, content));
+            self.sidebar_tabs_line = tabs;
         }
         let max = self.sidebar_max_scroll();
         if self.sidebar_scroll > max {

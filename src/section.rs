@@ -15,6 +15,7 @@ use crate::config::{Config, IssuesLayoutConfig, PrsLayoutConfig};
 use crate::icons;
 use crate::input::TextInput;
 use crate::model::*;
+use crate::mouse::{HitMap, Target};
 use crate::text::*;
 use crate::theme::{self, Theme};
 use crate::util::{format_number, time_elapsed};
@@ -733,7 +734,7 @@ impl Section {
 
     /// Section View: search box followed by the table, inside 1 cell of horizontal padding.
     /// Draws the search box and the table of rows.
-    pub fn render(&self, rc: &RenderCtx, area: Rect, buf: &mut Buffer) {
+    pub fn render(&self, rc: &RenderCtx, area: Rect, buf: &mut Buffer, hits: &mut HitMap) {
         let t = rc.theme;
         let [search_area, table_area] =
             Layout::vertical([Constraint::Length(3), Constraint::Fill(1)])
@@ -751,7 +752,9 @@ impl Section {
         search_box.render(search_area, buf);
         self.search_line(t, input_area.width as usize)
             .render(input_area, buf);
-        self.render_table(rc, table_area, buf);
+        hits.push(search_area, Target::SearchBar);
+        hits.push(table_area, Target::List);
+        self.render_table(rc, table_area, buf, hits);
     }
 
     fn search_line(&self, t: &Theme, width: usize) -> Line<'static> {
@@ -822,7 +825,7 @@ impl Section {
             .collect()
     }
 
-    fn render_table(&self, rc: &RenderCtx, area: Rect, buf: &mut Buffer) {
+    fn render_table(&self, rc: &RenderCtx, area: Rect, buf: &mut Buffer, hits: &mut HitMap) {
         let t = rc.theme;
         let (widths, header): (Vec<usize>, Vec<Line<'static>>) = self
             .header_cells(rc, area.width as usize)
@@ -890,7 +893,13 @@ impl Section {
         let end = (self.top + per + 1).min(self.num_rows());
         let mut rows = vec![];
         let mut selected = None;
-        for i in self.top..end {
+        for (n, i) in (self.top..end).enumerate() {
+            let row_area = Rect {
+                y: body.y.saturating_add((n * item_h) as u16),
+                height: item_h as u16,
+                ..body
+            };
+            hits.push(row_area.intersection(body), Target::Row(i));
             if i == self.cursor {
                 selected = Some(rows.len());
             }
