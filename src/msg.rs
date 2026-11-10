@@ -68,9 +68,7 @@ pub enum Payload {
     UpdatePr(UpdatePr),
     UpdateIssue(UpdateIssue),
     NotificationDone(Box<crate::section::NotifRow>),
-    NotificationRead(String),
     ClearAllNotifications,
-    MarkAllRead,
     Repo {
         repo: crate::git::Repo,
         reset: bool,
@@ -126,10 +124,6 @@ pub enum Msg {
     /// The selection rested on a PR: check it if its last check is old.
     CheckSelected {
         url: String,
-    },
-    NotifReadState {
-        id: String,
-        unread: bool,
     },
     NotifPreview {
         notif_id: String,

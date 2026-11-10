@@ -523,7 +523,6 @@ pub struct NotificationRepository {
 #[serde(default)]
 pub struct Notification {
     pub id: String,
-    pub unread: bool,
     #[serde(deserialize_with = "nd")]
     pub reason: String,
     pub updated_at: DateTime<Utc>,

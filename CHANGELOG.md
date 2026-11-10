@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - Remove support for gh-dash config files, `$GH_DASH_CONFIG` and gh-dash bookmarks.
+- Remove read and unread notifications: the notifications view shows every notification you haven't marked done. This removes `m` and `M`, the `is:unread`, `is:read` and `is:all` filters, the `includeReadNotifications` setting and the unread markers, and viewing a notification no longer marks it read.
 
 ### Changed
 
@@ -27,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stop capturing the mouse, so you can select and copy text in the terminal again.
 - Mark a notification as done with `d`, and view a PR diff with `D`.
 - Remove a notification from the list as soon as you mark it done, and put it back if GitHub rejects the change.
+- Count a notification's new comments from when you last marked it done.
 
 ### Fixed
 

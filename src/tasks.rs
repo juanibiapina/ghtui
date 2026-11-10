@@ -8,7 +8,7 @@ use chrono::Utc;
 
 use crate::app::{App, ExecRequest, NotificationFilters};
 use crate::bookmarks;
-use crate::github::{self, ReadState};
+use crate::github;
 use crate::model::*;
 use crate::msg::*;
 use crate::section::NotifRow;
@@ -461,77 +461,36 @@ pub fn desktop_notify(title: &str, body: &str) {
     }
 }
 
-/// The notification fetch loop: pages until `limit` rows survive local
-/// filtering, pulling in bookmarked and session-read threads on the first page.
+/// Marks a notification done. It marks the thread read first so that GitHub's
+/// `last_read_at`, which the new comment count starts from, moves to now.
+pub fn mark_done(id: &str) -> Result<()> {
+    let read = github::mark_notification_read(id);
+    github::mark_notification_done(id)?;
+    bookmarks::store().remove(id);
+    read
+}
+
+/// The notification fetch loop: pages until `limit` rows survive local filtering.
 pub fn fetch_notifications(
     f: &NotificationFilters,
     limit: usize,
     page: Option<PageInfo>,
-    session_read: &HashSet<String>,
     session_done: &HashSet<String>,
 ) -> Result<(Vec<NotifRow>, PageInfo)> {
-    let bookmarked: HashSet<String> = bookmarks::store().all().into_iter().collect();
     let mut out: Vec<NotifRow> = vec![];
-    let mut current = page.clone();
-    let mut first = page.is_none();
+    let mut current = page;
     let reasons: HashSet<&str> = f.reason_filters.iter().map(|s| s.as_str()).collect();
     loop {
-        let mut res =
-            github::fetch_notifications(limit, &f.repo_filters, f.read_state, current.as_ref())?;
+        let res = github::fetch_notifications(limit, &f.repo_filters, current.as_ref())?;
         let last_page = res.page_info.clone();
-        if first {
-            first = false;
-            let mut fetched: HashSet<String> =
-                res.notifications.iter().map(|n| n.id.clone()).collect();
-            let mut missing = vec![];
-            if f.include_bookmarked {
-                for id in &bookmarked {
-                    if fetched.insert(id.clone()) {
-                        missing.push(id.clone());
-                    }
-                }
-            }
-            for id in session_read {
-                if fetched.insert(id.clone()) {
-                    missing.push(id.clone());
-                }
-            }
-            let handles: Vec<_> = missing
-                .into_iter()
-                .map(|id| std::thread::spawn(move || github::fetch_notification_by_thread(&id)))
-                .collect();
-            for h in handles {
-                if let Ok(Ok(n)) = h.join() {
-                    if !f.repo_filters.is_empty()
-                        && !f.repo_filters.contains(&n.repository.full_name)
-                    {
-                        continue;
-                    }
-                    res.notifications.push(n);
-                }
-            }
-        }
         for n in res.notifications {
             if session_done.contains(&n.id) {
                 continue;
             }
-            let mut include = if session_read.contains(&n.id) {
-                true
-            } else if f.include_bookmarked && !bookmarked.is_empty() {
-                n.unread || bookmarked.contains(&n.id)
-            } else {
-                match f.read_state {
-                    ReadState::Unread => n.unread,
-                    ReadState::Read => !n.unread,
-                    ReadState::All => true,
-                }
-            };
-            if include && !reasons.is_empty() {
-                include = reasons.contains(n.reason.as_str());
+            if !reasons.is_empty() && !reasons.contains(n.reason.as_str()) {
+                continue;
             }
-            if include {
-                out.push(NotifRow::new(n));
-            }
+            out.push(NotifRow::new(n));
         }
         if out.len() >= limit || !last_page.has_next_page {
             return Ok((out, last_page));

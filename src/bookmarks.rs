@@ -71,10 +71,6 @@ impl Store {
             self.save();
         }
     }
-
-    pub fn all(&self) -> Vec<String> {
-        self.ids.lock().unwrap().iter().cloned().collect()
-    }
 }
 
 pub fn store() -> &'static Store {

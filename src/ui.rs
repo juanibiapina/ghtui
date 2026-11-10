@@ -703,7 +703,6 @@ mod tests {
         let n = |id: &str, title: &str, kind: &str, reason: &str| {
             NotifRow::new(Notification {
                 id: id.into(),
-                unread: true,
                 reason: reason.into(),
                 updated_at: Utc::now() - Duration::hours(5),
                 subject: crate::model::NotificationSubject {

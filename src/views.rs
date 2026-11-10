@@ -1386,19 +1386,7 @@ pub fn notification_view(t: &Theme, row: &NotifRow, width: usize) -> Block {
             false,
         ),
         ("Reason", format_reason(&n.reason), false),
-        (
-            "Status",
-            if n.unread { "Unread" } else { "Read" }.into(),
-            false,
-        ),
         ("Updated", fmt_time(n.updated_at), false),
-        (
-            "Last Read",
-            n.last_read_at
-                .map(fmt_time)
-                .unwrap_or_else(|| "Never".into()),
-            false,
-        ),
         (
             "Has Comment",
             if n.subject.latest_comment_url.is_empty() {
@@ -1455,10 +1443,6 @@ pub fn notification_prompt(t: &Theme, row: &NotifRow) -> Block {
         ),
         span(tail, normal),
     ]));
-    b.push(Line::from(vec![
-        raw(margin),
-        span("(Note: this will mark it as read)", t.faint()),
-    ]));
     b.push(Line::default());
     b.push(Line::from(vec![
         raw(margin),
@@ -1467,7 +1451,6 @@ pub fn notification_prompt(t: &Theme, row: &NotifRow) -> Block {
     b.push(Line::default());
     let actions = [
         ("d", "mark as done"),
-        ("m", "mark as read"),
         ("u", "unsubscribe"),
         ("b", "toggle bookmark"),
         ("t", "toggle filtering"),

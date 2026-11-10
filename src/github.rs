@@ -1200,13 +1200,6 @@ pub fn fetch_repo_labels(repo: &str) -> Result<Vec<Label>> {
 
 // ---------------- REST: notifications ----------------
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ReadState {
-    Unread,
-    Read,
-    All,
-}
-
 pub struct NotificationsPage {
     pub notifications: Vec<Notification>,
     pub page_info: PageInfo,
@@ -1216,14 +1209,10 @@ pub struct NotificationsPage {
 pub fn fetch_notifications(
     limit: usize,
     repo_filters: &[String],
-    read_state: ReadState,
     page: Option<&PageInfo>,
 ) -> Result<NotificationsPage> {
     let c = client()?;
-    let mut filter = "&is_done=false".to_string();
-    if matches!(read_state, ReadState::Read | ReadState::All) {
-        filter.push_str("&all=true");
-    }
+    let filter = "&is_done=false&all=true";
     let page_no: usize = page.and_then(|p| p.end_cursor.parse().ok()).unwrap_or(1);
     let mut all: Vec<Notification> = vec![];
     if repo_filters.is_empty() {
@@ -1240,23 +1229,14 @@ pub fn fetch_notifications(
         }
     }
     let has_next = all.len() >= limit;
-    let notifications = match read_state {
-        ReadState::Read => all.into_iter().filter(|n| !n.unread).collect(),
-        ReadState::Unread => all.into_iter().filter(|n| n.unread).collect(),
-        ReadState::All => all,
-    };
     Ok(NotificationsPage {
-        notifications,
+        notifications: all,
         page_info: PageInfo {
             has_next_page: has_next,
             start_cursor: String::new(),
             end_cursor: (page_no + 1).to_string(),
         },
     })
-}
-
-pub fn fetch_notification_by_thread(id: &str) -> Result<Notification> {
-    client()?.rest_get(&format!("notifications/threads/{id}"))
 }
 
 pub fn mark_notification_done(id: &str) -> Result<()> {
@@ -1278,10 +1258,6 @@ pub fn unsubscribe_thread(id: &str) -> Result<()> {
             &format!("notifications/threads/{id}/subscription"),
         )
         .map(|_| ())
-}
-
-pub fn mark_all_notifications_read() -> Result<()> {
-    client()?.rest("PUT", "notifications").map(|_| ())
 }
 
 pub fn best_workflow_run(runs: &[WorkflowRun], at: DateTime<Utc>) -> Option<&WorkflowRun> {

@@ -60,13 +60,10 @@ This setting defines the filters for notifications in the section's table. Notif
 
 ### Available Filters
 
-#### Read State Filters
+#### State Filters
 
 | Filter | Description |
 |--------|-------------|
-| `is:unread` | Show only unread notifications |
-| `is:read` | Show only read notifications |
-| `is:all` | Show both read and unread notifications |
 | `is:done` | Show archived/done notifications |
 
 #### Reason Filters
@@ -97,9 +94,9 @@ This setting defines the filters for notifications in the section's table. Notif
 - title: Mentioned
   filters: "reason:mention"
 
-# Show unread notifications from a specific repo
+# Show notifications from a specific repo
 - title: My Project
-  filters: "is:unread repo:myorg/myproject"
+  filters: "repo:myorg/myproject"
 
 # Show notifications where you're actively participating
 - title: Participating
@@ -112,8 +109,7 @@ This setting defines the filters for notifications in the section's table. Notif
 
 ### Filter Behavior
 
-- **Default behavior**: With no filters or empty filters, the section shows all notifications (both read and unread), matching GitHub's default behavior. To show only unread notifications by default, set `includeReadNotifications: false` in your config.
-- **Explicit `is:unread`**: Shows only unread notifications, excluding bookmarked read notifications. This overrides the `includeReadNotifications` setting.
+- **Default behavior**: With no filters or empty filters, the section shows every notification in your inbox, which is every notification you haven't marked done.
 - **Reason filters**: Applied client-side after fetching from GitHub's API
 
 ## Notification Fetch Limit (`limit`)

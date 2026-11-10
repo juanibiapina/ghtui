@@ -412,7 +412,6 @@ pub struct Config {
     pub quit_on_esc: bool,
     pub show_author_icons: bool,
     pub smart_filtering_at_launch: bool,
-    pub include_read_notifications: bool,
 }
 
 fn sec<T: Default>(title: &str, filters: &str, f: impl Fn(String, String) -> T) -> T {
@@ -468,7 +467,6 @@ impl Default for Config {
             quit_on_esc: false,
             show_author_icons: true,
             smart_filtering_at_launch: true,
-            include_read_notifications: true,
         }
     }
 }

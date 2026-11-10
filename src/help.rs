@@ -230,8 +230,6 @@ impl Help {
                     &n.back_to_notification,
                     &n.mark_as_done,
                     &n.mark_all_as_done,
-                    &n.mark_as_read,
-                    &n.mark_all_as_read,
                     &n.unsubscribe,
                     &n.toggle_bookmark,
                     &n.sort_by_repo,
@@ -539,7 +537,7 @@ mod tests {
             NotificationSubject::None,
         );
         assert!(group(&h, "Review").is_none());
-        assert!(has_key(&h, "Notification", "m"));
+        assert!(has_key(&h, "Notification", "d"));
     }
 
     #[test]

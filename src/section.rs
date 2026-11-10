@@ -366,7 +366,6 @@ pub struct Section {
     pub prompt: Option<(String, TextInput)>,
     pub last_updated: DateTime<Local>,
     pub sort: SortOrder,
-    pub session_read: HashSet<String>,
     pub session_done: HashSet<String>,
 }
 
@@ -423,7 +422,6 @@ impl Section {
             prompt: None,
             last_updated: Local::now(),
             sort: SortOrder::Updated,
-            session_read: HashSet::new(),
             session_done: HashSet::new(),
         };
         if kind == Kind::Notification {
@@ -537,7 +535,6 @@ impl Section {
         self.issues.clear();
         self.notifs.clear();
         if self.kind == Kind::Notification {
-            self.session_read.clear();
             self.session_done.clear();
         }
         self.page_info = None;
@@ -619,7 +616,6 @@ impl Section {
         let i = self.notifs.iter().position(|n| n.id() == id)?;
         let row = self.notifs.remove(i);
         self.session_done.insert(id.to_string());
-        self.session_read.remove(id);
         self.total_count = self.notifs.len();
         if !self.notifs.is_empty() && self.cursor >= self.notifs.len() {
             self.last_row(cfg, body_height);
@@ -1296,11 +1292,7 @@ fn notification_row(row: &NotifRow, rc: &RenderCtx) -> Vec<Block> {
     };
     let type_cell = vec![
         Line::from(span(icon, style)),
-        if row.n.unread {
-            Line::from(span(icons::DOT, fg(Color::Indexed(33))))
-        } else {
-            Line::default()
-        },
+        Line::default(),
         Line::default(),
     ];
 
@@ -1313,10 +1305,7 @@ fn notification_row(row: &NotifRow, rc: &RenderCtx) -> Vec<Block> {
         l1.push(span(" ", t.secondary()));
         l1.push(span(icons::BOOKMARK, fg(t.warning_text)));
     }
-    let mut title_style = t.primary();
-    if row.n.unread {
-        title_style = title_style.add_modifier(Modifier::BOLD);
-    }
+    let title_style = t.primary();
     let activity = if row.activity.is_empty() {
         reason_description(&row.n.reason, row.subject_type())
     } else {

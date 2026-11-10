@@ -12,7 +12,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use crate::bookmarks;
 use crate::complete::{Completer, FetchState, SourceKind};
 use crate::config::{Config, IssuesSectionConfig, PrsSectionConfig, ViewType};
-use crate::github::{self, ReadState};
+use crate::github;
 use crate::help::Help;
 use crate::input::{TextArea, TextInput};
 use crate::keys::{Keys, NotificationSubject};
@@ -565,7 +565,6 @@ impl App {
             ViewType::Issues => self.cfg.defaults.issues_limit,
             _ => self.cfg.defaults.prs_limit,
         };
-        let include_read = self.cfg.include_read_notifications;
         let s = self.sections_for(view).get_mut(id)?;
         if let Some(p) = &s.page_info
             && !p.has_next_page
@@ -580,7 +579,7 @@ impl App {
         let kind = s.kind;
 
         if kind == Kind::Notification {
-            let nf = parse_notification_filters(&filters, include_read);
+            let nf = parse_notification_filters(&filters);
             if nf.is_done {
                 s.notifs.clear();
                 s.total_count = 0;
@@ -597,7 +596,6 @@ impl App {
             s.last_fetch_task = tid.clone();
             s.last_fetch_at = Some(Instant::now());
             s.is_loading = true;
-            let session_read = s.session_read.clone();
             let session_done = s.session_done.clone();
             let limit = self.cfg.defaults.notifications_limit;
             self.start_task(
@@ -607,8 +605,7 @@ impl App {
             );
             let task = tid.clone();
             self.pool.spawn(move || {
-                let fetch =
-                    || tasks::fetch_notifications(&nf, limit, page, &session_read, &session_done);
+                let fetch = || tasks::fetch_notifications(&nf, limit, page, &session_done);
                 let res = if background {
                     github::background(fetch)
                 } else {
@@ -777,24 +774,14 @@ impl App {
         self.want_subject(&n);
     }
 
-    /// loadNotificationContent: Enter marks the notification read and shows its subject.
+    /// loadNotificationContent: Enter shows the notification's subject.
     fn load_notification_content(&mut self) {
         let Some(RowRef::Notification(n)) = self.current_row() else {
             return;
         };
-        let id = n.id().to_string();
         self.invalidate_sidebar();
-        let id2 = id.clone();
-        self.pool.spawn(move || {
-            let _ = github::mark_notification_read(&id2);
-            Some(Msg::NotifReadState {
-                id: id2,
-                unread: false,
-            })
-        });
         match n.subject_type() {
             "PullRequest" | "Issue" => {
-                self.mark_notification_read_locally(&id);
                 if !self.show_cached_subject(&n) {
                     self.want_subject(&n);
                 }
@@ -820,15 +807,6 @@ impl App {
             self.confirm_quit_shown = true;
         } else {
             self.quit = true;
-        }
-    }
-
-    fn mark_notification_read_locally(&mut self, id: &str) {
-        for s in self.notifs.iter_mut() {
-            if let Some(n) = s.notifs.iter_mut().find(|n| n.id() == id) {
-                n.n.unread = false;
-                s.session_read.insert(id.to_string());
-            }
         }
     }
 
@@ -874,16 +852,6 @@ impl App {
             Msg::NotifPreview { notif_id } => {
                 if notif_id == self.selected_notification_id() && self.subject_id != notif_id {
                     self.preview_notification();
-                }
-            }
-            Msg::NotifReadState { id, unread } => {
-                for s in self.notifs.iter_mut() {
-                    if let Some(n) = s.notifs.iter_mut().find(|n| n.id() == id) {
-                        n.n.unread = unread;
-                        if !unread {
-                            s.session_read.insert(id.clone());
-                        }
-                    }
                 }
             }
             Msg::Suggestions {
@@ -1128,12 +1096,6 @@ impl App {
                         row_changed = true;
                     }
                 }
-                Payload::NotificationRead(id) => {
-                    if let Some(n) = s.notifs.iter_mut().find(|n| n.id() == id) {
-                        n.n.unread = false;
-                        s.session_read.insert(id);
-                    }
-                }
                 Payload::ClearAllNotifications => {
                     s.notifs.clear();
                     s.total_count = 0;
@@ -1180,12 +1142,6 @@ impl App {
                         primary: *pr,
                         enriched: None,
                     });
-                }
-                Payload::MarkAllRead => {
-                    for n in s.notifs.iter_mut() {
-                        n.n.unread = false;
-                        s.session_read.insert(n.n.id.clone());
-                    }
                 }
             }
         }
@@ -1514,9 +1470,6 @@ impl App {
         let body_h = self.body_height();
         let cfg = self.cfg.clone();
         let Some(n) = self.section().and_then(|s| s.current_notif().cloned()) else {
-            if k.mark_all_as_read.matches(key) {
-                self.mark_all_read(view, id);
-            }
             return;
         };
         let nid = n.id().to_string();
@@ -1537,10 +1490,7 @@ impl App {
                 "Notification marked as done",
             );
             self.pool.spawn(move || {
-                let r = github::mark_notification_done(&nid);
-                if r.is_ok() {
-                    bookmarks::store().remove(&nid);
-                }
+                let r = tasks::mark_done(&nid);
                 Some(Msg::TaskFinished {
                     task_id: tid,
                     section: Some(key_),
@@ -1548,28 +1498,6 @@ impl App {
                     payload: Payload::NotificationDone(Box::new(row)),
                 })
             });
-        } else if k.mark_as_read.matches(key) {
-            let tid = format!("notification_read_{nid}");
-            self.start_task(
-                &tid,
-                "Marking notification as read",
-                "Notification marked as read",
-            );
-            self.pool.spawn(move || {
-                let r = github::mark_notification_read(&nid);
-                Some(Msg::TaskFinished {
-                    task_id: tid,
-                    section: Some(key_),
-                    err: r.err().map(|e| e.to_string()),
-                    payload: Payload::NotificationRead(nid),
-                })
-            });
-            if let Some(s) = self.section_mut() {
-                s.next_row(&cfg, body_h);
-            }
-            self.on_viewed_row_changed();
-        } else if k.mark_all_as_read.matches(key) {
-            self.mark_all_read(view, id);
         } else if k.unsubscribe.matches(key) {
             let tid = format!("notification_unsubscribe_{nid}");
             self.start_task(
@@ -1598,30 +1526,6 @@ impl App {
             };
             s.sort_notifications();
         }
-    }
-
-    fn mark_all_read(&mut self, view: ViewType, id: usize) {
-        let tid = "notification_read_all".to_string();
-        self.start_task(
-            &tid,
-            "Marking all notifications as read",
-            "All notifications marked as read",
-        );
-        let key = SectionKey { view, id };
-        self.pool.spawn(move || {
-            let r = github::mark_all_notifications_read();
-            let failed = r.is_err();
-            Some(Msg::TaskFinished {
-                task_id: tid,
-                section: Some(key),
-                err: r.err().map(|e| e.to_string()),
-                payload: if failed {
-                    Payload::None
-                } else {
-                    Payload::MarkAllRead
-                },
-            })
-        });
     }
 
     fn handle_search_key(&mut self, key: &str) {
@@ -2303,9 +2207,8 @@ impl App {
         self.pool.spawn_detached(move || {
             let mut last_err = None;
             for id in &ids {
-                match github::mark_notification_done(id) {
-                    Ok(_) => bookmarks::store().remove(id),
-                    Err(e) => last_err = Some(e.to_string()),
+                if let Err(e) = tasks::mark_done(id) {
+                    last_err = Some(e.to_string());
                 }
             }
             let failed = last_err.is_some();
@@ -3228,24 +3131,15 @@ fn apply_update_pr(s: &mut Section, u: &UpdatePr) {
 pub struct NotificationFilters {
     pub repo_filters: Vec<String>,
     pub reason_filters: Vec<String>,
-    pub read_state: ReadState,
     pub is_done: bool,
-    pub include_bookmarked: bool,
 }
 
-pub fn parse_notification_filters(search: &str, include_read: bool) -> NotificationFilters {
+pub fn parse_notification_filters(search: &str) -> NotificationFilters {
     let mut f = NotificationFilters {
         repo_filters: vec![],
         reason_filters: vec![],
-        read_state: if include_read {
-            ReadState::All
-        } else {
-            ReadState::Unread
-        },
         is_done: false,
-        include_bookmarked: !include_read,
     };
-    let (mut unread, mut read, mut all) = (false, false, false);
     for tok in search.split_whitespace() {
         if let Some(r) = tok.strip_prefix("repo:") {
             f.repo_filters.push(r.to_string());
@@ -3269,25 +3163,9 @@ pub fn parse_notification_filters(search: &str, include_read: bool) -> Notificat
                 "state-change" => f.reason_filters.push("state_change".into()),
                 other => f.reason_filters.push(other.to_string()),
             }
-        } else if let Some(s) = tok.strip_prefix("is:") {
-            match s {
-                "unread" => unread = true,
-                "read" => read = true,
-                "done" => f.is_done = true,
-                "all" => all = true,
-                _ => {}
-            }
+        } else if tok == "is:done" {
+            f.is_done = true;
         }
-    }
-    if all || (unread && read) {
-        f.read_state = ReadState::All;
-        f.include_bookmarked = false;
-    } else if read {
-        f.read_state = ReadState::Read;
-        f.include_bookmarked = false;
-    } else if unread {
-        f.read_state = ReadState::Unread;
-        f.include_bookmarked = false;
     }
     f
 }
@@ -3300,7 +3178,6 @@ mod tests {
     fn notif(id: &str, hours_ago: i64) -> NotifRow {
         NotifRow::new(Notification {
             id: id.into(),
-            unread: true,
             updated_at: chrono::Utc::now() - chrono::Duration::hours(hours_ago),
             ..Default::default()
         })
@@ -3406,20 +3283,14 @@ mod tests {
 
     #[test]
     fn notification_filters_parse_like_go() {
-        let f = parse_notification_filters("repo:a/b reason:participating", true);
+        let f = parse_notification_filters("repo:a/b reason:participating");
         assert_eq!(f.repo_filters, vec!["a/b"]);
         assert_eq!(f.reason_filters.len(), 6);
-        assert_eq!(f.read_state, ReadState::All);
-        assert!(!f.include_bookmarked);
+        assert!(!f.is_done);
 
-        let f = parse_notification_filters("reason:review-requested", false);
+        let f = parse_notification_filters("reason:review-requested");
         assert_eq!(f.reason_filters, vec!["review_requested"]);
-        assert_eq!(f.read_state, ReadState::Unread);
-        assert!(f.include_bookmarked);
-
-        let f = parse_notification_filters("is:unread", true);
-        assert_eq!(f.read_state, ReadState::Unread);
-        assert!(parse_notification_filters("is:done", true).is_done);
+        assert!(parse_notification_filters("is:done").is_done);
     }
 
     fn esc_inbox(quit_on_esc: bool, confirm_quit: bool) -> App {
