@@ -299,7 +299,7 @@ impl App {
         for s in self.prs.iter_mut() {
             fill_details(&mut s.prs, store);
         }
-        self.notification_extras(None);
+        self.update_notification_extras(None);
         self.invalidate_preview();
         if self.live.started {
             self.change_check(self.view);
@@ -937,7 +937,7 @@ impl App {
                 {
                     self.show_subject_pr(&id, (*pr).clone());
                 }
-                self.notification_extras(Some(&url));
+                self.update_notification_extras(Some(&url));
                 self.live.dirty = true;
             }
             Err(e) => {
@@ -966,7 +966,7 @@ impl App {
                 {
                     self.show_subject_issue(&id, (*issue).clone());
                 }
-                self.notification_extras(Some(&url));
+                self.update_notification_extras(Some(&url));
                 self.live.dirty = true;
             }
             Err(e) => {
@@ -982,7 +982,7 @@ impl App {
     /// Updates the comment count, state and actor of notifications whose subject is
     /// cached; only those with subject `url` when given. Marks subjects older than
     /// their notification stale.
-    pub(super) fn notification_extras(&mut self, url: Option<&str>) {
+    pub(super) fn update_notification_extras(&mut self, url: Option<&str>) {
         let prs = &self.live.pr_store;
         let issues = &self.live.issue_store;
         for s in self.notifs.iter_mut() {

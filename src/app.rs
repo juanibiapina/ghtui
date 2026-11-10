@@ -694,8 +694,8 @@ impl App {
         Some(task)
     }
 
-    /// CheckSuite notifications link to their workflow run.
-    fn fetch_notification_extras(&self, rows: &[NotifRow]) {
+    /// CheckSuite notifications link to the workflow run fetched here.
+    fn fetch_check_suite_runs(&self, rows: &[NotifRow]) {
         for r in rows.iter().filter(|r| r.subject_type() == "CheckSuite") {
             let id = r.id().to_string();
             let repo = r.repo().to_string();
@@ -1113,8 +1113,8 @@ impl App {
             }
         }
         if matches!(key.view, ViewType::Notifications) && !new_notifs.is_empty() {
-            self.fetch_notification_extras(&new_notifs);
-            self.notification_extras(None);
+            self.fetch_check_suite_runs(&new_notifs);
+            self.update_notification_extras(None);
         }
         if fill_prs {
             let store = &self.live.pr_store;
