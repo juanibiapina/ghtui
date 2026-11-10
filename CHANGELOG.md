@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replace `{{ nowModify "-2w" }}` in filters with `{{ now-2w }}`. Offsets take whole days, weeks, months and years, and months follow the calendar.
 - Change `dateFormat` from Go layouts to strftime formats, such as `%Y-%m-%d` instead of `2006-01-02`. An invalid format fails at launch.
 - Check section filter templates at launch, and show an error instead of searching for the raw `{{ }}` text.
+- Highlight code blocks in previews with bat's syntaxes. Some colors change, and code blocks use exact colors instead of the nearest of 256.
 
 ### Fixed
 

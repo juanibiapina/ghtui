@@ -24,7 +24,6 @@ Rust warnings and `clippy::all` are denied in `Cargo.toml`.
 - Read PR and issue details through the detail stores in `src/app/live.rs` (`src/store.rs`), never
   `github::fetch_*_by_url` directly: the stores deduplicate requests and pace background work.
 - Wrap background GitHub requests in `github::background` so they pause while rate limited.
-- Syntax highlighting uses the Chroma lexer XMLs vendored in `assets/chroma/`, compiled in by `build.rs`.
 
 ## Releasing
 

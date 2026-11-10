@@ -53,6 +53,6 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 - [ratatui](https://ratatui.rs) for the TUI
 - [pulldown-cmark](https://github.com/pulldown-cmark/pulldown-cmark) for parsing markdown
-- [Chroma](https://github.com/alecthomas/chroma) lexers for syntax highlighting
+- [syntect](https://github.com/trishume/syntect) with [bat](https://github.com/sharkdp/bat)'s syntaxes for syntax highlighting
 - [gh](https://github.com/cli/cli) for the GitHub functionality
 - [delta](https://github.com/dandavison/delta) for viewing PR diffs

@@ -2,7 +2,6 @@
 
 mod app;
 mod bookmarks;
-mod chroma;
 mod complete;
 mod config;
 mod disk_cache;
