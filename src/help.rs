@@ -471,7 +471,7 @@ impl Help {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Keybinding, Keybindings};
+    use crate::config::{Action, Keybinding, Keybindings};
 
     fn titles(h: &Help) -> Vec<&str> {
         h.groups.iter().map(|g| g.title).collect()
@@ -557,8 +557,8 @@ mod tests {
         keys.rebind(&Keybindings {
             prs: vec![Keybinding {
                 key: "O".into(),
-                command: "echo {{.PrNumber}}".into(),
-                ..Default::default()
+                name: None,
+                action: Action::Command("echo {{.PrNumber}}".into()),
             }],
             ..Default::default()
         })
@@ -586,8 +586,8 @@ mod tests {
         keys.rebind(&Keybindings {
             universal: vec![Keybinding {
                 key: "H".into(),
-                builtin: "help".into(),
-                ..Default::default()
+                name: None,
+                action: Action::Builtin("help".into()),
             }],
             ..Default::default()
         })

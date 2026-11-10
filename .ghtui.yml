@@ -4,12 +4,12 @@ prSections:
     layout:
       author:
         hidden: true
-      repoName:
+      repo:
         hidden: true
   - title: Review
     filters: repo:juanibiapina/ghtui -author:@me is:open updated:>={{ nowModify "-2.5w" }}
     layout:
-      repoName:
+      repo:
         hidden: true
   - title: All
     filters: repo:juanibiapina/ghtui
@@ -28,7 +28,7 @@ defaults:
   refetchIntervalMinutes: 5
   layout:
     prs:
-      repoName:
+      repo:
         hidden: true
       base:
         hidden: true

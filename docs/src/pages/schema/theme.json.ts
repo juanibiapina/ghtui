@@ -13,18 +13,18 @@ export function GET() {
           title: "UI Settings",
           type: "object",
           properties: {
+            sectionsShowCount: {
+              title: "Sections Show Count",
+              description:
+                "Whether the number of results show up next to each section's title in the tab bar.",
+              type: "boolean",
+              default: true,
+            },
             table: {
               title: "Table Settings",
               type: "object",
               properties: {
-                sectionsShowCount: {
-                  title: "Sections Show Count",
-                  description:
-                    "Whether the number of results show up next to each section's title in the tab bar.",
-                  type: "boolean",
-                  default: true,
-                },
-                showSeparators: {
+                showSeparator: {
                   title: "Show Separators",
                   description:
                     "Whether to show the separators between lines in the prs/issues tables.",
@@ -47,7 +47,7 @@ export function GET() {
           description: "Defines the author-role icons for the dashboard.",
           type: "object",
           properties: {
-            newcontributor: {
+            newContributor: {
               title: "New Contributor Role Icon",
               description:
                 "Specifies the character to use as the new-contributor-role icon.",
@@ -77,7 +77,7 @@ export function GET() {
                 "Specifies the character to use as the owner-role icon.",
               type: "string",
             },
-            unknownrole: {
+            unknownRole: {
               title: "Unknown Role Icon Color",
               description:
                 "Specifies the character to use as the unknown-role icon.",
@@ -202,7 +202,7 @@ export function GET() {
               description: "Defines author-role icon colors for the dashboard.",
               type: "object",
               properties: {
-                newcontributor: {
+                newContributor: {
                   title: "New Contributor Role Icon Color",
                   description:
                     "Specifies the icon color for the new-contributor-role icon.",
@@ -237,7 +237,7 @@ export function GET() {
                   type: "string",
                   pattern: "^#([a-fA-F0-9]{6}|[a-fA-F0-9]{3})$",
                 },
-                unknownrole: {
+                unknownRole: {
                   title: "Unknown Role Icon Color",
                   description:
                     "Specifies the icon color for the unknown-role icon.",
@@ -253,7 +253,7 @@ export function GET() {
         ui: {
           sectionsShowCount: true,
           table: {
-            showSeparators: true,
+            showSeparator: true,
             compact: false,
           },
         },

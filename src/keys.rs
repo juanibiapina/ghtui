@@ -4,7 +4,7 @@
 use anyhow::{Result, bail};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::config::{Keybinding, Keybindings};
+use crate::config::{Action, Keybinding, Keybindings};
 use crate::icons;
 use crate::util::truncate_command;
 
@@ -26,16 +26,12 @@ impl Binding {
     pub fn matches(&self, key: &str) -> bool {
         self.keys.iter().any(|k| k == key)
     }
-    fn rebind(&mut self, kb: &Keybinding, desc_from_command: bool) {
+    fn rebind(&mut self, kb: &Keybinding) {
         self.keys = vec![kb.key.clone()];
-        let mut desc = self.help_desc.clone();
-        if !kb.name.is_empty() {
-            desc = kb.name.clone();
-        } else if desc_from_command && !kb.command.is_empty() {
-            desc = kb.command.clone();
-        }
         self.help_key = kb.key.clone();
-        self.help_desc = desc;
+        if let Some(name) = &kb.name {
+            self.help_desc = name.clone();
+        }
     }
 }
 
@@ -266,151 +262,143 @@ impl Default for Keys {
     }
 }
 
-fn custom_binding(kb: &Keybinding) -> Binding {
-    let name = if kb.name.is_empty() {
-        truncate_command(&kb.command)
-    } else {
-        kb.name.clone()
-    };
+fn custom_binding(kb: &Keybinding, command: &str) -> Binding {
     Binding {
         keys: vec![kb.key.clone()],
         help_key: kb.key.clone(),
-        help_desc: name,
+        help_desc: kb.name.clone().unwrap_or_else(|| truncate_command(command)),
     }
 }
 
 impl Keys {
     pub fn rebind(&mut self, kbs: &Keybindings) -> Result<()> {
         for kb in &kbs.universal {
-            if kb.builtin.is_empty() {
-                if !kb.command.is_empty() {
-                    self.custom_universal.push(custom_binding(kb));
-                }
-                continue;
+            match &kb.action {
+                Action::Builtin(name) => universal_binding(&mut self.u, name)?.rebind(kb),
+                Action::Command(command) => self.custom_universal.push(custom_binding(kb, command)),
             }
-            let u = &mut self.u;
-            let target = match kb.builtin.as_str() {
-                "up" => &mut u.up,
-                "down" => &mut u.down,
-                "firstLine" => &mut u.first_line,
-                "lastLine" => &mut u.last_line,
-                "togglePreview" => &mut u.toggle_preview,
-                "togglePreviewPosition" => &mut u.toggle_preview_position,
-                "openGithub" => &mut u.open_github,
-                "refresh" => &mut u.refresh,
-                "refreshAll" => &mut u.refresh_all,
-                "redraw" => &mut u.redraw,
-                "pageDown" => &mut u.page_down,
-                "pageUp" => &mut u.page_up,
-                "nextSection" => &mut u.next_section,
-                "prevSection" => &mut u.prev_section,
-                "search" => &mut u.search,
-                "copyurl" => &mut u.copy_url,
-                "copyNumber" => &mut u.copy_number,
-                "newSection" => &mut u.new_section,
-                "help" => &mut u.help,
-                "quit" => &mut u.quit,
-                other => bail!("unknown built-in universal key: '{other}'"),
-            };
-            target.rebind(kb, true);
         }
         for kb in &kbs.prs {
-            if kb.builtin.is_empty() {
-                if !kb.command.is_empty() {
-                    self.custom_pr.push(custom_binding(kb));
-                }
-                continue;
+            match &kb.action {
+                Action::Builtin(name) => pr_binding(&mut self.pr, name)?.rebind(kb),
+                Action::Command(command) => self.custom_pr.push(custom_binding(kb, command)),
             }
-            let p = &mut self.pr;
-            let target = match kb.builtin.as_str() {
-                "prevSidebarTab" => &mut p.prev_preview_tab,
-                "nextSidebarTab" => &mut p.next_preview_tab,
-                "approve" => &mut p.approve,
-                "assign" => &mut p.assign,
-                "unassign" => &mut p.unassign,
-                "label" => &mut p.label,
-                "comment" => &mut p.comment,
-                "diff" => &mut p.diff,
-                "checkout" => &mut p.checkout,
-                "close" => &mut p.close,
-                "ready" => &mut p.ready,
-                "reopen" => &mut p.reopen,
-                "merge" => &mut p.merge,
-                "update" => &mut p.update,
-                "watchChecks" => &mut p.watch_checks,
-                "approveWorkflows" => &mut p.approve_workflows,
-                "viewIssues" => &mut p.view_issues,
-                "summaryViewMore" => &mut p.summary_view_more,
-                other => bail!("unknown built-in pr key: '{other}'"),
-            };
-            target.rebind(kb, false);
         }
         for kb in &kbs.branches {
-            if kb.builtin.is_empty() {
-                if !kb.command.is_empty() {
-                    self.custom_branch.push(custom_binding(kb));
-                }
-                continue;
+            match &kb.action {
+                Action::Builtin(name) => branch_binding(&mut self.branch, name)?.rebind(kb),
+                Action::Command(command) => self.custom_branch.push(custom_binding(kb, command)),
             }
-            let br = &mut self.branch;
-            let target = match kb.builtin.as_str() {
-                "new" => &mut br.new,
-                "createPr" => &mut br.create_pr,
-                "delete" => &mut br.delete,
-                "push" => &mut br.push,
-                "forcePush" => &mut br.force_push,
-                "fastForward" => &mut br.fast_forward,
-                "checkout" => &mut br.checkout,
-                "viewPRs" => &mut br.view_prs,
-                "updatePr" => &mut br.update_pr,
-                other => bail!("unknown built-in branch key: '{other}'"),
-            };
-            target.rebind(kb, false);
         }
         for kb in &kbs.issues {
-            if kb.builtin.is_empty() {
-                if !kb.command.is_empty() {
-                    self.custom_issue.push(custom_binding(kb));
-                }
-                continue;
+            match &kb.action {
+                Action::Builtin(name) => issue_binding(&mut self.issue, name)?.rebind(kb),
+                Action::Command(command) => self.custom_issue.push(custom_binding(kb, command)),
             }
-            let i = &mut self.issue;
-            let target = match kb.builtin.as_str() {
-                "label" => &mut i.label,
-                "assign" => &mut i.assign,
-                "unassign" => &mut i.unassign,
-                "comment" => &mut i.comment,
-                "checkout" => &mut i.checkout,
-                "close" => &mut i.close,
-                "reopen" => &mut i.reopen,
-                "viewPrs" => &mut i.view_prs,
-                other => bail!("unknown built-in issue key: '{other}'"),
-            };
-            target.rebind(kb, false);
         }
         for kb in &kbs.notifications {
-            if kb.builtin.is_empty() {
-                if !kb.command.is_empty() {
-                    self.custom_notification.push(custom_binding(kb));
+            match &kb.action {
+                Action::Builtin(name) => notification_binding(&mut self.notif, name)?.rebind(kb),
+                Action::Command(command) => {
+                    self.custom_notification.push(custom_binding(kb, command))
                 }
-                continue;
             }
-            let n = &mut self.notif;
-            let target = match kb.builtin.as_str() {
-                "markAsDone" => &mut n.mark_as_done,
-                "markAllAsDone" => &mut n.mark_all_as_done,
-                "unsubscribe" => &mut n.unsubscribe,
-                "toggleBookmark" => &mut n.toggle_bookmark,
-                "open" => &mut n.open,
-                "sortByRepo" => &mut n.sort_by_repo,
-                "switchToPRs" => &mut n.switch_to_prs,
-                "toggleSmartFiltering" => &mut n.toggle_smart_filtering,
-                other => bail!("unknown built-in notification key: '{other}'"),
-            };
-            target.rebind(kb, false);
         }
         Ok(())
     }
+}
+
+fn universal_binding<'a>(keys: &'a mut Universal, name: &str) -> Result<&'a mut Binding> {
+    Ok(match name {
+        "up" => &mut keys.up,
+        "down" => &mut keys.down,
+        "firstLine" => &mut keys.first_line,
+        "lastLine" => &mut keys.last_line,
+        "togglePreview" => &mut keys.toggle_preview,
+        "togglePreviewPosition" => &mut keys.toggle_preview_position,
+        "openGithub" => &mut keys.open_github,
+        "refresh" => &mut keys.refresh,
+        "refreshAll" => &mut keys.refresh_all,
+        "redraw" => &mut keys.redraw,
+        "pageDown" => &mut keys.page_down,
+        "pageUp" => &mut keys.page_up,
+        "nextSection" => &mut keys.next_section,
+        "prevSection" => &mut keys.prev_section,
+        "search" => &mut keys.search,
+        "copyurl" => &mut keys.copy_url,
+        "copyNumber" => &mut keys.copy_number,
+        "newSection" => &mut keys.new_section,
+        "help" => &mut keys.help,
+        "quit" => &mut keys.quit,
+        other => bail!("unknown built-in universal key: '{other}'"),
+    })
+}
+
+fn pr_binding<'a>(keys: &'a mut PrKeys, name: &str) -> Result<&'a mut Binding> {
+    Ok(match name {
+        "prevSidebarTab" => &mut keys.prev_preview_tab,
+        "nextSidebarTab" => &mut keys.next_preview_tab,
+        "approve" => &mut keys.approve,
+        "assign" => &mut keys.assign,
+        "unassign" => &mut keys.unassign,
+        "label" => &mut keys.label,
+        "comment" => &mut keys.comment,
+        "diff" => &mut keys.diff,
+        "checkout" => &mut keys.checkout,
+        "close" => &mut keys.close,
+        "ready" => &mut keys.ready,
+        "reopen" => &mut keys.reopen,
+        "merge" => &mut keys.merge,
+        "update" => &mut keys.update,
+        "watchChecks" => &mut keys.watch_checks,
+        "approveWorkflows" => &mut keys.approve_workflows,
+        "viewIssues" => &mut keys.view_issues,
+        "summaryViewMore" => &mut keys.summary_view_more,
+        other => bail!("unknown built-in pr key: '{other}'"),
+    })
+}
+
+fn branch_binding<'a>(keys: &'a mut BranchKeys, name: &str) -> Result<&'a mut Binding> {
+    Ok(match name {
+        "new" => &mut keys.new,
+        "createPr" => &mut keys.create_pr,
+        "delete" => &mut keys.delete,
+        "push" => &mut keys.push,
+        "forcePush" => &mut keys.force_push,
+        "fastForward" => &mut keys.fast_forward,
+        "checkout" => &mut keys.checkout,
+        "viewPRs" => &mut keys.view_prs,
+        "updatePr" => &mut keys.update_pr,
+        other => bail!("unknown built-in branch key: '{other}'"),
+    })
+}
+
+fn issue_binding<'a>(keys: &'a mut IssueKeys, name: &str) -> Result<&'a mut Binding> {
+    Ok(match name {
+        "label" => &mut keys.label,
+        "assign" => &mut keys.assign,
+        "unassign" => &mut keys.unassign,
+        "comment" => &mut keys.comment,
+        "checkout" => &mut keys.checkout,
+        "close" => &mut keys.close,
+        "reopen" => &mut keys.reopen,
+        "viewPrs" => &mut keys.view_prs,
+        other => bail!("unknown built-in issue key: '{other}'"),
+    })
+}
+
+fn notification_binding<'a>(keys: &'a mut NotificationKeys, name: &str) -> Result<&'a mut Binding> {
+    Ok(match name {
+        "markAsDone" => &mut keys.mark_as_done,
+        "markAllAsDone" => &mut keys.mark_all_as_done,
+        "unsubscribe" => &mut keys.unsubscribe,
+        "toggleBookmark" => &mut keys.toggle_bookmark,
+        "open" => &mut keys.open,
+        "sortByRepo" => &mut keys.sort_by_repo,
+        "switchToPRs" => &mut keys.switch_to_prs,
+        "toggleSmartFiltering" => &mut keys.toggle_smart_filtering,
+        other => bail!("unknown built-in notification key: '{other}'"),
+    })
 }
 
 /// Converts a crossterm key event into bubbletea's key string form.
@@ -467,13 +455,13 @@ mod tests {
         k.rebind(&Keybindings {
             universal: vec![Keybinding {
                 key: "J".into(),
-                builtin: "pageDown".into(),
-                ..Default::default()
+                name: None,
+                action: Action::Builtin("pageDown".into()),
             }],
             prs: vec![Keybinding {
                 key: "O".into(),
-                command: "echo {{.PrNumber}}".into(),
-                ..Default::default()
+                name: None,
+                action: Action::Command("echo {{.PrNumber}}".into()),
             }],
             ..Default::default()
         })
@@ -490,8 +478,8 @@ mod tests {
         let r = k.rebind(&Keybindings {
             prs: vec![Keybinding {
                 key: "z".into(),
-                builtin: "nope".into(),
-                ..Default::default()
+                name: None,
+                action: Action::Builtin("nope".into()),
             }],
             ..Default::default()
         });

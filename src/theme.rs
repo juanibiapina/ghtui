@@ -2,7 +2,7 @@
 
 use ratatui::style::{Color, Modifier, Style};
 
-use crate::config::Config;
+use crate::config::{Config, ConfigColor};
 use crate::icons;
 use crate::model::AuthorAssociation;
 
@@ -123,49 +123,45 @@ pub fn lighten(c: Color, pct: f64) -> Color {
 impl Theme {
     pub fn from_config(cfg: &Config) -> Theme {
         let mut t = Theme::default();
-        let shim = |s: &str, fallback: Color| -> Color {
-            if s.is_empty() {
-                fallback
-            } else {
-                parse_color(s).unwrap_or(fallback)
+        let set = |target: &mut Color, value: &Option<ConfigColor>| {
+            if let Some(c) = value {
+                *target = c.0;
             }
         };
         if let Some(c) = &cfg.theme.colors {
-            t.selected_background = shim(&c.background.selected, t.selected_background);
-            t.primary_border = shim(&c.border.primary, t.primary_border);
-            t.faint_border = shim(&c.border.faint, t.faint_border);
-            t.secondary_border = shim(&c.border.secondary, t.secondary_border);
-            t.faint_text = shim(&c.text.faint, t.faint_text);
-            t.primary_text = shim(&c.text.primary, t.primary_text);
-            t.secondary_text = shim(&c.text.secondary, t.secondary_text);
-            t.inverted_text = shim(&c.text.inverted, t.inverted_text);
-            t.success_text = shim(&c.text.success, t.success_text);
-            t.warning_text = shim(&c.text.warning, t.warning_text);
-            t.error_text = shim(&c.text.error, t.error_text);
-            t.actor_text = shim(&c.text.actor, t.actor_text);
-            t.new_contributor_icon_color =
-                shim(&c.icon.newcontributor, t.new_contributor_icon_color);
-            t.contributor_icon_color = shim(&c.icon.contributor, t.contributor_icon_color);
-            t.collaborator_icon_color = shim(&c.icon.collaborator, t.collaborator_icon_color);
-            t.member_icon_color = shim(&c.icon.member, t.member_icon_color);
-            t.owner_icon_color = shim(&c.icon.owner, t.owner_icon_color);
+            set(&mut t.selected_background, &c.background.selected);
+            set(&mut t.primary_border, &c.border.primary);
+            set(&mut t.faint_border, &c.border.faint);
+            set(&mut t.secondary_border, &c.border.secondary);
+            set(&mut t.faint_text, &c.text.faint);
+            set(&mut t.primary_text, &c.text.primary);
+            set(&mut t.secondary_text, &c.text.secondary);
+            set(&mut t.inverted_text, &c.text.inverted);
+            set(&mut t.success_text, &c.text.success);
+            set(&mut t.warning_text, &c.text.warning);
+            set(&mut t.error_text, &c.text.error);
+            set(&mut t.actor_text, &c.text.actor);
+            set(&mut t.new_contributor_icon_color, &c.icon.new_contributor);
+            set(&mut t.contributor_icon_color, &c.icon.contributor);
+            set(&mut t.collaborator_icon_color, &c.icon.collaborator);
+            set(&mut t.member_icon_color, &c.icon.member);
+            set(&mut t.owner_icon_color, &c.icon.owner);
+            set(&mut t.unknown_role_icon_color, &c.icon.unknown_role);
         }
         if cfg.show_author_icons
             && let Some(i) = &cfg.theme.icons
         {
-            let pick = |s: &str, f: &str| {
-                if s.is_empty() {
-                    f.to_string()
-                } else {
-                    s.to_string()
+            let set = |target: &mut String, value: &Option<String>| {
+                if let Some(v) = value {
+                    *target = v.clone();
                 }
             };
-            t.new_contributor_icon = pick(&i.newcontributor, &t.new_contributor_icon);
-            t.contributor_icon = pick(&i.contributor, &t.contributor_icon);
-            t.collaborator_icon = pick(&i.collaborator, &t.collaborator_icon);
-            t.member_icon = pick(&i.member, &t.member_icon);
-            t.owner_icon = pick(&i.owner, &t.owner_icon);
-            t.unknown_role_icon = pick(&i.unknownrole, &t.unknown_role_icon);
+            set(&mut t.new_contributor_icon, &i.new_contributor);
+            set(&mut t.contributor_icon, &i.contributor);
+            set(&mut t.collaborator_icon, &i.collaborator);
+            set(&mut t.member_icon, &i.member);
+            set(&mut t.owner_icon, &i.owner);
+            set(&mut t.unknown_role_icon, &i.unknown_role);
         }
         t
     }

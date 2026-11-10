@@ -757,7 +757,7 @@ mod tests {
 
     fn right_preview(width: u16, height: u16) -> App {
         let mut cfg = Config::default();
-        cfg.defaults.preview.position = "right".into();
+        cfg.defaults.preview.position = crate::config::PreviewPosition::Right;
         with_prs(app(width, height, cfg))
     }
 
@@ -842,14 +842,14 @@ mod tests {
     #[test]
     fn prs_with_right_preview() {
         let mut cfg = Config::default();
-        cfg.defaults.preview.position = "right".into();
+        cfg.defaults.preview.position = crate::config::PreviewPosition::Right;
         insta::assert_snapshot!(screen(with_prs(app(160, 30, cfg))));
     }
 
     #[test]
     fn prs_with_bottom_preview() {
         let mut cfg = Config::default();
-        cfg.defaults.preview.position = "bottom".into();
+        cfg.defaults.preview.position = crate::config::PreviewPosition::Bottom;
         insta::assert_snapshot!(screen(with_prs(app(120, 40, cfg))));
     }
 
@@ -882,7 +882,7 @@ mod tests {
     #[test]
     fn search_with_completions() {
         let mut cfg = Config::default();
-        cfg.defaults.preview.position = "right".into();
+        cfg.defaults.preview.position = crate::config::PreviewPosition::Right;
         let mut app = with_prs(app(160, 30, cfg));
         let s = &mut app.prs[0];
         s.search = Some(TextInput::new("is:open auth"));

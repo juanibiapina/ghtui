@@ -8,10 +8,12 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
+use ratatui::style::Color;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_yaml::{Mapping, Value};
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ViewType {
     Notifications,
     #[default]
@@ -20,37 +22,8 @@ pub enum ViewType {
     Repo,
 }
 
-impl ViewType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            ViewType::Notifications => "notifications",
-            ViewType::Prs => "prs",
-            ViewType::Issues => "issues",
-            ViewType::Repo => "repo",
-        }
-    }
-}
-
-impl Serialize for ViewType {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(self.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for ViewType {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let s = String::deserialize(d)?;
-        Ok(match s.to_lowercase().as_str() {
-            "notifications" => ViewType::Notifications,
-            "issues" => ViewType::Issues,
-            "repo" => ViewType::Repo,
-            _ => ViewType::Prs,
-        })
-    }
-}
-
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct ColumnConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<usize>,
@@ -90,7 +63,7 @@ impl ColumnConfig {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct PrsLayoutConfig {
     pub updated_at: ColumnConfig,
     pub created_at: ColumnConfig,
@@ -109,7 +82,7 @@ pub struct PrsLayoutConfig {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct IssuesLayoutConfig {
     pub updated_at: ColumnConfig,
     pub created_at: ColumnConfig,
@@ -124,14 +97,14 @@ pub struct IssuesLayoutConfig {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct LayoutConfig {
     pub prs: PrsLayoutConfig,
     pub issues: IssuesLayoutConfig,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct PrsSectionConfig {
     pub title: String,
 
@@ -152,7 +125,7 @@ fn is_default_issues_layout(_: &IssuesLayoutConfig) -> bool {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct IssuesSectionConfig {
     pub title: String,
 
@@ -164,7 +137,7 @@ pub struct IssuesSectionConfig {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct NotificationsSectionConfig {
     pub title: String,
 
@@ -174,12 +147,21 @@ pub struct NotificationsSectionConfig {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct PreviewConfig {
     pub open: bool,
     pub width: f64,
     pub height: f64,
-    pub position: String,
+    pub position: PreviewPosition,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PreviewPosition {
+    #[default]
+    Auto,
+    Right,
+    Bottom,
 }
 
 impl Default for PreviewConfig {
@@ -188,13 +170,13 @@ impl Default for PreviewConfig {
             open: true,
             width: 0.45,
             height: 0.60,
-            position: "auto".into(),
+            position: PreviewPosition::Auto,
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct Defaults {
     pub preview: PreviewConfig,
     pub prs_limit: usize,
@@ -247,7 +229,7 @@ impl Default for Defaults {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepoConfig {
     pub branches_refetch_interval_seconds: u64,
     pub prs_refetch_interval_seconds: u64,
@@ -262,20 +244,80 @@ impl Default for RepoConfig {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
-#[serde(default)]
+/// A key bound to a built-in action or a shell command.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(try_from = "RawKeybinding", into = "RawKeybinding")]
 pub struct Keybinding {
     pub key: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub command: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub builtin: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub name: String,
+    pub name: Option<String>,
+    pub action: Action,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Action {
+    Builtin(String),
+    Command(String),
+}
+
+impl Keybinding {
+    pub fn command(&self) -> Option<&str> {
+        match &self.action {
+            Action::Command(c) => Some(c),
+            Action::Builtin(_) => None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawKeybinding {
+    key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    builtin: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+}
+
+impl TryFrom<RawKeybinding> for Keybinding {
+    type Error = String;
+    fn try_from(raw: RawKeybinding) -> Result<Self, String> {
+        let action = match (raw.builtin, raw.command) {
+            (Some(b), None) => Action::Builtin(b),
+            (None, Some(c)) => Action::Command(c),
+            (Some(_), Some(_)) => {
+                return Err(format!("key '{}' sets both builtin and command", raw.key));
+            }
+            (None, None) => {
+                return Err(format!("key '{}' needs a builtin or a command", raw.key));
+            }
+        };
+        Ok(Keybinding {
+            key: raw.key,
+            name: raw.name,
+            action,
+        })
+    }
+}
+
+impl From<Keybinding> for RawKeybinding {
+    fn from(kb: Keybinding) -> Self {
+        let (builtin, command) = match kb.action {
+            Action::Builtin(b) => (Some(b), None),
+            Action::Command(c) => (None, Some(c)),
+        };
+        RawKeybinding {
+            key: kb.key,
+            command,
+            builtin,
+            name: kb.name,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Keybindings {
     pub universal: Vec<Keybinding>,
     pub issues: Vec<Keybinding>,
@@ -289,51 +331,97 @@ pub struct Keybindings {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Pager {
-    pub diff: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diff: Option<String>,
+}
+
+/// A hex color (`#rrggbb` or `#rgb`) or an ANSI 256 color number.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ConfigColor(pub Color);
+
+impl Serialize for ConfigColor {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            Color::Rgb(r, g, b) => s.serialize_str(&format!("#{r:02x}{g:02x}{b:02x}")),
+            Color::Indexed(i) => s.serialize_str(&i.to_string()),
+            other => s.serialize_str(&other.to_string()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ConfigColor {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(d)?;
+        crate::theme::parse_color(&text)
+            .map(ConfigColor)
+            .ok_or_else(|| {
+                serde::de::Error::custom(format!(
+                    "'{text}' is not a color: use #rrggbb, #rgb or a number from 0 to 255"
+                ))
+            })
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct ColorThemeIcon {
-    pub newcontributor: String,
-    pub contributor: String,
-    pub collaborator: String,
-    pub member: String,
-    pub owner: String,
-    pub unknownrole: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_contributor: Option<ConfigColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contributor: Option<ConfigColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collaborator: Option<ConfigColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub member: Option<ConfigColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<ConfigColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unknown_role: Option<ConfigColor>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct ColorThemeText {
-    pub primary: String,
-    pub secondary: String,
-    pub inverted: String,
-    pub faint: String,
-    pub warning: String,
-    pub success: String,
-    pub error: String,
-    pub actor: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary: Option<ConfigColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secondary: Option<ConfigColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inverted: Option<ConfigColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub faint: Option<ConfigColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<ConfigColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub success: Option<ConfigColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<ConfigColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor: Option<ConfigColor>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct ColorThemeBorder {
-    pub primary: String,
-    pub secondary: String,
-    pub faint: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary: Option<ConfigColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secondary: Option<ConfigColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub faint: Option<ConfigColor>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct ColorThemeBackground {
-    pub selected: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected: Option<ConfigColor>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct ColorTheme {
     pub icon: ColorThemeIcon,
     pub text: ColorThemeText,
@@ -342,18 +430,24 @@ pub struct ColorTheme {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct IconTheme {
-    pub newcontributor: String,
-    pub contributor: String,
-    pub collaborator: String,
-    pub member: String,
-    pub owner: String,
-    pub unknownrole: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_contributor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contributor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collaborator: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub member: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unknown_role: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct TableUiThemeConfig {
     pub show_separator: bool,
     pub compact: bool,
@@ -369,7 +463,7 @@ impl Default for TableUiThemeConfig {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct UiThemeConfig {
     pub sections_show_count: bool,
     pub table: TableUiThemeConfig,
@@ -385,7 +479,7 @@ impl Default for UiThemeConfig {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct ThemeConfig {
     pub ui: UiThemeConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -395,7 +489,7 @@ pub struct ThemeConfig {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub include: Vec<String>,
@@ -475,13 +569,11 @@ impl Default for Config {
 
 impl Config {
     pub fn diff_pager_env(&self) -> Vec<(String, String)> {
-        let mut diff = self.pager.diff.clone();
-        if diff.is_empty() {
-            diff = "less".into();
-        }
-        if diff == "delta" {
-            diff = "delta --paging always".into();
-        }
+        let diff = match self.pager.diff.as_deref() {
+            None => "less".to_string(),
+            Some("delta") => "delta --paging always".to_string(),
+            Some(other) => other.to_string(),
+        };
         vec![("LESS".into(), "CRX".into()), ("GH_PAGER".into(), diff)]
     }
 }
@@ -560,38 +652,8 @@ fn read_yaml(path: &Path) -> Result<Value> {
         .with_context(|| format!("failed parsing config at path {}", path.display()))?;
     Ok(match v {
         Value::Null => Value::Mapping(Mapping::new()),
-        other => normalize_keys(other),
-    })
-}
-
-/// Keys match struct fields case-insensitively, so `Open:` and `Title:` mean
-/// `open` and `title`. repoPaths keys are data and keep their case.
-fn normalize_keys(v: Value) -> Value {
-    match v {
-        Value::Mapping(m) => Value::Mapping(
-            m.into_iter()
-                .map(|(k, v)| {
-                    let keep = k.as_str() == Some("repoPaths");
-                    let k = match k {
-                        Value::String(s) => {
-                            let mut c = s.chars();
-                            let s = match c.next() {
-                                Some(f) if f.is_ascii_uppercase() => {
-                                    f.to_ascii_lowercase().to_string() + c.as_str()
-                                }
-                                _ => s,
-                            };
-                            Value::String(s)
-                        }
-                        other => other,
-                    };
-                    (k, if keep { v } else { normalize_keys(v) })
-                })
-                .collect(),
-        ),
-        Value::Sequence(s) => Value::Sequence(s.into_iter().map(normalize_keys).collect()),
         other => other,
-    }
+    })
 }
 
 fn resolve_include(including: &Path, include: &str) -> PathBuf {
@@ -700,48 +762,12 @@ fn load_with_includes(path: &Path, acc: &mut Value, seen: &mut HashSet<PathBuf>)
     Ok(())
 }
 
-fn validate_color(s: &str) -> bool {
-    if s.is_empty() {
-        return true;
-    }
-    let hex = regex::Regex::new(r"^#([a-fA-F0-9]{6}|[a-fA-F0-9]{3})$").unwrap();
-    hex.is_match(s) || s.parse::<u16>().map(|n| n <= 255).unwrap_or(false)
-}
-
 fn validate(cfg: &Config) -> Result<()> {
     if cfg.defaults.preview.width <= 0.0 {
-        anyhow::bail!(
-            "Key: 'Config.defaults.preview.width' Error:Field validation for 'width' failed on the 'gt' tag"
-        );
+        anyhow::bail!("defaults.preview.width must be greater than 0");
     }
-    if let Some(c) = &cfg.theme.colors {
-        let fields = [
-            ("icon.newcontributor", &c.icon.newcontributor),
-            ("icon.contributor", &c.icon.contributor),
-            ("icon.collaborator", &c.icon.collaborator),
-            ("icon.member", &c.icon.member),
-            ("icon.owner", &c.icon.owner),
-            ("icon.unknownrole", &c.icon.unknownrole),
-            ("text.primary", &c.text.primary),
-            ("text.secondary", &c.text.secondary),
-            ("text.inverted", &c.text.inverted),
-            ("text.faint", &c.text.faint),
-            ("text.warning", &c.text.warning),
-            ("text.success", &c.text.success),
-            ("text.error", &c.text.error),
-            ("text.actor", &c.text.actor),
-            ("background.selected", &c.background.selected),
-            ("border.primary", &c.border.primary),
-            ("border.secondary", &c.border.secondary),
-            ("border.faint", &c.border.faint),
-        ];
-        for (name, v) in fields {
-            if !validate_color(v) {
-                anyhow::bail!(
-                    "Key: 'Config.theme.colors.{name}' Error:Field validation for '{name}' failed on the 'color' tag"
-                );
-            }
-        }
+    if cfg.defaults.preview.height <= 0.0 {
+        anyhow::bail!("defaults.preview.height must be greater than 0");
     }
     Ok(())
 }
@@ -762,7 +788,10 @@ fn from_layers(acc: Value) -> Result<Config> {
     let mut base = serde_yaml::to_value(Config::default())?;
     // Defaults are an overlay base, not a merge layer, so keybinding union rules don't apply.
     deep_merge(&mut base, acc);
-    let mut cfg: Config = serde_yaml::from_value(base).context("failed decoding config")?;
+    let mut cfg: Config = serde_path_to_error::deserialize(base).map_err(|e| {
+        let path = e.path().to_string();
+        anyhow!("invalid config at {path}: {}", e.into_inner())
+    })?;
     if cfg.defaults.view == ViewType::Repo && !feature_enabled("FF_REPO_VIEW") {
         cfg.defaults.view = ViewType::Prs;
     }
@@ -774,12 +803,20 @@ fn from_layers(acc: Value) -> Result<Config> {
 mod tests {
     use super::*;
 
-    fn layers(yamls: &[&str]) -> Config {
+    fn load(yamls: &[&str]) -> Result<Config> {
         let mut acc = Value::Mapping(Mapping::new());
         for y in yamls {
-            merge_layer(&mut acc, normalize_keys(serde_yaml::from_str(y).unwrap()));
+            merge_layer(&mut acc, serde_yaml::from_str(y).unwrap());
         }
-        from_layers(acc).unwrap()
+        from_layers(acc)
+    }
+
+    fn layers(yamls: &[&str]) -> Config {
+        load(yamls).unwrap()
+    }
+
+    fn error(yaml: &str) -> String {
+        load(&[yaml]).unwrap_err().to_string()
     }
 
     #[test]
@@ -800,33 +837,64 @@ mod tests {
         ]);
         let prs = &cfg.keybindings.prs;
         assert_eq!(prs.len(), 2);
-        assert_eq!(prs[0].command, "three");
-        assert_eq!(prs[1].command, "two");
+        assert_eq!(prs[0].command(), Some("three"));
+        assert_eq!(prs[1].command(), Some("two"));
         assert_eq!(cfg.pr_sections.len(), 1);
         assert_eq!(cfg.pr_sections[0].title, "C");
     }
 
     #[test]
-    fn config_keys_match_case_insensitively() {
-        let cfg = layers(&[
-            "defaults:\n  preview:\n    Open: false\n    width: 0.5\nrepoPaths:\n  Owner/repo: /x\n",
-        ]);
-        assert_eq!(
-            cfg.repo_paths.get("Owner/repo").map(String::as_str),
-            Some("/x")
-        );
-        assert!(!cfg.defaults.preview.open);
-        assert_eq!(cfg.defaults.preview.width, 0.5);
-        assert_eq!(cfg.defaults.preview.height, 0.6);
+    fn an_unknown_key_names_its_path() {
+        let e = error("defaults:\n  layout:\n    prs:\n      updatedAt:\n        widht: 3\n");
+        assert!(e.contains("defaults.layout.prs.updatedAt"), "{e}");
+        assert!(e.contains("widht"), "{e}");
     }
 
     #[test]
-    fn invalid_color_is_rejected() {
-        let mut acc = Value::Mapping(Mapping::new());
-        merge_layer(
-            &mut acc,
-            serde_yaml::from_str("theme:\n  colors:\n    text:\n      primary: red\n").unwrap(),
+    fn keys_are_case_sensitive() {
+        let e = error("defaults:\n  preview:\n    Open: false\n");
+        assert!(e.contains("defaults.preview"), "{e}");
+    }
+
+    #[test]
+    fn an_invalid_color_names_its_path() {
+        let e = error("theme:\n  colors:\n    text:\n      primary: red\n");
+        assert!(e.contains("theme.colors.text.primary"), "{e}");
+    }
+
+    #[test]
+    fn colors_and_icons_use_camel_case_keys() {
+        let cfg = layers(&[
+            "theme:\n  colors:\n    icon:\n      newContributor: '#ff0000'\n  icons:\n    unknownRole: x\n",
+        ]);
+        let colors = cfg.theme.colors.unwrap();
+        assert_eq!(
+            colors.icon.new_contributor,
+            Some(ConfigColor(Color::Rgb(255, 0, 0)))
         );
-        assert!(from_layers(acc).is_err());
+        assert_eq!(cfg.theme.icons.unwrap().unknown_role.as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn an_unknown_view_is_an_error() {
+        assert!(error("defaults:\n  view: pulls\n").contains("defaults.view"));
+    }
+
+    #[test]
+    fn a_keybinding_needs_exactly_one_action() {
+        let both = error("keybindings:\n  prs:\n  - key: a\n    builtin: diff\n    command: x\n");
+        assert!(both.contains("both"), "{both}");
+        let neither = error("keybindings:\n  prs:\n  - key: a\n    name: nothing\n");
+        assert!(
+            neither.contains("needs a builtin or a command"),
+            "{neither}"
+        );
+    }
+
+    #[test]
+    fn the_default_config_file_loads() {
+        let yaml = default_config_yaml();
+        let cfg = layers(&[&yaml]);
+        assert_eq!(cfg.pr_sections.len(), 3);
     }
 }

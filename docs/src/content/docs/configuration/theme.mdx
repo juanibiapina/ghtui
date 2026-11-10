@@ -11,9 +11,8 @@ not the data. Currently, the theme only defines colors and icons. To control how
 and preview pane display for the views, use the [`defaults`], [`prSections`], and
 [`issueSections`] settings.
 
-To define any color for your dashboard, you **must** define **every** color. All properties are
-required properties. Every color for the dashboard's theme must be a valid [hex color] like
-`#a3c` or `#aa33cc`, or an ANSI color index from `0` to `255`.
+Every color is optional: a color you don't set keeps its default. A color must be a valid
+[hex color] like `#a3c` or `#aa33cc`, or an ANSI color index from `0` to `255`.
 
 To find hex colors to use in your dashboard, visit [`color-hex.com`]. You can browse colors,
 inspect a given color, get alternate shades and tints for a color, derive a color palette, and
@@ -28,42 +27,42 @@ more.
 ## Defaults
 
 ```yaml
-ui:
-  sectionsShowCount: true
-table:
-  showSeparators: true
-  compact: false
-colors:
-  text:
-    primary: "#ffffff"
-    secondary: "#c6c6c6"
-    inverted: "#303030"
-    faint: "#8a8a8a"
-    warning: "#800000"
-    success: "#008000"
-    actor: "#c6c6c6"
-  background:
-    selected: "#808080"
-  border:
-    primary: "#808080"
-    secondary: "#c0c0c0"
-    faint: "#000000"
-  inline:
-    icons:
-      newcontributor: "077"
-      contributor: "075"
+theme:
+  ui:
+    sectionsShowCount: true
+    table:
+      showSeparator: true
+      compact: false
+  colors:
+    text:
+      primary: "15"
+      secondary: "251"
+      inverted: "236"
+      faint: "245"
+      warning: "11"
+      success: "10"
+      error: "9"
+      actor: "251"
+    background:
+      selected: "236"
+    border:
+      primary: "8"
+      secondary: "7"
+      faint: "234"
+    icon:
+      newContributor: "77"
+      contributor: "75"
       collaborator: "178"
       member: "178"
       owner: "178"
-      unknownrole: "178"
-icons:
-  inline:
-    newcontributor: "󰎔"
-    contributor: ""
-    collaborator: ""
-    member: ""
-    owner: ""
-    unknownrole: "󰭙"
+      unknownRole: "178"
+  icons:
+    newContributor: "\u{f0394}"
+    contributor: "\u{edc6}"
+    collaborator: "\u{edcf}"
+    member: "\u{f42b}"
+    owner: "\u{f511}"
+    unknownRole: "\u{f0b59}"
 ```
 
 ## UI Settings (`ui`)
@@ -82,7 +81,7 @@ Whether the number of results show up next to each section's title in the tab ba
 
 | Property         | Type    | default |
 | :--------------- | :------ | :------ |
-| `showSeparators` | boolean | true    |
+| `showSeparator`  | boolean | true    |
 
 Whether to show the separators between lines in the prs/issues tables.
 
@@ -112,11 +111,6 @@ set as:
 | The status icon for closed PRs          |        `#C38080`         |
 | The status icon for merged PRs          |        `#A371F7`         |
 
-Required:
-
-- text
-- background
-- border
 
 ### Text Colors (`text`)
 
@@ -231,9 +225,6 @@ dashboard UI:
 Defines the background colors for the dashboard. By default, the background color for
 all elements in the dashboard UI is the terminal's background color.
 
-Required:
-
-- selected
 
 #### Selected Background Color
 
@@ -256,11 +247,6 @@ dashboard UI:
 
 Defines the border colors for the dashboard.
 
-Required:
-
-- primary
-- secondary
-- faint
 
 #### Primary Border Color
 
@@ -295,16 +281,15 @@ This setting determines the color for the following elements in the dashboard UI
 
 - The border between rows in the table
 
-### Icon Colors (`inline.icons`)
+### Icon Colors (`icon`)
 
 Defines author-role icon colors for the dashboard.
 
 #### New Contributor Role Icon Color
 
-`newcontributor`
-| Property | Type | default |
-| :-------- | :--- | :---------------------------------------- |
-| `newcontributor` | color | |
+| Property         | Type  | default |
+| :--------------- | :---- | :------ |
+| `newContributor` | color |         |
 
 Specifies the icon color for the new-contributor-role icon.
 
@@ -318,10 +303,9 @@ Specifies the icon color for the contributor-role icon.
 
 #### Collaborator Role Icon Color
 
-collaborator:
-| Property | Type | default |
-| :-------- | :--- | :---------------------------------------- |
-| `collaborator` | color | |
+| Property       | Type  | default |
+| :------------- | :---- | :------ |
+| `collaborator` | color |         |
 
 Specifies the icon color for the collaborator-role icon.
 
@@ -335,17 +319,21 @@ Specifies the icon color for the member-role icon.
 
 #### Owner Role Icon Color
 
+| Property | Type  | default |
+| :------- | :---- | :------ |
+| `owner`  | color |         |
+
 Specifies the icon color for the owner-role icon.
 
 #### Unknown Role Icon Color
 
-| Property  | Type | default |
-| :-------- | :--- | :------ |
-| `unknown` | color |         |
+| Property      | Type  | default |
+| :------------ | :---- | :------ |
+| `unknownRole` | color |         |
 
 Specifies the icon color for the unknown-role icon.
 
-## Icons (`icons.inline`)
+## Icons (`icons`)
 
 This setting defines a map of author-role icons for the dashboard.
 
@@ -355,7 +343,7 @@ Specifies the character to use as the new-contributor-role icon.
 
 | Property         | Type   | default |
 | :--------------- | :----- | :------ |
-| `newcontributor` | string | 󰎔       |
+| `newContributor` | string | 󰎔       |
 
 ### Contributor Role Icon Color
 
@@ -395,4 +383,4 @@ Specifies the character to use as the unknown-role icon.
 
 | Property      | Type   | default |
 | :------------ | :----- | :------ |
-| `unknownrole` | string | 󰭙       |
+| `unknownRole`   | string | 󰭙       |

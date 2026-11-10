@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mark a notification as done with `d`, and view a PR diff with `D`.
 - Remove a notification from the list as soon as you mark it done, and put it back if GitHub rejects the change.
 - Count a notification's new comments from when you last marked it done.
+- Reject config files with unknown or misspelled keys, and name the key in the error. Keys are case-sensitive: `Open:` no longer means `open:`.
+- Reject a `view` or `preview.position` value ghtui doesn't know, instead of falling back to the default.
+- Reject a keybinding that sets both `builtin` and `command`, or neither.
+- Rename the theme keys `newcontributor` and `unknownrole` to `newContributor` and `unknownRole`.
 
 ### Fixed
 
@@ -43,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix PRs opened from a notification showing no comments, reviews or CI status.
 - Fix mention completions leaving out people's names.
 - Show deleted GitHub accounts as `ghost`, as GitHub does.
+- Fix `theme.colors.icon.unknownRole` having no effect.
 
 ## [0.1.0] - 2026-11-06
 

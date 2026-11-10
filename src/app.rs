@@ -12,7 +12,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 
 use crate::bookmarks;
 use crate::complete::{Completer, FetchState, SourceKind};
-use crate::config::{Config, IssuesSectionConfig, PrsSectionConfig, ViewType};
+use crate::config::{Config, IssuesSectionConfig, PreviewPosition, PrsSectionConfig, ViewType};
 use crate::github;
 use crate::help::Help;
 use crate::input::{TextArea, TextInput};
@@ -369,10 +369,10 @@ impl App {
     fn preview_position(&self) -> Position {
         let preview = &self.cfg.defaults.preview;
         self.position_override
-            .unwrap_or_else(|| match preview.position.as_str() {
-                "right" => Position::Right,
-                "bottom" => Position::Bottom,
-                _ => {
+            .unwrap_or_else(|| match preview.position {
+                PreviewPosition::Right => Position::Right,
+                PreviewPosition::Bottom => Position::Bottom,
+                PreviewPosition::Auto => {
                     let pw = resolve_size(preview.width, self.width);
                     if self.width.saturating_sub(pw) < MIN_TABLE_WIDTH_FOR_RIGHT_PREVIEW {
                         Position::Bottom
@@ -2454,7 +2454,7 @@ impl App {
     fn is_user_defined_keybinding(&self, key: &str) -> bool {
         let kb = &self.cfg.keybindings;
         let custom = |list: &Vec<crate::config::Keybinding>| {
-            list.iter().any(|b| b.builtin.is_empty() && b.key == key)
+            list.iter().any(|b| b.key == key && b.command().is_some())
         };
         if custom(&kb.universal) {
             return true;
@@ -2481,35 +2481,36 @@ impl App {
 
     fn execute_keybinding(&mut self, key: &str) {
         let kb = self.cfg.keybindings.clone();
-        if let Some(b) = kb.universal.iter().find(|b| b.key == key) {
+        let find = |list: &Vec<crate::config::Keybinding>| {
+            list.iter()
+                .filter(|b| b.key == key)
+                .find_map(|b| b.command())
+                .map(str::to_string)
+        };
+        if let Some(command) = find(&kb.universal) {
             let mut vars = HashMap::new();
             if let Some(p) = &self.repo_path {
                 vars.insert("RepoPath".to_string(), p.display().to_string());
             }
-            self.run_custom_command(&b.command, vars);
+            self.run_custom_command(&command, vars);
             return;
         }
         let row = self.current_row();
-        let find = |list: &Vec<crate::config::Keybinding>| {
-            list.iter()
-                .find(|b| b.key == key && !b.command.is_empty())
-                .cloned()
-        };
         let s = |v: &str| v.to_string();
         match (self.view, row) {
             (ViewType::Issues, Some(SelectedRow::Issue(i))) => {
-                if let Some(b) = kb.issues.iter().find(|b| b.key == key) {
+                if let Some(command) = find(&kb.issues) {
                     let vars = HashMap::from([
                         (s("RepoName"), i.repository.name_with_owner.clone()),
                         (s("IssueNumber"), i.number.to_string()),
                         (s("IssueTitle"), i.title.clone()),
                         (s("Author"), Login::of(&i.author).to_string()),
                     ]);
-                    self.run_custom_command(&b.command, vars);
+                    self.run_custom_command(&command, vars);
                 }
             }
             (ViewType::Prs, Some(SelectedRow::Pr(p))) => {
-                if let Some(b) = find(&kb.prs) {
+                if let Some(command) = find(&kb.prs) {
                     let vars = HashMap::from([
                         (s("RepoName"), p.primary.repository.name_with_owner.clone()),
                         (s("PrNumber"), p.primary.number.to_string()),
@@ -2517,11 +2518,11 @@ impl App {
                         (s("BaseRefName"), p.primary.base_ref_name.clone()),
                         (s("Author"), Login::of(&p.primary.author).to_string()),
                     ]);
-                    self.run_custom_command(&b.command, vars);
+                    self.run_custom_command(&command, vars);
                 }
             }
             (ViewType::Repo, Some(SelectedRow::Branch(b))) => {
-                if let Some(binding) = find(&kb.branches) {
+                if let Some(command) = find(&kb.branches) {
                     let mut vars = HashMap::from([(s("HeadRefName"), b.b.name.clone())]);
                     if let Some(p) = &self.repo_path {
                         vars.insert(s("RepoPath"), p.display().to_string());
@@ -2532,21 +2533,21 @@ impl App {
                         vars.insert(s("BaseRefName"), pr.base_ref_name.clone());
                         vars.insert(s("Author"), Login::of(&pr.author).to_string());
                     }
-                    self.run_custom_command(&binding.command, vars);
+                    self.run_custom_command(&command, vars);
                 }
             }
             (ViewType::Notifications, Some(SelectedRow::Notification(n))) => {
-                if let Some(b) = find(&kb.notifications) {
+                if let Some(command) = find(&kb.notifications) {
                     let vars = HashMap::from([
                         (s("RepoName"), n.repo().to_string()),
                         (s("Number"), n.number().to_string()),
                     ]);
-                    self.run_custom_command(&b.command, vars);
+                    self.run_custom_command(&command, vars);
                     return;
                 }
                 match n.subject_type() {
                     SubjectType::PullRequest => {
-                        if let Some(b) = find(&kb.prs) {
+                        if let Some(command) = find(&kb.prs) {
                             let mut vars = HashMap::from([
                                 (s("RepoName"), n.repo().to_string()),
                                 (s("PrNumber"), n.number().to_string()),
@@ -2556,11 +2557,11 @@ impl App {
                                 vars.insert(s("BaseRefName"), pr.primary.base_ref_name.clone());
                                 vars.insert(s("Author"), Login::of(&pr.primary.author).to_string());
                             }
-                            self.run_custom_command(&b.command, vars);
+                            self.run_custom_command(&command, vars);
                         }
                     }
                     SubjectType::Issue => {
-                        if let Some(b) = find(&kb.issues) {
+                        if let Some(command) = find(&kb.issues) {
                             let mut vars = HashMap::from([
                                 (s("RepoName"), n.repo().to_string()),
                                 (s("IssueNumber"), n.number().to_string()),
@@ -2568,7 +2569,7 @@ impl App {
                             if let Some(i) = &self.subject_issue {
                                 vars.insert(s("Author"), Login::of(&i.author).to_string());
                             }
-                            self.run_custom_command(&b.command, vars);
+                            self.run_custom_command(&command, vars);
                         }
                     }
                     _ => {}
@@ -2834,8 +2835,7 @@ impl App {
     pub fn on_resize(&mut self, w: usize, h: usize) {
         self.width = w;
         self.height = h;
-        let pos = self.cfg.defaults.preview.position.as_str();
-        if pos == "auto" || pos.is_empty() {
+        if self.cfg.defaults.preview.position == PreviewPosition::Auto {
             self.position_override = None;
         }
         self.invalidate_preview();
