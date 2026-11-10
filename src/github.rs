@@ -635,7 +635,7 @@ labels(first: 6) {{ nodes {{ color name description }} }} mergeStateStatus"
 const COUNTS_BY_STATE: &str = "totalCount checkRunCount checkRunCountsByState { count state } \
 statusContextCount statusContextCountsByState { count state }";
 
-fn enriched_pr_fields() -> String {
+fn pr_details_fields() -> String {
     format!(
         "id url number title body state isDraft author {{ login }} authorAssociation updatedAt createdAt \
 mergeable reviewDecision additions deletions headRefName baseRefName headRepository {{ name }} \
@@ -788,11 +788,11 @@ fn fetch_by_url<T: DeserializeOwned>(
 
 pub fn fetch_pull_requests_by_url(
     urls: &[String],
-) -> Result<Vec<(String, Result<EnrichedPullRequest>)>> {
+) -> Result<Vec<(String, Result<PullRequestDetails>)>> {
     fetch_by_url(
         "FetchPullRequests",
         "PullRequest",
-        &enriched_pr_fields(),
+        &pr_details_fields(),
         urls,
     )
 }
@@ -983,7 +983,7 @@ pub fn check_counts(runs: &[CountByState], contexts: &[CountByState]) -> Vec<(St
 }
 
 /// True when the cached detail no longer matches what GitHub reports.
-pub fn is_outdated(detail: &EnrichedPullRequest, v: &PrVersion) -> bool {
+pub fn is_outdated(detail: &PullRequestDetails, v: &PrVersion) -> bool {
     let head = detail.commits.nodes.last().map(|c| &c.commit);
     let oid = head.map(|c| c.oid.as_str()).unwrap_or_default();
     let rollup = head

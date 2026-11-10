@@ -283,7 +283,7 @@ fn tally(stats: &mut ChecksStats, counts: &[CountByState]) {
     }
 }
 
-fn checks_stats(e: &EnrichedPullRequest) -> ChecksStats {
+fn checks_stats(e: &PullRequestDetails) -> ChecksStats {
     let mut s = ChecksStats::default();
     let Some(last) = e.commits.nodes.first() else {
         return s;
@@ -450,7 +450,7 @@ fn pr_overview(t: &Theme, row: &PrRow, w: usize, st: &PrViewState) -> Block {
 
 fn requested_reviewers(t: &Theme, row: &PrRow, w: usize) -> Block {
     let title = heading(t, format!("{} Reviewers", icons::CODE_REVIEW));
-    let Some(e) = &row.enriched else {
+    let Some(e) = &row.details else {
         return vec![
             title,
             Line::default(),
@@ -573,7 +573,7 @@ fn requested_reviewers(t: &Theme, row: &PrRow, w: usize) -> Block {
 
 fn summary(t: &Theme, row: &PrRow, w: usize, more: bool) -> Block {
     let body = row
-        .enriched
+        .details
         .as_ref()
         .map(|e| e.body.clone())
         .unwrap_or_default();
@@ -627,7 +627,7 @@ fn summary(t: &Theme, row: &PrRow, w: usize, more: bool) -> Block {
 fn changes_overview(t: &Theme, row: &PrRow, w: usize) -> Block {
     let pr = &row.primary;
     let (files, commits) = row
-        .enriched
+        .details
         .as_ref()
         .map(|e| (e.files.total_count, e.commits.total_count))
         .unwrap_or((0, 0));
@@ -699,7 +699,7 @@ fn checks_overview(t: &Theme, row: &PrRow, w: usize, approve_key: &str) -> Block
 }
 
 fn num_code_owner_requests(row: &PrRow) -> i64 {
-    row.enriched
+    row.details
         .as_ref()
         .map(|e| {
             e.review_requests
@@ -714,7 +714,7 @@ fn num_code_owner_requests(row: &PrRow) -> i64 {
 fn review_status(t: &Theme, row: &PrRow, w: usize) -> (Block, Status) {
     let pr = &row.primary;
     let reviews = row
-        .enriched
+        .details
         .as_ref()
         .map(|e| e.reviews.nodes.clone())
         .unwrap_or_default();
@@ -807,7 +807,7 @@ fn checks_bar(t: &Theme, s: &ChecksStats, w: usize) -> Line<'static> {
 }
 
 fn checks_status(t: &Theme, row: &PrRow, w: usize, approve_key: &str) -> (Block, Status) {
-    let Some(e) = &row.enriched else {
+    let Some(e) = &row.details else {
         return (
             check_category(t, glyph(t.waiting_glyph()), "Loading...", "", false, w),
             Status::Waiting,
@@ -917,7 +917,7 @@ fn merge_status(t: &Theme, row: &PrRow, w: usize) -> (Block, Status) {
 fn all_checks(t: &Theme, row: &PrRow, w: usize) -> Block {
     let title = heading(t, format!("{} All Checks", icons::CHECKS));
     let mut out = vec![title, Line::default()];
-    let Some(last) = row.enriched.as_ref().and_then(|e| e.commits.nodes.first()) else {
+    let Some(last) = row.details.as_ref().and_then(|e| e.commits.nodes.first()) else {
         out.push(Line::from("Loading..."));
         return out;
     };
@@ -1042,7 +1042,7 @@ fn all_checks(t: &Theme, row: &PrRow, w: usize) -> Block {
 }
 
 fn pr_activity(t: &Theme, row: &PrRow, w: usize) -> Block {
-    let Some(e) = &row.enriched else {
+    let Some(e) = &row.details else {
         return vec![Line::from("Loading...")];
     };
     struct Act {
@@ -1130,7 +1130,7 @@ fn pr_activity(t: &Theme, row: &PrRow, w: usize) -> Block {
 fn pr_commits(t: &Theme, row: &PrRow, w: usize) -> Block {
     let faint = t.faint();
     let fainter = Style::default().fg(t.faint_border);
-    let Some(e) = &row.enriched else {
+    let Some(e) = &row.details else {
         return vec![Line::from(vec![
             glyph(t.waiting_glyph()),
             raw(" "),
@@ -1200,7 +1200,7 @@ fn pr_commits(t: &Theme, row: &PrRow, w: usize) -> Block {
 }
 
 fn changed_files(t: &Theme, row: &PrRow, w: usize) -> Block {
-    let Some(e) = &row.enriched else {
+    let Some(e) = &row.details else {
         return vec![];
     };
     let mut out = vec![];

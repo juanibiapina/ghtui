@@ -33,7 +33,7 @@ pub struct Live {
     pub focused: bool,
     pub started: bool,
     pub details_loaded: bool,
-    pub pr_store: DetailStore<EnrichedPullRequest>,
+    pub pr_store: DetailStore<PullRequestDetails>,
     pub issue_store: DetailStore<Issue>,
     pub last_sync: HashMap<ViewType, Instant>,
     pub last_check: HashMap<ViewType, Instant>,
@@ -151,13 +151,13 @@ fn wall_of(t: Instant) -> DateTime<Utc> {
 }
 
 /// Fills each row's details from the store, marking details older than the row stale.
-pub(super) fn fill_enriched(rows: &mut [PrRow], store: &DetailStore<EnrichedPullRequest>) {
+pub(super) fn fill_details(rows: &mut [PrRow], store: &DetailStore<PullRequestDetails>) {
     for row in rows {
         if let Some(e) = store.get(&row.primary.url) {
             if e.value.updated_at < row.primary.updated_at {
                 store.mark_stale(&row.primary.url);
             }
-            row.enriched = Some(e.value);
+            row.details = Some(e.value);
         }
     }
 }
@@ -258,7 +258,7 @@ impl App {
                             .iter()
                             .map(|p| PrRow {
                                 primary: p.clone(),
-                                enriched: None,
+                                details: None,
                             })
                             .collect();
                     }
@@ -297,13 +297,13 @@ impl App {
         crate::info!("details seeded");
         let store = &self.live.pr_store;
         for s in self.prs.iter_mut() {
-            fill_enriched(&mut s.prs, store);
+            fill_details(&mut s.prs, store);
         }
         self.notification_extras(None);
         self.invalidate_preview();
         if self.live.started {
             self.change_check(self.view);
-            self.enrich_current_row();
+            self.show_current_row_details();
             self.schedule_notification_preview();
             self.refresh_prefetch();
         }
@@ -685,10 +685,10 @@ impl App {
                 .into_iter()
                 .map(|p| PrRow {
                     primary: p,
-                    enriched: None,
+                    details: None,
                 })
                 .collect();
-            fill_enriched(&mut fetched, store);
+            fill_details(&mut fetched, store);
             s.prs = refresh::apply_membership(&s.prs, m, &fetched);
         } else {
             s.issues = refresh::apply_membership(&s.issues, m, &rows.issues);
@@ -833,7 +833,7 @@ impl App {
     }
 
     /// Shows the selected PR's details from the store, fetching them if missing.
-    pub(super) fn enrich_current_row(&mut self) {
+    pub(super) fn show_current_row_details(&mut self) {
         if !self.live.details_loaded {
             return;
         }
@@ -849,8 +849,8 @@ impl App {
                 if e.value.updated_at < pr.primary.updated_at {
                     self.live.pr_store.mark_stale(&url);
                 }
-                if pr.enriched.is_none() {
-                    self.set_enriched(&url, &e.value);
+                if pr.details.is_none() {
+                    self.set_details(&url, &e.value);
                 }
             }
             None => self.live.pr_store.fetch_now(&url),
@@ -858,10 +858,10 @@ impl App {
         self.schedule_check_selected(url);
     }
 
-    fn set_enriched(&mut self, url: &str, pr: &EnrichedPullRequest) {
+    fn set_details(&mut self, url: &str, pr: &PullRequestDetails) {
         for s in self.prs.iter_mut() {
             for row in s.prs.iter_mut().filter(|r| r.primary.url == url) {
-                row.enriched = Some(pr.clone());
+                row.details = Some(pr.clone());
             }
         }
     }
@@ -889,13 +889,13 @@ impl App {
         }
     }
 
-    fn show_subject_pr(&mut self, notif_id: &str, pr: EnrichedPullRequest) {
+    fn show_subject_pr(&mut self, notif_id: &str, pr: PullRequestDetails) {
         if self.subject_id != notif_id {
             self.pr_tab = 0;
         }
         self.subject_pr = Some(PrRow {
-            primary: pr.to_primary(),
-            enriched: Some(pr),
+            primary: pr.to_pull_request(),
+            details: Some(pr),
         });
         self.subject_issue = None;
         self.subject_id = notif_id.to_string();
@@ -922,7 +922,7 @@ impl App {
     pub(super) fn on_pr_detail(
         &mut self,
         url: String,
-        result: Result<Box<EnrichedPullRequest>, String>,
+        result: Result<Box<PullRequestDetails>, String>,
     ) {
         let selected = match self.current_row() {
             Some(RowRef::Notification(n)) if n.url() == url => Some(n.id().to_string()),
@@ -930,7 +930,7 @@ impl App {
         };
         match result {
             Ok(pr) => {
-                self.set_enriched(&url, &pr);
+                self.set_details(&url, &pr);
                 if let Some(id) = selected
                     && (self.live.subject_wanted.as_deref() == Some(id.as_str())
                         || self.subject_id == id)

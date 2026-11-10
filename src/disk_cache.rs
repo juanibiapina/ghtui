@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::ViewType;
 use crate::github::Conditional;
-use crate::model::{EnrichedPullRequest, Issue, Notification, PullRequest};
+use crate::model::{Issue, Notification, PullRequest, PullRequestDetails};
 use crate::store::Entry;
 
 /// Bump to discard files written by an incompatible version.
@@ -58,7 +58,7 @@ pub struct SectionSnapshot {
 #[serde(default)]
 pub struct Details {
     pub version: u32,
-    pub prs: Vec<(String, Entry<EnrichedPullRequest>)>,
+    pub prs: Vec<(String, Entry<PullRequestDetails>)>,
     pub issues: Vec<(String, Entry<Issue>)>,
 }
 
@@ -274,9 +274,9 @@ mod tests {
         }
     }
 
-    fn entry(at: DateTime<Utc>) -> Entry<EnrichedPullRequest> {
+    fn entry(at: DateTime<Utc>) -> Entry<PullRequestDetails> {
         Entry {
-            value: EnrichedPullRequest::default(),
+            value: PullRequestDetails::default(),
             fetched_at: at,
             stale: false,
         }
@@ -359,7 +359,7 @@ mod tests {
     #[test]
     fn details_keep_the_newest_entries_up_to_the_cap() {
         let now = Utc::now();
-        let new: Vec<(String, Entry<EnrichedPullRequest>)> = (0..MAX_DETAILS + 5)
+        let new: Vec<(String, Entry<PullRequestDetails>)> = (0..MAX_DETAILS + 5)
             .map(|i| (format!("u{i}"), entry(now - Duration::minutes(i as i64))))
             .collect();
         let merged = merge_details(

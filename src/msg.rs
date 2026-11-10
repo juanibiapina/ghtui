@@ -101,7 +101,7 @@ pub enum Msg {
     /// A PR's details from the detail store, whoever asked for them.
     PrDetail {
         url: String,
-        result: Result<Box<EnrichedPullRequest>, String>,
+        result: Result<Box<PullRequestDetails>, String>,
     },
     IssueDetail {
         url: String,

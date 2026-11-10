@@ -666,7 +666,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            enriched: None,
+            details: None,
         }
     }
 

@@ -728,7 +728,7 @@ impl App {
         self.subject_issue = None;
         self.live.subject_wanted = None;
         self.invalidate_preview();
-        self.enrich_current_row();
+        self.show_current_row_details();
         self.schedule_notification_preview();
         if self.view == ViewType::Repo {
             self.refresh_branch_status();
@@ -953,7 +953,7 @@ impl App {
                             .into_iter()
                             .map(|p| PrRow {
                                 primary: p,
-                                enriched: None,
+                                details: None,
                             })
                             .collect();
                         if s.page_info.is_some() {
@@ -1095,7 +1095,7 @@ impl App {
                         .into_iter()
                         .map(|p| PrRow {
                             primary: p,
-                            enriched: None,
+                            details: None,
                         })
                         .collect();
                     s.is_loading = false;
@@ -1103,7 +1103,7 @@ impl App {
                 Payload::BranchPr(pr) => {
                     s.prs.push(PrRow {
                         primary: *pr,
-                        enriched: None,
+                        details: None,
                     });
                 }
             }
@@ -1120,7 +1120,7 @@ impl App {
                 _ => None,
             };
             if let Some(s) = section {
-                live::fill_enriched(&mut s.prs, store);
+                live::fill_details(&mut s.prs, store);
             }
         }
         if !mutated_prs.is_empty() || !mutated_issues.is_empty() {
@@ -3207,7 +3207,7 @@ fn apply_update_pr(s: &mut Section, u: &UpdatePr) {
         if let Some(c) = u.is_closed {
             pr.state = if c { "CLOSED".into() } else { "OPEN".into() };
         }
-        if let (Some(c), Some(e)) = (&u.new_comment, row.enriched.as_mut()) {
+        if let (Some(c), Some(e)) = (&u.new_comment, row.details.as_mut()) {
             e.comments.nodes.push(c.clone());
         }
         if let Some(a) = &u.added_assignees {

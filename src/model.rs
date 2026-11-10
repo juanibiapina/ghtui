@@ -365,7 +365,7 @@ pub struct ChangedFile {
 /// The full PR fetched for the preview pane.
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
 #[serde(default, rename_all = "camelCase")]
-pub struct EnrichedPullRequest {
+pub struct PullRequestDetails {
     #[serde(deserialize_with = "nd")]
     pub id: String,
     pub url: String,
@@ -420,8 +420,8 @@ pub struct EnrichedPullRequest {
     pub is_in_merge_queue: bool,
 }
 
-impl EnrichedPullRequest {
-    pub fn to_primary(&self) -> PullRequest {
+impl PullRequestDetails {
+    pub fn to_pull_request(&self) -> PullRequest {
         PullRequest {
             id: self.id.clone(),
             number: self.number,

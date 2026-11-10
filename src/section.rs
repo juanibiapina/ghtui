@@ -61,7 +61,7 @@ impl Kind {
 #[derive(Clone, Debug, Default)]
 pub struct PrRow {
     pub primary: PullRequest,
-    pub enriched: Option<EnrichedPullRequest>,
+    pub details: Option<PullRequestDetails>,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -8,7 +8,7 @@ use std::hash::Hash;
 use chrono::{DateTime, Utc};
 
 use crate::github::Membership;
-use crate::model::{EnrichedPullRequest, Issue};
+use crate::model::{Issue, PullRequestDetails};
 use crate::section::{NotifRow, PrRow};
 
 /// A section row the list sync can match by node ID.
@@ -119,7 +119,7 @@ pub fn prefetch_order<T: Clone + Eq + Hash>(
 
 /// A notification subject's details.
 pub enum Subject<'a> {
-    Pr(&'a EnrichedPullRequest),
+    Pr(&'a PullRequestDetails),
     Issue(&'a Issue),
 }
 
@@ -188,7 +188,7 @@ mod tests {
                 title: title.into(),
                 ..Default::default()
             },
-            enriched: None,
+            details: None,
         }
     }
 
@@ -280,7 +280,7 @@ mod tests {
             last_read_at: Some(read),
             ..Default::default()
         });
-        let pr = EnrichedPullRequest {
+        let pr = PullRequestDetails {
             state: "OPEN".into(),
             is_draft: true,
             author: Login {
