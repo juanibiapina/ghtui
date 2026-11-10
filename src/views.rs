@@ -1329,90 +1329,11 @@ pub fn issue_view(t: &Theme, issue: &Issue, width: usize, editor: Option<&Editor
     indent(b, CONTENT_PADDING)
 }
 
-fn type_icon(kind: &str) -> &'static str {
-    match kind {
-        "PullRequest" => icons::OPEN,
-        "Issue" => icons::ISSUE_OPEN,
-        "Discussion" => icons::DISCUSSION,
-        "Release" => icons::RELEASE,
-        "Commit" => icons::COMMIT_TYPE,
-        "CheckSuite" => icons::WORKFLOW_RUN,
-        _ => icons::NOTIFICATION,
-    }
-}
-
-fn format_reason(r: &str) -> String {
-    match r {
-        "subscribed" => "Subscribed",
-        "review_requested" => "Review requested",
-        "author" => "Author",
-        "comment" => "Comment",
-        "mention" => "Mentioned",
-        "team_mention" => "Team mentioned",
-        "state_change" => "State changed",
-        "assign" => "Assigned",
-        "ci_activity" => "CI activity",
-        "approval_requested" => "Approval requested",
-        other => other,
-    }
-    .to_string()
-}
-
-/// Details shown while a PR/issue subject loads.
-pub fn notification_view(t: &Theme, row: &NotifRow, width: usize) -> Block {
-    let n = &row.n;
-    let mut b = preview_title(t, width, &n.subject.title);
+/// Shown while a PR/issue subject loads.
+pub fn notification_loading(t: &Theme, row: &NotifRow, width: usize) -> Block {
+    let mut b = preview_title(t, width, &row.n.subject.title);
     b.push(Line::default());
-    let fmt_time = |d: chrono::DateTime<chrono::Utc>| {
-        d.with_timezone(&chrono::Local)
-            .format("%b %-d, %Y %-I:%M %p")
-            .to_string()
-    };
-    let rows: Vec<(&str, String, bool)> = vec![
-        (
-            "Type",
-            format!("{} {}", type_icon(&n.subject.kind), n.subject.kind),
-            false,
-        ),
-        ("Repository", n.repository.full_name.clone(), false),
-        (
-            "Visibility",
-            if n.repository.private {
-                "Private"
-            } else {
-                "Public"
-            }
-            .into(),
-            false,
-        ),
-        ("Reason", format_reason(&n.reason), false),
-        ("Updated", fmt_time(n.updated_at), false),
-        (
-            "Has Comment",
-            if n.subject.latest_comment_url.is_empty() {
-                "No"
-            } else {
-                "Yes"
-            }
-            .into(),
-            false,
-        ),
-        ("Notification ID", n.id.clone(), true),
-    ];
-    for (label, value, faint) in rows {
-        let vs = if faint { t.faint() } else { t.secondary() };
-        b.push(Line::from(vec![
-            span(format!("{label:<16}"), t.faint()),
-            span(value, vs),
-        ]));
-        b.push(Line::default());
-    }
-    if !n.subject.url.is_empty() {
-        b.push(Line::from(vec![
-            span(format!("{:<16}", "API URL"), t.faint()),
-            span(n.subject.url.clone(), t.faint()),
-        ]));
-    }
+    b.push(Line::from(span("Loading...", t.faint())));
     b
 }
 
@@ -1457,7 +1378,6 @@ pub fn notification_prompt(t: &Theme, row: &NotifRow) -> Block {
         ("S", "sort by repo"),
         ("o", "open in browser"),
         ("Enter", enter_action),
-        ("Esc", "go back"),
     ];
     for (k, a) in actions {
         b.push(Line::from(vec![

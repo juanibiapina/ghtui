@@ -226,7 +226,6 @@ impl Help {
                 let subject_keys: Vec<&Binding> =
                     subject_groups.iter().flat_map(|g| &g.bindings).collect();
                 let notification: Vec<Binding> = [
-                    &n.back_to_notification,
                     &n.mark_as_done,
                     &n.mark_all_as_done,
                     &n.unsubscribe,

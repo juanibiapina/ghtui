@@ -774,18 +774,6 @@ impl App {
         self.want_subject(&n);
     }
 
-    fn back_to_notification(&mut self) -> bool {
-        if self.subject_pr.is_none() && self.subject_issue.is_none() {
-            return false;
-        }
-        self.subject_pr = None;
-        self.subject_issue = None;
-        self.subject_id.clear();
-        self.scroll_sidebar_top();
-        self.invalidate_sidebar();
-        true
-    }
-
     fn request_quit(&mut self) {
         if self.cfg.confirm_quit {
             self.confirm_quit_shown = true;
@@ -2020,9 +2008,6 @@ impl App {
             self.open_browser();
             return true;
         }
-        if k.notif.back_to_notification.matches(key) && self.back_to_notification() {
-            return true;
-        }
         if self.subject_pr.is_some() {
             let p = &k.pr;
             let editor = [
@@ -2659,7 +2644,7 @@ impl App {
                     }
                 }
                 if matches!(n.subject_type(), "PullRequest" | "Issue") {
-                    views::notification_view(t, &n, width)
+                    views::notification_loading(t, &n, width)
                 } else {
                     views::notification_prompt(t, &n)
                 }
@@ -3304,12 +3289,9 @@ mod tests {
     }
 
     #[test]
-    fn esc_leaves_an_open_notification_subject_before_quitting() {
+    fn esc_quits_at_once_while_a_notification_subject_is_shown() {
         let mut app = esc_inbox(true, false);
         app.subject_issue = Some(Issue::default());
-        app.handle_key("esc");
-        assert!(app.subject_issue.is_none());
-        assert!(!app.quit);
         app.handle_key("esc");
         assert!(app.quit);
     }

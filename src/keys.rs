@@ -103,7 +103,6 @@ pub struct IssueKeys {
 
 #[derive(Clone, Debug)]
 pub struct NotificationKeys {
-    pub back_to_notification: Binding,
     pub mark_as_done: Binding,
     pub mark_all_as_done: Binding,
     pub unsubscribe: Binding,
@@ -238,7 +237,6 @@ impl Default for Keys {
                 view_prs: b(&["s"], "s", "switch to notifications"),
             },
             notif: NotificationKeys {
-                back_to_notification: b(&["esc"], "esc", "back to notification"),
                 mark_as_done: b(&["d"], "d", "mark as done"),
                 mark_all_as_done: b(&["alt+d"], "alt+d", "mark all as done"),
                 unsubscribe: b(&["u"], "u", "unsubscribe"),

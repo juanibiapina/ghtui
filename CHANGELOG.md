@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remove support for gh-dash config files, `$GH_DASH_CONFIG` and gh-dash bookmarks.
 - Remove read and unread notifications: the notifications view shows every notification you haven't marked done. This removes `m` and `M`, the `is:unread`, `is:read` and `is:all` filters, the `includeReadNotifications` setting and the unread markers, and viewing a notification no longer marks it read.
 - Remove the `enter` key and the `view` key name from the notifications view. The preview already shows the selected notification.
+- Remove the notification details view that `esc` opened in the notifications view, so `quitOnEsc` quits on the first press.
 
 ### Changed
 
