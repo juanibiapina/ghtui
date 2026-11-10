@@ -25,6 +25,7 @@ use crate::section::{
     self, Kind, NotifRow, PrRow, Section, SectionSpec, SelectedRow, issue_columns,
     notification_columns, pr_columns,
 };
+use crate::subject::{self, SubjectDetails};
 use crate::tasks;
 use crate::text::Block;
 use crate::theme::Theme;
@@ -134,6 +135,7 @@ pub struct App {
     pub subject_id: String,
     pub subject_pr: Option<PrRow>,
     pub subject_issue: Option<Issue>,
+    pub subject_details: Option<SubjectDetails>,
     pub pending_notif_action: Option<String>,
     pub notif_prompt: Option<String>,
     pub section_mode: bool,
@@ -208,6 +210,7 @@ impl App {
             subject_id: String::new(),
             subject_pr: None,
             subject_issue: None,
+            subject_details: None,
             pending_notif_action: None,
             notif_prompt: None,
             section_mode: false,
@@ -670,26 +673,6 @@ impl App {
         }
     }
 
-    /// CheckSuite notifications link to the workflow run fetched here.
-    fn fetch_check_suite_runs(&self, rows: &[NotifRow]) {
-        for r in rows
-            .iter()
-            .filter(|r| r.subject_type() == SubjectType::CheckSuite)
-        {
-            let id = r.id().to_string();
-            let repo = r.repo().to_string();
-            let at = r.n.updated_at;
-            self.pool.spawn(move || {
-                let url =
-                    github::background(|| github::fetch_recent_workflow_run(&repo, at)).ok()?;
-                if url.is_empty() {
-                    return None;
-                }
-                Some(Msg::NotifUrl { id, url })
-            });
-        }
-    }
-
     pub fn invalidate_preview(&mut self) {
         self.preview_cache = None;
     }
@@ -709,6 +692,7 @@ impl App {
         self.subject_id.clear();
         self.subject_pr = None;
         self.subject_issue = None;
+        self.subject_details = None;
         self.live.subject_wanted = None;
         self.invalidate_preview();
         self.show_current_row_details();
@@ -732,10 +716,7 @@ impl App {
             if self.show_cached_subject(&n) {
                 return;
             }
-            if matches!(
-                n.subject_type(),
-                SubjectType::PullRequest | SubjectType::Issue
-            ) {
+            if subject::previewable(&n) {
                 self.timers.push((
                     Instant::now() + Duration::from_millis(150),
                     Msg::NotifPreview {
@@ -791,13 +772,7 @@ impl App {
             Msg::Checked(Ok(versions)) => self.on_checked(versions),
             Msg::Checked(Err(e)) => self.report_error(&format!("checking PRs failed: {e}")),
             Msg::CheckSelected { url } => self.check_selected_pr(&url),
-            Msg::NotifUrl { id, url } => {
-                for s in self.notifs.iter_mut() {
-                    if let Some(n) = s.notifs.iter_mut().find(|n| n.id() == id) {
-                        n.resolved_url = url.clone();
-                    }
-                }
-            }
+            Msg::SubjectDetail { key, result } => self.on_subject_detail(key, result),
             Msg::NotifPreview { notif_id } => {
                 if notif_id == self.selected_notification_id() && self.subject_id != notif_id {
                     self.preview_notification();
@@ -1104,7 +1079,6 @@ impl App {
             }
         }
         if matches!(key.view, ViewType::Notifications) && !new_notifs.is_empty() {
-            self.fetch_check_suite_runs(&new_notifs);
             self.update_notification_extras(None);
         }
         if fill_prs {
@@ -2319,6 +2293,7 @@ impl App {
         if self.view == ViewType::Notifications {
             self.subject_pr = None;
             self.subject_issue = None;
+            self.subject_details = None;
             self.subject_id.clear();
         }
         self.view = target;
@@ -2750,11 +2725,11 @@ impl App {
                             None,
                         );
                     }
+                    if let Some(d) = &self.subject_details {
+                        return (views::subject_view(t, &n, d, width), None);
+                    }
                 }
-                if matches!(
-                    n.subject_type(),
-                    SubjectType::PullRequest | SubjectType::Issue
-                ) {
+                if subject::previewable(&n) {
                     (views::notification_loading(t, &n, width), None)
                 } else {
                     (views::notification_prompt(t, &n), None)

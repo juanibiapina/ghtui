@@ -104,9 +104,10 @@ pub enum Msg {
         url: String,
         result: Result<Box<Issue>, String>,
     },
-    NotifUrl {
-        id: String,
-        url: String,
+    /// A notification subject's details from the subject store, by `subject::key`.
+    SubjectDetail {
+        key: String,
+        result: Result<Box<crate::subject::SubjectDetails>, String>,
     },
     /// The last session's lists, read from disk.
     CacheLoaded {

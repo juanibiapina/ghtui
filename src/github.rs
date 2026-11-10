@@ -20,7 +20,7 @@ use serde_json::{Map, Value, json};
 
 use crate::model::*;
 
-/// Background work stops when fewer GraphQL points than this remain.
+/// Background work stops when fewer GraphQL points, or REST requests, than this remain.
 const REMAINING_FLOOR: i64 = 500;
 /// Background GraphQL response time allowed per rolling minute.
 pub const BACKGROUND_BUDGET: Duration = Duration::from_secs(20);
@@ -158,6 +158,9 @@ struct State {
     paused_until: Option<Instant>,
     backoff_level: u32,
     low_until: Option<Instant>,
+    /// REST has its own rate limit; these pause background REST requests.
+    rest_paused_until: Option<Instant>,
+    rest_low_until: Option<Instant>,
     conditional: HashMap<String, Conditional>,
     background_time: VecDeque<(Instant, Duration)>,
     notifications_polled: Option<(DateTime<Utc>, u64)>,
@@ -261,6 +264,12 @@ pub fn account_key_for(host: &str, token: &str) -> String {
 pub fn background_wait() -> Option<Duration> {
     let c = client().ok()?;
     c.background_wait(Instant::now())
+}
+
+/// How long background work that mixes REST and GraphQL must wait.
+pub fn subject_wait() -> Option<Duration> {
+    let c = client().ok()?;
+    c.subject_wait(Instant::now())
 }
 
 /// Notifications may be polled again: the last poll is older than `X-Poll-Interval`.
@@ -415,6 +424,38 @@ impl Client {
         None
     }
 
+    /// The background wait, or longer while REST asks us to wait.
+    fn subject_wait(&self, now: Instant) -> Option<Duration> {
+        let rest = {
+            let st = self.state.lock().unwrap();
+            [st.rest_paused_until, st.rest_low_until]
+                .into_iter()
+                .flatten()
+                .filter(|t| *t > now)
+                .max()
+                .map(|t| t - now)
+        };
+        self.background_wait(now).max(rest)
+    }
+
+    /// Background REST requests fail fast while GitHub asked us to wait.
+    fn check_rest_paused(&self) -> Result<()> {
+        if lane() == Lane::Foreground {
+            return Ok(());
+        }
+        let now = Instant::now();
+        let st = self.state.lock().unwrap();
+        let until = [st.rest_paused_until, st.rest_low_until]
+            .into_iter()
+            .flatten()
+            .filter(|t| *t > now)
+            .max();
+        match until {
+            Some(until) => Err(anyhow!(RateLimited { until })),
+            None => Ok(()),
+        }
+    }
+
     /// Background requests fail fast while GitHub asked us to wait.
     fn check_paused(&self) -> Result<()> {
         if lane() == Lane::Foreground {
@@ -458,6 +499,8 @@ impl Client {
             let until = Instant::now() + wait;
             if graphql {
                 st.paused_until = Some(st.paused_until.map_or(until, |p| p.max(until)));
+            } else {
+                st.rest_paused_until = Some(st.rest_paused_until.map_or(until, |p| p.max(until)));
             }
             crate::warn!("rate limited status={status} wait={}s", wait.as_secs());
             return Err(anyhow!(RateLimited { until }));
@@ -465,6 +508,12 @@ impl Client {
         if graphql && (200..300).contains(&status) {
             st.backoff_level = 0;
             st.low_until = match (h.remaining, h.reset) {
+                (Some(r), Some(reset)) if r < REMAINING_FLOOR => Some(instant_at_epoch(reset)),
+                _ => None,
+            };
+        }
+        if !graphql && (200..300).contains(&status) {
+            st.rest_low_until = match (h.remaining, h.reset) {
                 (Some(r), Some(reset)) if r < REMAINING_FLOOR => Some(instant_at_epoch(reset)),
                 _ => None,
             };
@@ -523,6 +572,7 @@ impl Client {
     }
 
     fn rest(&self, method: &str, path: &str) -> Result<(u16, String)> {
+        self.check_rest_paused()?;
         let url = self.rest_url(path);
         let auth = format!("token {}", self.token);
         let cached = (method == "GET")
@@ -1274,12 +1324,101 @@ pub fn best_workflow_run(runs: &[WorkflowRun], at: DateTime<Utc>) -> Option<&Wor
     best.or_else(|| runs.first())
 }
 
-pub fn fetch_recent_workflow_run(repo: &str, at: DateTime<Utc>) -> Result<String> {
-    let resp: WorkflowRunsResponse =
-        client()?.rest_get(&format!("repos/{repo}/actions/runs?per_page=20"))?;
-    Ok(best_workflow_run(&resp.workflow_runs, at)
-        .map(|r| r.html_url.clone())
-        .unwrap_or_default())
+/// Percent-encodes a query parameter value.
+fn query_value(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+/// Workflow runs created up to `created_before`, newest first, on `branch` when given.
+pub fn fetch_runs(
+    repo: &str,
+    branch: Option<&str>,
+    created_before: DateTime<Utc>,
+) -> Result<Vec<WorkflowRun>> {
+    let created = query_value(&format!(
+        "<={}",
+        created_before.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    ));
+    let mut path = format!("repos/{repo}/actions/runs?per_page=30&created={created}");
+    if let Some(b) = branch {
+        path.push_str(&format!("&branch={}", query_value(b)));
+    }
+    let resp: WorkflowRunsResponse = client()?.rest_get(&path)?;
+    Ok(resp.workflow_runs)
+}
+
+pub fn fetch_run_jobs(repo: &str, run_id: i64, attempt: i64) -> Result<Vec<Job>> {
+    let resp: JobsResponse = client()?.rest_get(&format!(
+        "repos/{repo}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100"
+    ))?;
+    Ok(resp.jobs)
+}
+
+pub fn fetch_release(api_url: &str) -> Result<Release> {
+    client()?.rest_get(api_url)
+}
+
+/// A commit with its files and comments.
+pub fn fetch_commit(repo: &str, sha: &str) -> Result<CommitDetails> {
+    let c = client()?;
+    let commit: RestCommit = c.rest_get(&format!("repos/{repo}/commits/{sha}"))?;
+    let comments: Vec<CommitComment> =
+        c.rest_get(&format!("repos/{repo}/commits/{sha}/comments?per_page=100"))?;
+    Ok(CommitDetails { commit, comments })
+}
+
+const DISCUSSION_FIELDS: &str = "number title url body author { login } createdAt \
+category { name } isAnswered comments(last: 50) { totalCount nodes { author { login } body createdAt updatedAt } }";
+
+pub fn fetch_discussion(repo: &str, number: i64) -> Result<Discussion> {
+    #[derive(Deserialize)]
+    struct Repo {
+        discussion: Option<Discussion>,
+    }
+    #[derive(Deserialize)]
+    struct Data {
+        repository: Option<Repo>,
+    }
+    let doc = format!(
+        "query FetchDiscussion($owner: String!, $name: String!, $number: Int!) {{ repository(owner: $owner, name: $name) {{ discussion(number: $number) {{ {DISCUSSION_FIELDS} }} }} }}"
+    );
+    let (owner, name) = repo
+        .split_once('/')
+        .ok_or_else(|| anyhow!("not a repository: {repo}"))?;
+    let data: Data = client()?.graphql(
+        &doc,
+        json!({ "owner": owner, "name": name, "number": number }),
+    )?;
+    data.repository
+        .and_then(|r| r.discussion)
+        .ok_or_else(|| anyhow!("discussion not found: {repo}#{number}"))
+}
+
+/// The discussion in `repo` titled exactly `title`, the most recent when several are.
+pub fn find_discussion(repo: &str, title: &str) -> Result<Discussion> {
+    #[derive(Deserialize)]
+    struct Data {
+        search: Nodes<Discussion>,
+    }
+    let doc = format!(
+        "query FindDiscussion($q: String!) {{ search(query: $q, type: DISCUSSION, first: 10) {{ nodes {{ ... on Discussion {{ {DISCUSSION_FIELDS} }} }} }} }}"
+    );
+    let quoted = title.replace('"', "");
+    let q = format!("repo:{repo} in:title \"{quoted}\"");
+    let data: Data = client()?.graphql(&doc, json!({ "q": q }))?;
+    data.search
+        .nodes
+        .into_iter()
+        .filter(|d| d.title == title)
+        .max_by_key(|d| d.created_at)
+        .ok_or_else(|| anyhow!("discussion not found: {repo} \"{title}\""))
 }
 
 #[cfg(test)]
@@ -1296,6 +1435,34 @@ mod tests {
             remaining,
             reset,
         }
+    }
+
+    fn test_client() -> Client {
+        Client {
+            host: "github.com".into(),
+            token: String::new(),
+            agent: ureq::Agent::new_with_defaults(),
+            state: Mutex::new(State::default()),
+        }
+    }
+
+    #[test]
+    fn a_rest_rate_limit_pauses_subject_work_and_leaves_graphql_work_running() {
+        let c = test_client();
+        let limited = c.observe(
+            429,
+            &headers(Some(30), None, None),
+            "",
+            Duration::ZERO,
+            false,
+        );
+        assert!(limited.is_err_and(|e| is_rate_limited(&e)));
+        let now = Instant::now();
+        let wait = c.subject_wait(now).unwrap();
+        assert!(wait > Duration::from_secs(25) && wait <= Duration::from_secs(30));
+        assert_eq!(c.background_wait(now), None);
+        background(|| assert!(c.check_rest_paused().is_err_and(|e| is_rate_limited(&e))));
+        assert!(c.check_rest_paused().is_ok());
     }
 
     #[test]

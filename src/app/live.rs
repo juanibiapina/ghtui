@@ -16,6 +16,7 @@ use crate::news::Subject;
 use crate::refresh::{self, PrefetchRows};
 use crate::section::{Kind, NotifRow, PrRow, Section, SelectedRow};
 use crate::store::{DetailStore, LanePolicy, Retry};
+use crate::subject::{self, SubjectDetails};
 
 /// Full searches running at once in the background.
 const MAX_FULL_SEARCHES: usize = 3;
@@ -36,6 +37,8 @@ pub struct Live {
     pub details_loaded: bool,
     pub pr_store: DetailStore<PullRequestDetails>,
     pub issue_store: DetailStore<Issue>,
+    /// Runs, releases, commits and discussions, by `subject::key`.
+    pub subject_store: DetailStore<SubjectDetails>,
     pub last_sync: HashMap<ViewType, Instant>,
     pub last_check: HashMap<ViewType, Instant>,
     pub pr_checked: HashMap<String, Instant>,
@@ -104,12 +107,39 @@ impl Live {
             },
             lane_policy(),
         );
+        let tx = std::sync::Mutex::new(pool.msgs.clone());
+        let subject_store = DetailStore::new(
+            |keys: &[String], bg| {
+                keys.iter()
+                    .map(|k| {
+                        let details = if bg {
+                            github::background(|| subject::fetch(k))
+                        } else {
+                            subject::fetch(k)
+                        };
+                        details.map(|d| (k.clone(), Ok(d)))
+                    })
+                    .collect()
+            },
+            move |key, result| {
+                let _ = tx.lock().unwrap().send(Msg::SubjectDetail {
+                    key,
+                    result: result.map(Box::new),
+                });
+            },
+            LanePolicy {
+                batch_size: 1,
+                wait: std::sync::Arc::new(github::subject_wait),
+                ..lane_policy()
+            },
+        );
         Live {
             focused: true,
             started: false,
             details_loaded: false,
             pr_store,
             issue_store,
+            subject_store,
             last_sync: HashMap::new(),
             last_check: HashMap::new(),
             pr_checked: HashMap::new(),
@@ -126,6 +156,14 @@ impl Live {
             repo_started: false,
         }
     }
+}
+
+/// The detail store a prefetched row's details come from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Store {
+    Pr,
+    Issue,
+    Subject,
 }
 
 /// An `Instant` `age` ago, or as far back as the clock allows.
@@ -889,7 +927,13 @@ impl App {
                 self.show_subject_issue(n.id(), e.value);
                 true
             }
-            _ => false,
+            _ => {
+                let Some(e) = subject::key(n).and_then(|k| self.live.subject_store.get(&k)) else {
+                    return false;
+                };
+                self.show_subject_details(n.id(), e.value);
+                true
+            }
         }
     }
 
@@ -902,6 +946,7 @@ impl App {
             details: Some(pr),
         });
         self.subject_issue = None;
+        self.subject_details = None;
         self.subject_id = notif_id.to_string();
         self.live.subject_wanted = None;
     }
@@ -909,6 +954,15 @@ impl App {
     fn show_subject_issue(&mut self, notif_id: &str, issue: Issue) {
         self.subject_issue = Some(issue);
         self.subject_pr = None;
+        self.subject_details = None;
+        self.subject_id = notif_id.to_string();
+        self.live.subject_wanted = None;
+    }
+
+    fn show_subject_details(&mut self, notif_id: &str, details: SubjectDetails) {
+        self.subject_details = Some(details);
+        self.subject_pr = None;
+        self.subject_issue = None;
         self.subject_id = notif_id.to_string();
         self.live.subject_wanted = None;
     }
@@ -918,7 +972,42 @@ impl App {
         match n.subject_type() {
             SubjectType::PullRequest => self.live.pr_store.fetch_now(&n.url()),
             SubjectType::Issue => self.live.issue_store.fetch_now(&n.url()),
-            _ => {}
+            _ => {
+                if let Some(k) = subject::key(n) {
+                    self.live.subject_store.fetch_now(&k);
+                }
+            }
+        }
+    }
+
+    pub(super) fn on_subject_detail(
+        &mut self,
+        key: String,
+        result: Result<Box<SubjectDetails>, String>,
+    ) {
+        let selected = match self.current_row() {
+            Some(SelectedRow::Notification(n)) if subject::key(&n).as_deref() == Some(&key) => {
+                Some(n.id().to_string())
+            }
+            _ => None,
+        };
+        match result {
+            Ok(details) => {
+                if let Some(id) = selected
+                    && (self.live.subject_wanted.as_deref() == Some(id.as_str())
+                        || self.subject_id == id)
+                {
+                    self.show_subject_details(&id, *details);
+                }
+                self.update_notification_extras(Some(&key));
+            }
+            Err(e) => {
+                if selected.is_some() && self.live.subject_wanted == selected {
+                    self.live.subject_wanted = None;
+                    self.error = Some(format!("failed fetching notification subject: {e}"));
+                }
+                self.report_error(&e);
+            }
         }
     }
 
@@ -983,15 +1072,23 @@ impl App {
     }
 
     /// Updates the comment count, state and actor of notifications whose subject is
-    /// cached; only those with subject `url` when given. Marks subjects older than
-    /// their notification stale.
+    /// cached, and the page of other subjects; only those with subject `url` (or
+    /// `subject::key`) when given. Marks subjects older than their notification stale.
     pub(super) fn update_notification_extras(&mut self, url: Option<&str>) {
         let prs = &self.live.pr_store;
         let issues = &self.live.issue_store;
+        let subjects = &self.live.subject_store;
         for s in self.notifs.iter_mut() {
             for n in s.notifs.iter_mut() {
-                let u = n.url();
+                let key = subject::key(n);
+                let u = key.clone().unwrap_or_else(|| n.url());
                 if url.is_some_and(|x| x != u) {
+                    continue;
+                }
+                if key.is_some() {
+                    if let Some(page) = subjects.peek(&u, |e| e.value.html_url().to_string()) {
+                        n.resolved_url = page;
+                    }
                     continue;
                 }
                 let (extras, fetched_at) = match n.subject_type() {
@@ -1056,6 +1153,7 @@ impl App {
     pub(super) fn mark_all_details_stale(&mut self) {
         self.live.pr_store.mark_all_stale();
         self.live.issue_store.mark_all_stale();
+        self.live.subject_store.mark_all_stale();
     }
 
     /// Hands the stores what to preload, nearest to the cursor first.
@@ -1063,20 +1161,20 @@ impl App {
         if !self.live.details_loaded || !self.live.started {
             return;
         }
-        let rows_of = |s: &Section| -> PrefetchRows<(bool, String)> {
+        let rows_of = |s: &Section| -> PrefetchRows<(Store, String)> {
             let items = match s.kind {
                 Kind::Pr => s
                     .prs
                     .iter()
-                    .map(|r| Some((true, r.primary.url.clone())))
+                    .map(|r| Some((Store::Pr, r.primary.url.clone())))
                     .collect(),
                 Kind::Notification => s
                     .notifs
                     .iter()
                     .map(|n| match n.subject_type() {
-                        SubjectType::PullRequest => Some((true, n.url())),
-                        SubjectType::Issue => Some((false, n.url())),
-                        _ => None,
+                        SubjectType::PullRequest => Some((Store::Pr, n.url())),
+                        SubjectType::Issue => Some((Store::Issue, n.url())),
+                        _ => subject::key(n).map(|k| (Store::Subject, k)),
                     })
                     .collect(),
                 _ => vec![],
@@ -1098,7 +1196,7 @@ impl App {
             cursor: 0,
             top: 0,
         });
-        let same: Vec<PrefetchRows<(bool, String)>> = self
+        let same: Vec<PrefetchRows<(Store, String)>> = self
             .sections()
             .iter()
             .enumerate()
@@ -1116,17 +1214,20 @@ impl App {
             others.extend(list.iter().map(rows_of));
         }
         let order = refresh::prefetch_order(&current, &same, &others, screen);
-        let (prs, issues): (Vec<_>, Vec<_>) = order.into_iter().partition(|(is_pr, _)| *is_pr);
-        self.live
-            .pr_store
-            .prefetch(prs.into_iter().map(|(_, u)| u).collect());
-        self.live
-            .issue_store
-            .prefetch(issues.into_iter().map(|(_, u)| u).collect());
+        let of = |store: Store| -> Vec<String> {
+            order
+                .iter()
+                .filter(|(s, _)| *s == store)
+                .map(|(_, u)| u.clone())
+                .collect()
+        };
+        self.live.pr_store.prefetch(of(Store::Pr));
+        self.live.issue_store.prefetch(of(Store::Issue));
+        self.live.subject_store.prefetch(of(Store::Subject));
     }
 
     pub fn store_busy(&self) -> bool {
-        self.live.pr_store.busy() || self.live.issue_store.busy()
+        self.live.pr_store.busy() || self.live.issue_store.busy() || self.live.subject_store.busy()
     }
 
     /// Logs an error; a rate limit shows once a minute in the footer.

@@ -11,6 +11,7 @@ use crate::markdown;
 use crate::model::*;
 use crate::news::{NewItem, NewKind, News};
 use crate::section::{NotifRow, PrRow, render_lines};
+use crate::subject::SubjectDetails;
 use crate::text::*;
 use crate::theme::{self, Theme, darken, lighten, parse_color};
 use crate::util::time_elapsed;
@@ -1408,9 +1409,32 @@ fn changed_files(t: &Theme, row: &PrRow, w: usize) -> Block {
     let Some(e) = &row.details else {
         return vec![];
     };
+    let files: Vec<FileChange> = e
+        .files
+        .nodes
+        .iter()
+        .map(|f| FileChange {
+            status: f.change_type,
+            additions: f.additions,
+            deletions: f.deletions,
+            path: &f.path,
+        })
+        .collect();
+    file_list(t, &files, w)
+}
+
+struct FileChange<'a> {
+    status: PatchStatus,
+    additions: i64,
+    deletions: i64,
+    path: &'a str,
+}
+
+/// One line per file: added and deleted lines, a change icon and the path.
+fn file_list(t: &Theme, files: &[FileChange], w: usize) -> Block {
     let mut out = vec![];
-    for f in &e.files.nodes {
-        let icon = match f.change_type {
+    for f in files {
+        let icon = match f.status {
             PatchStatus::Added => span(icons::FILE_ADDED, Style::default().fg(t.success_text)),
             PatchStatus::Deleted => span(icons::FILE_DELETED, Style::default().fg(t.error_text)),
             PatchStatus::Renamed => span(icons::FILE_RENAMED, Style::default().fg(t.warning_text)),
@@ -1472,6 +1496,45 @@ pub fn editor_view(t: &Theme, ed: &Editor, w: usize) -> Block {
         span(" toggle", t.faint()),
     ]));
     boxed(lines, inner, t.primary_border, border::PLAIN)
+}
+
+struct CommentView<'a> {
+    author: &'a str,
+    at: chrono::DateTime<chrono::Utc>,
+    body: &'a str,
+}
+
+/// Comments oldest first, each in a box with its author and age. New ones have
+/// a highlighted border.
+fn comment_list(
+    t: &Theme,
+    mut comments: Vec<CommentView>,
+    content_w: usize,
+    is_new: impl Fn(chrono::DateTime<chrono::Utc>) -> bool,
+) -> Block {
+    comments.sort_by_key(|c| c.at);
+    let cw = content_w.saturating_sub(2);
+    let mut cb: Block = vec![];
+    if comments.is_empty() {
+        cb.push(Line::from(span(
+            "No comments...",
+            Style::default().add_modifier(Modifier::ITALIC),
+        )));
+    }
+    for c in comments {
+        cb.extend(boxed(
+            vec![Line::from(vec![
+                span(c.author.to_string(), t.main_text()),
+                raw(" "),
+                span(time_elapsed(c.at), t.faint()),
+            ])],
+            cw.saturating_sub(2),
+            new_border(t, is_new(c.at)),
+            border::ROUNDED,
+        ));
+        cb.extend(markdown::render(&markdown::clean_body(c.body), cw));
+    }
+    indent(cb, 2)
 }
 
 /// The border of a comment, highlighted when it is new.
@@ -1538,30 +1601,19 @@ pub fn issue_view(
     b.push(Line::default());
     b.push(heading(t, format!("{} Comments", icons::DISCUSSION)));
     b.push(Line::default());
-    let mut comments = issue.comments.nodes.clone();
-    comments.sort_by_key(|c| c.created_at);
-    let cw = content_w.saturating_sub(2);
-    let mut cb: Block = vec![];
-    if comments.is_empty() {
-        cb.push(Line::from(span(
-            "No comments...",
-            Style::default().add_modifier(Modifier::ITALIC),
-        )));
-    }
-    for c in comments {
-        cb.extend(boxed(
-            vec![Line::from(vec![
-                span(Login::of(&c.author).to_string(), t.main_text()),
-                raw(" "),
-                span(time_elapsed(c.created_at), t.faint()),
-            ])],
-            cw.saturating_sub(2),
-            new_border(t, news.is_some_and(|n| n.is_new(c.created_at))),
-            border::ROUNDED,
-        ));
-        cb.extend(markdown::render(&markdown::clean_body(&c.body), cw));
-    }
-    b.extend(indent(cb, 2));
+    let comments: Vec<CommentView> = issue
+        .comments
+        .nodes
+        .iter()
+        .map(|c| CommentView {
+            author: Login::of(&c.author),
+            at: c.created_at,
+            body: &c.body,
+        })
+        .collect();
+    b.extend(comment_list(t, comments, content_w, |at| {
+        news.is_some_and(|n| n.is_new(at))
+    }));
     if let Some(ed) = editor {
         b.push(Line::default());
         b.extend(editor_view(t, ed, w));
@@ -1627,6 +1679,363 @@ pub fn notification_prompt(t: &Theme, row: &NotifRow) -> Block {
             span(a.to_string(), action),
         ]));
     }
+    b
+}
+
+/// A run, release, commit or discussion a notification is about.
+pub fn subject_view(t: &Theme, row: &NotifRow, d: &SubjectDetails, width: usize) -> Block {
+    let w = width.saturating_sub(2 * CONTENT_PADDING);
+    let content_w = width.saturating_sub(6);
+    let b = match d {
+        SubjectDetails::Run(r) => run_view(t, row, r, w),
+        SubjectDetails::Release(r) => release_view(t, row, r, w, content_w),
+        SubjectDetails::Commit(c) => commit_view(t, row, c, w, content_w),
+        SubjectDetails::Discussion(d) => discussion_view(t, row, d, w, content_w),
+    };
+    indent(b, CONTENT_PADDING)
+}
+
+fn by_line(t: &Theme, login: &str, after: String) -> Line<'static> {
+    Line::from(vec![
+        raw(" by "),
+        span(
+            format!("@{login}"),
+            t.primary().add_modifier(Modifier::BOLD),
+        ),
+        span(format!(" ⋅ {after}"), t.faint()),
+    ])
+}
+
+fn italic_note(t: &Theme, text: &str) -> Line<'static> {
+    Line::from(span(
+        text.to_string(),
+        t.faint().add_modifier(Modifier::ITALIC),
+    ))
+}
+
+fn run_state_name(s: RunState) -> &'static str {
+    match s {
+        RunState::ActionRequired => "Action required",
+        RunState::Cancelled => "Cancelled",
+        RunState::Completed => "Completed",
+        RunState::Failure => "Failure",
+        RunState::InProgress => "In progress",
+        RunState::Neutral => "Neutral",
+        RunState::Pending => "Pending",
+        RunState::Queued => "Queued",
+        RunState::Requested => "Requested",
+        RunState::Skipped => "Skipped",
+        RunState::Stale => "Stale",
+        RunState::StartupFailure => "Startup failure",
+        RunState::Success => "Success",
+        RunState::TimedOut => "Timed out",
+        RunState::Waiting => "Waiting",
+        RunState::Unknown => "Unknown",
+    }
+}
+
+fn run_glyph(t: &Theme, conclusion: Option<RunState>) -> (&'static str, Style) {
+    match conclusion {
+        None => t.waiting_glyph(),
+        Some(RunState::Success) => t.success_glyph(),
+        Some(c) if c.is_unsuccessful() => t.failure_glyph(),
+        Some(c) if c.is_waiting() => t.waiting_glyph(),
+        Some(_) => (icons::EMPTY, t.faint()),
+    }
+}
+
+fn duration_text(d: chrono::Duration) -> String {
+    let s = d.num_seconds().max(0);
+    if s >= 3600 {
+        format!("{}h {}m", s / 3600, s % 3600 / 60)
+    } else if s >= 60 {
+        format!("{}m {}s", s / 60, s % 60)
+    } else {
+        format!("{s}s")
+    }
+}
+
+fn short_sha(sha: &str) -> &str {
+    sha.get(..7).unwrap_or(sha)
+}
+
+/// The run's outcome, then its jobs, failed ones first with their failed steps.
+fn run_view(t: &Theme, row: &NotifRow, d: &RunDetails, w: usize) -> Block {
+    let r = &d.run;
+    let mut b = preview_header(t, w, &format!("{} · Workflow run", row.repo()));
+    let name = r
+        .name
+        .as_deref()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or("Workflow");
+    b.extend(preview_title(t, w, &format!("{name} #{}", r.run_number)));
+    b.push(Line::default());
+    let (text, bg) = match r.conclusion {
+        Some(RunState::Success) => (run_state_name(RunState::Success), t.success_text),
+        Some(c) if c.is_unsuccessful() => (run_state_name(c), t.error_text),
+        Some(c) => (run_state_name(c), t.faint_text),
+        None => (
+            run_state_name(r.status.unwrap_or(RunState::InProgress)),
+            t.warning_text,
+        ),
+    };
+    b.push(Line::from(pill(
+        &format!("{} {text}", icons::WORKFLOW_RUN),
+        bg,
+        t.inverted_text,
+        None,
+    )));
+    b.push(Line::default());
+    let actor = r.actor.as_ref().map_or("ghost", |a| a.login.as_str());
+    let mut after = format!("{} ⋅ {} ago", r.event, time_elapsed(r.created_at));
+    if d.attempt > 1 {
+        after.push_str(&format!(" ⋅ attempt {}", d.attempt));
+    }
+    b.push(by_line(t, actor, after));
+    let mut head = vec![raw(" ")];
+    if let Some(branch) = &r.head_branch {
+        head.push(span(branch.clone(), t.primary()));
+        head.push(span(" ⋅ ", t.faint()));
+    }
+    head.push(span(format!("{} ", icons::COMMIT), t.faint()));
+    head.push(span(short_sha(&r.head_sha).to_string(), t.faint()));
+    head.push(raw(format!(" {}", r.display_title)));
+    b.push(Line::from(head));
+    b.push(Line::default());
+    b.push(heading(t, format!("{} Jobs", icons::CHECKS)));
+    b.push(Line::default());
+    let failed = |j: &&Job| j.conclusion.is_some_and(RunState::is_unsuccessful);
+    let skipped = d
+        .jobs
+        .iter()
+        .filter(|j| j.conclusion == Some(RunState::Skipped))
+        .count();
+    let shown = d.jobs.iter().filter(failed).chain(
+        d.jobs
+            .iter()
+            .filter(|j| !failed(j) && j.conclusion != Some(RunState::Skipped)),
+    );
+    if d.jobs.is_empty() {
+        b.push(italic_note(t, "No jobs..."));
+    }
+    for j in shown {
+        let mut l = vec![
+            glyph(run_glyph(t, j.conclusion)),
+            raw(" "),
+            raw(j.name.clone()),
+        ];
+        if let (Some(start), Some(end)) = (j.started_at, j.completed_at) {
+            l.push(span(
+                format!(" ⋅ {}", duration_text(end - start)),
+                t.faint(),
+            ));
+        }
+        b.push(Line::from(l));
+        if failed(&j) {
+            for s in j
+                .steps
+                .iter()
+                .filter(|s| s.conclusion.is_some_and(RunState::is_unsuccessful))
+            {
+                b.push(Line::from(vec![
+                    raw("  "),
+                    glyph(run_glyph(t, s.conclusion)),
+                    raw(" "),
+                    span(s.name.clone(), t.faint()),
+                ]));
+            }
+        }
+    }
+    if skipped > 0 {
+        b.push(Line::from(vec![
+            span(icons::EMPTY, t.faint()),
+            span(format!(" {skipped} skipped"), t.faint()),
+        ]));
+    }
+    b
+}
+
+fn size_text(bytes: i64) -> String {
+    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
+    let mut v = bytes as f64;
+    let mut unit = 0;
+    while v >= 1024.0 && unit < UNITS.len() - 1 {
+        v /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} B")
+    } else {
+        format!("{v:.1} {}", UNITS[unit])
+    }
+}
+
+fn release_view(t: &Theme, row: &NotifRow, r: &Release, w: usize, content_w: usize) -> Block {
+    let mut b = preview_header(t, w, &format!("{} · Release", row.repo()));
+    let title = r
+        .name
+        .as_deref()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or(&r.tag_name);
+    b.extend(preview_title(t, w, title));
+    b.push(Line::default());
+    let mut pills = pill(
+        &format!("{} {}", icons::RELEASE, r.tag_name),
+        theme::OPEN_ISSUE,
+        t.inverted_text,
+        None,
+    );
+    if r.prerelease {
+        pills.push(raw(" "));
+        pills.extend(pill("Pre-release", t.warning_text, t.inverted_text, None));
+    }
+    if r.draft {
+        pills.push(raw(" "));
+        pills.extend(pill("Draft", t.faint_text, t.inverted_text, None));
+    }
+    b.push(Line::from(pills));
+    b.push(Line::default());
+    let when = match r.published_at {
+        Some(at) => format!("published {} ago", time_elapsed(at)),
+        None => format!("created {} ago", time_elapsed(r.created_at)),
+    };
+    b.push(by_line(t, Login::of(&r.author), when));
+    b.push(Line::default());
+    let body = markdown::clean_body(r.body.as_deref().unwrap_or(""));
+    if body.trim().is_empty() {
+        b.push(italic_note(t, "No release notes."));
+    } else {
+        b.extend(markdown::render(body.trim(), content_w));
+    }
+    if !r.assets.is_empty() {
+        b.push(Line::default());
+        b.push(heading(t, format!("{} Assets", icons::FILES)));
+        b.push(Line::default());
+        for a in &r.assets {
+            b.push(Line::from(vec![
+                raw(a.name.clone()),
+                span(
+                    format!(" ⋅ {} ⋅ {} downloads", size_text(a.size), a.download_count),
+                    t.faint(),
+                ),
+            ]));
+        }
+    }
+    b
+}
+
+fn commit_view(t: &Theme, row: &NotifRow, d: &CommitDetails, w: usize, content_w: usize) -> Block {
+    let c = &d.commit;
+    let message = c.commit.message.trim();
+    let (headline, rest) = message.split_once('\n').unwrap_or((message, ""));
+    let mut b = preview_header(t, w, &format!("{} · Commit", row.repo()));
+    b.extend(preview_title(t, w, headline));
+    b.push(Line::default());
+    let git_author = c.commit.author.as_ref();
+    let author = c
+        .author
+        .as_ref()
+        .map(|a| a.login.clone())
+        .or_else(|| git_author.and_then(|a| a.name.clone()))
+        .unwrap_or_else(|| "ghost".into());
+    let mut after = short_sha(&c.sha).to_string();
+    if let Some(at) = git_author.and_then(|a| a.date) {
+        after.push_str(&format!(" ⋅ {} ago", time_elapsed(at)));
+    }
+    b.push(by_line(t, &author, after));
+    b.push(Line::default());
+    let rest = rest.trim();
+    if !rest.is_empty() {
+        for l in rest.lines() {
+            if l.trim().is_empty() {
+                b.push(Line::default());
+            } else {
+                b.extend(wrap_str(l, content_w.max(1), Style::default()));
+            }
+        }
+        b.push(Line::default());
+    }
+    b.push(heading(
+        t,
+        format!("{} Files Changed ({})", icons::FILES, c.files.len()),
+    ));
+    b.push(Line::default());
+    let files: Vec<FileChange> = c
+        .files
+        .iter()
+        .map(|f| FileChange {
+            status: f.status.into(),
+            additions: f.additions,
+            deletions: f.deletions,
+            path: &f.filename,
+        })
+        .collect();
+    b.extend(file_list(t, &files, content_w));
+    b.push(Line::default());
+    b.push(heading(t, format!("{} Comments", icons::DISCUSSION)));
+    b.push(Line::default());
+    let comments = d
+        .comments
+        .iter()
+        .map(|c| CommentView {
+            author: Login::of(&c.user),
+            at: c.created_at,
+            body: &c.body,
+        })
+        .collect();
+    b.extend(comment_list(t, comments, content_w, |_| false));
+    b
+}
+
+fn discussion_view(t: &Theme, row: &NotifRow, d: &Discussion, w: usize, content_w: usize) -> Block {
+    let mut b = preview_header(t, w, &format!("#{} · {}", d.number, row.repo()));
+    b.extend(preview_title(t, w, &d.title));
+    b.push(Line::default());
+    let mut pills = pill(
+        &format!("{} {}", icons::DISCUSSION, d.category.name),
+        theme::OPEN_ISSUE,
+        t.inverted_text,
+        None,
+    );
+    if d.is_answered == Some(true) {
+        pills.push(raw(" "));
+        pills.extend(pill("Answered", t.success_text, t.inverted_text, None));
+    }
+    b.push(Line::from(pills));
+    b.push(Line::default());
+    b.push(by_line(
+        t,
+        Login::of(&d.author),
+        format!("{} ago", time_elapsed(d.created_at)),
+    ));
+    b.push(Line::default());
+    let body = markdown::clean_body(&d.body);
+    if body.trim().is_empty() {
+        b.push(italic_note(t, "No description provided."));
+    } else {
+        b.extend(markdown::render(body.trim(), content_w));
+    }
+    b.push(Line::default());
+    b.push(heading(
+        t,
+        format!(
+            "{} Comments ({})",
+            icons::DISCUSSION,
+            d.comments.total_count
+        ),
+    ));
+    b.push(Line::default());
+    let comments = d
+        .comments
+        .nodes
+        .iter()
+        .map(|c| CommentView {
+            author: Login::of(&c.author),
+            at: c.created_at,
+            body: &c.body,
+        })
+        .collect();
+    b.extend(comment_list(t, comments, content_w, |_| false));
     b
 }
 

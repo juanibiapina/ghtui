@@ -73,6 +73,7 @@ pub struct NotifRow {
     pub is_draft: bool,
     pub actor: String,
     pub activity: String,
+    /// The subject's page, once its details have loaded.
     pub resolved_url: String,
 }
 
@@ -140,11 +141,12 @@ impl NotifRow {
         match self.subject_type() {
             SubjectType::PullRequest => format!("{base}/pull/{num}"),
             SubjectType::Issue => format!("{base}/issues/{num}"),
+            _ if !self.resolved_url.is_empty() => self.resolved_url.clone(),
             SubjectType::Discussion if !num.is_empty() => format!("{base}/discussions/{num}"),
             SubjectType::Discussion => format!("{base}/discussions"),
             SubjectType::Release => format!("{base}/releases"),
+            SubjectType::Commit if !num.is_empty() => format!("{base}/commit/{num}"),
             SubjectType::Commit => format!("{base}/commits"),
-            SubjectType::CheckSuite if !self.resolved_url.is_empty() => self.resolved_url.clone(),
             SubjectType::CheckSuite => format!("{base}/actions"),
             _ => base,
         }

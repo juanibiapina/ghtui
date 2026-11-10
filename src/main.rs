@@ -21,6 +21,7 @@ mod news;
 mod refresh;
 mod section;
 mod store;
+mod subject;
 mod tasks;
 mod template;
 mod text;

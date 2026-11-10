@@ -629,8 +629,9 @@ mod tests {
     use crate::input::{TextArea, TextInput};
     use crate::keys::Keys;
     use crate::model::{
-        Comment, Count, CountedNodes, Event, Issue, Label, Login, Nodes, Notification, PullRequest,
-        Repository, ReviewDecision, State, SubjectType, TimelineEvent,
+        Asset, Comment, Count, CountedNodes, Event, Issue, Job, Label, Login, Nodes, Notification,
+        PullRequest, Release, Repository, ReviewDecision, RunDetails, RunState, State, Step,
+        SubjectType, TimelineEvent, WorkflowRun,
     };
     use crate::section::{NotifRow, PrRow};
     use crate::views::{Editor, EditorMode};
@@ -1034,5 +1035,124 @@ mod tests {
         s.last_updated =
             chrono::TimeZone::with_ymd_and_hms(&chrono::Local, 2026, 1, 1, 12, 0, 0).unwrap();
         insta::assert_snapshot!(screen(app));
+    }
+
+    /// The Notifications view with one notification of `kind` selected and its
+    /// subject's details loaded.
+    fn subject_screen(
+        kind: SubjectType,
+        reason: &str,
+        title: &str,
+        details: crate::subject::SubjectDetails,
+    ) -> String {
+        let mut app = app(140, 40, Config::default());
+        app.view = ViewType::Notifications;
+        let row = NotifRow::new(Notification {
+            id: "1".into(),
+            reason: reason.into(),
+            updated_at: Utc::now() - Duration::hours(1),
+            subject: crate::model::NotificationSubject {
+                title: title.into(),
+                kind,
+                ..Default::default()
+            },
+            repository: crate::model::NotificationRepository {
+                name: "ghtui".into(),
+                full_name: "juanibiapina/ghtui".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        app.subject_details = Some(details);
+        app.subject_id = "1".into();
+        let s = &mut app.notifs[0];
+        s.total_count = 1;
+        s.notifs = vec![row];
+        s.last_fetch_at = Some(std::time::Instant::now());
+        s.last_updated =
+            chrono::TimeZone::with_ymd_and_hms(&chrono::Local, 2026, 1, 1, 12, 0, 0).unwrap();
+        screen(app)
+    }
+
+    #[test]
+    fn a_failed_build_notification_shows_the_run_and_its_failed_steps() {
+        let started = Utc::now() - Duration::hours(1);
+        let job = |name: &str, conclusion: RunState, steps: Vec<Step>| Job {
+            name: name.into(),
+            status: RunState::Completed,
+            conclusion: Some(conclusion),
+            started_at: Some(started),
+            completed_at: Some(started + Duration::seconds(95)),
+            steps,
+        };
+        let step = |name: &str, conclusion: RunState| Step {
+            name: name.into(),
+            status: RunState::Completed,
+            conclusion: Some(conclusion),
+        };
+        let details = crate::subject::SubjectDetails::Run(RunDetails {
+            run: WorkflowRun {
+                name: Some("Test".into()),
+                display_title: "Draw tables with ratatui".into(),
+                conclusion: Some(RunState::Failure),
+                head_branch: Some("main".into()),
+                head_sha: "a0a439e5c83fbd81cd2aaa9e635c437f48baa441".into(),
+                event: "push".into(),
+                run_number: 42,
+                actor: Some(Login {
+                    login: "octocat".into(),
+                }),
+                created_at: started,
+                ..Default::default()
+            },
+            attempt: 2,
+            jobs: vec![
+                job("lint", RunState::Success, vec![]),
+                job(
+                    "test",
+                    RunState::Failure,
+                    vec![
+                        step("Checkout", RunState::Success),
+                        step("Run cargo test", RunState::Failure),
+                    ],
+                ),
+                job("deploy", RunState::Skipped, vec![]),
+            ],
+        });
+        insta::assert_snapshot!(subject_screen(
+            SubjectType::CheckSuite,
+            "ci_activity",
+            "Test workflow run, Attempt #2 failed for main branch",
+            details,
+        ));
+    }
+
+    #[test]
+    fn a_release_notification_shows_the_notes_and_assets() {
+        let asset = |name: &str, size: i64, downloads: i64| Asset {
+            name: name.into(),
+            size,
+            download_count: downloads,
+        };
+        let details = crate::subject::SubjectDetails::Release(Release {
+            name: Some("0.20.0 - 2026-11-10".into()),
+            tag_name: "v0.20.0".into(),
+            body: Some("## Added\n\n- Previews for releases and workflow runs.".into()),
+            author: Some(Login {
+                login: "octocat".into(),
+            }),
+            published_at: Some(Utc::now() - Duration::hours(2)),
+            assets: vec![
+                asset("ghtui-aarch64-apple-darwin.tar.xz", 3_250_000, 12),
+                asset("ghtui-installer.sh", 2_048, 40),
+            ],
+            ..Default::default()
+        });
+        insta::assert_snapshot!(subject_screen(
+            SubjectType::Release,
+            "subscribed",
+            "0.20.0 - 2026-11-10",
+            details,
+        ));
     }
 }

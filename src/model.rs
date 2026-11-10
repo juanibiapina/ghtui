@@ -873,17 +873,231 @@ pub struct Notification {
     pub subscription_url: String,
 }
 
+/// The status or conclusion of a workflow run, job or step, as REST names it.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(Default))]
+pub enum RunState {
+    ActionRequired,
+    Cancelled,
+    #[cfg_attr(test, default)]
+    Completed,
+    Failure,
+    InProgress,
+    Neutral,
+    Pending,
+    Queued,
+    Requested,
+    Skipped,
+    Stale,
+    StartupFailure,
+    Success,
+    TimedOut,
+    Waiting,
+    #[serde(other)]
+    Unknown,
+}
+
+impl RunState {
+    pub fn is_waiting(self) -> bool {
+        matches!(
+            self,
+            Self::InProgress | Self::Pending | Self::Queued | Self::Requested | Self::Waiting
+        )
+    }
+    /// Failed, cancelled, timed out or waiting for approval.
+    pub fn is_unsuccessful(self) -> bool {
+        matches!(
+            self,
+            Self::Failure
+                | Self::Cancelled
+                | Self::TimedOut
+                | Self::StartupFailure
+                | Self::ActionRequired
+        )
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[cfg_attr(test, derive(Default))]
 pub struct WorkflowRun {
     pub id: i64,
+    /// The workflow's name.
     pub name: Option<String>,
+    pub display_title: String,
     pub html_url: String,
+    pub status: Option<RunState>,
+    pub conclusion: Option<RunState>,
+    pub head_branch: Option<String>,
+    pub head_sha: String,
+    pub event: String,
+    pub run_number: i64,
+    pub run_attempt: Option<i64>,
+    pub actor: Option<Login>,
+    pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WorkflowRunsResponse {
     pub workflow_runs: Vec<WorkflowRun>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[cfg_attr(test, derive(Default))]
+pub struct Step {
+    pub name: String,
+    pub status: RunState,
+    pub conclusion: Option<RunState>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[cfg_attr(test, derive(Default))]
+pub struct Job {
+    pub name: String,
+    pub status: RunState,
+    pub conclusion: Option<RunState>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub steps: Vec<Step>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct JobsResponse {
+    pub jobs: Vec<Job>,
+}
+
+/// A workflow run and the jobs of the attempt a notification is about.
+#[derive(Clone, Debug)]
+#[cfg_attr(test, derive(Default))]
+pub struct RunDetails {
+    pub run: WorkflowRun,
+    pub attempt: i64,
+    pub jobs: Vec<Job>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[cfg_attr(test, derive(Default))]
+pub struct Asset {
+    pub name: String,
+    pub size: i64,
+    pub download_count: i64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[cfg_attr(test, derive(Default))]
+pub struct Release {
+    pub name: Option<String>,
+    pub tag_name: String,
+    pub body: Option<String>,
+    pub author: Option<Login>,
+    pub draft: bool,
+    pub prerelease: bool,
+    pub created_at: DateTime<Utc>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub html_url: String,
+    pub assets: Vec<Asset>,
+}
+
+/// How a commit changed a file, as REST names it.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FileStatus {
+    Added,
+    Removed,
+    Modified,
+    Renamed,
+    Copied,
+    Changed,
+    Unchanged,
+    #[serde(other)]
+    Unknown,
+}
+
+impl From<FileStatus> for PatchStatus {
+    fn from(s: FileStatus) -> Self {
+        match s {
+            FileStatus::Added => PatchStatus::Added,
+            FileStatus::Removed => PatchStatus::Deleted,
+            FileStatus::Modified | FileStatus::Unchanged => PatchStatus::Modified,
+            FileStatus::Renamed => PatchStatus::Renamed,
+            FileStatus::Copied => PatchStatus::Copied,
+            FileStatus::Changed => PatchStatus::Changed,
+            FileStatus::Unknown => PatchStatus::Unknown,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CommitFile {
+    pub filename: String,
+    pub status: FileStatus,
+    pub additions: i64,
+    pub deletions: i64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[cfg_attr(test, derive(Default))]
+pub struct CommitStats {
+    pub additions: i64,
+    pub deletions: i64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[cfg_attr(test, derive(Default))]
+pub struct GitAuthor {
+    pub name: Option<String>,
+    pub date: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[cfg_attr(test, derive(Default))]
+pub struct GitCommit {
+    pub message: String,
+    pub author: Option<GitAuthor>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[cfg_attr(test, derive(Default))]
+pub struct RestCommit {
+    pub sha: String,
+    pub html_url: String,
+    pub commit: GitCommit,
+    /// The GitHub account, when the author's email maps to one.
+    pub author: Option<Login>,
+    pub stats: Option<CommitStats>,
+    #[serde(default)]
+    pub files: Vec<CommitFile>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CommitComment {
+    pub user: Option<Login>,
+    pub body: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug)]
+#[cfg_attr(test, derive(Default))]
+pub struct CommitDetails {
+    pub commit: RestCommit,
+    pub comments: Vec<CommitComment>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(Default))]
+pub struct Discussion {
+    pub number: i64,
+    pub title: String,
+    pub url: String,
+    pub body: String,
+    pub author: Option<Login>,
+    pub created_at: DateTime<Utc>,
+    pub category: NameOnly,
+    pub is_answered: Option<bool>,
+    pub comments: CountedNodes<Comment>,
 }
 
 #[cfg(test)]
