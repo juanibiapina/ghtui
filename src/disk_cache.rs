@@ -16,7 +16,7 @@ use crate::model::{Issue, Notification, PullRequest, PullRequestDetails};
 use crate::store::Entry;
 
 /// Bump to discard files written by an incompatible version.
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 pub const MAX_DETAILS: usize = 300;
 pub const MAX_CONDITIONAL: usize = 50;
 

@@ -12,7 +12,8 @@ use crate::disk_cache::{self, Details, DiskCache, Lists, SectionSnapshot, Stampe
 use crate::github::{self, Membership, PrVersion, SyncQuery};
 use crate::model::*;
 use crate::msg::*;
-use crate::refresh::{self, PrefetchRows, Subject};
+use crate::news::Subject;
+use crate::refresh::{self, PrefetchRows};
 use crate::section::{Kind, NotifRow, PrRow, Section, SelectedRow};
 use crate::store::{DetailStore, LanePolicy, Retry};
 

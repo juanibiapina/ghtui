@@ -9,6 +9,7 @@ use crate::icons;
 use crate::input::TextArea;
 use crate::markdown;
 use crate::model::*;
+use crate::news::{NewItem, NewKind, News};
 use crate::section::{NotifRow, PrRow, render_lines};
 use crate::text::*;
 use crate::theme::{self, Theme, darken, lighten, parse_color};
@@ -16,6 +17,8 @@ use crate::util::time_elapsed;
 
 const CONTENT_PADDING: usize = 2;
 const FOLD_BODY_HEIGHT: usize = 8;
+const NEWS_LIMIT: usize = 10;
+const NEWS_COMMITS_LIMIT: usize = 5;
 
 pub const PR_TABS: [&str; 5] = ["Overview", "Activity", "Commits", "Checks", "Files Changed"];
 const PR_TAB_ICONS: [&str; 5] = [
@@ -314,6 +317,176 @@ pub struct PrViewState<'a> {
     pub summary_more: bool,
     pub editor: Option<&'a Editor>,
     pub approve_workflows_key: String,
+    /// What changed since a notification was last read, when previewing one.
+    pub news: Option<&'a News>,
+}
+
+/// What changed since the notification was last read, newest first, the
+/// newest `NEWS_LIMIT` items in full.
+fn news_block(t: &Theme, news: &News, noun: &str, earlier: &str, w: usize) -> Block {
+    let title = if news.since.is_some() {
+        "What's new since you last read"
+    } else {
+        "What's new"
+    };
+    let mut out = vec![
+        heading(t, format!("{} {title}", icons::UPDATED_AT)),
+        Line::default(),
+    ];
+    if news.items.is_empty() {
+        out.push(Line::from(span(
+            "No new activity since you last read this",
+            t.faint().add_modifier(Modifier::ITALIC),
+        )));
+        out.push(Line::default());
+        return out;
+    }
+    let gutter = Style::default().fg(t.warning_text);
+    let inner = w.saturating_sub(2);
+    for item in news.items.iter().take(NEWS_LIMIT) {
+        let mut lines = vec![truncate_line(
+            &news_header(t, item, noun),
+            inner,
+            icons::ELLIPSIS,
+        )];
+        lines.extend(news_body(t, item, inner));
+        out.extend(
+            lines
+                .into_iter()
+                .map(|l| concat(vec![Line::from(span("▌ ", gutter)), l])),
+        );
+        out.push(Line::default());
+    }
+    let rest = news.items.len().saturating_sub(NEWS_LIMIT);
+    if rest > 0 {
+        let updates = if rest == 1 { "update" } else { "updates" };
+        out.push(Line::from(span(
+            format!("{rest} earlier {updates} {earlier}"),
+            t.faint(),
+        )));
+        out.push(Line::default());
+    }
+    out
+}
+
+fn news_header(t: &Theme, item: &NewItem, noun: &str) -> Line<'static> {
+    let mut spans = vec![];
+    if let NewKind::Review { state, .. } = &item.kind {
+        match state {
+            ReviewState::Approved => spans.push(glyph(t.success_glyph())),
+            ReviewState::ChangesRequested => spans.push(glyph(t.failure_glyph())),
+            _ => spans.push(span(icons::REVIEW_COMMENTED, t.faint())),
+        }
+        spans.push(raw(" "));
+    }
+    if !item.actor.is_empty() {
+        spans.push(span(
+            format!("@{}", item.actor),
+            t.primary().add_modifier(Modifier::BOLD),
+        ));
+        spans.push(raw(" "));
+    }
+    let who = |name: &str| span(format!("@{name}"), t.primary());
+    match &item.kind {
+        NewKind::Opened => spans.push(raw(format!("opened this {noun}"))),
+        NewKind::Comment { .. } => spans.push(raw("commented")),
+        NewKind::Review { state, .. } => spans.push(raw(match state {
+            ReviewState::Approved => "approved",
+            ReviewState::ChangesRequested => "requested changes",
+            _ => "reviewed",
+        })),
+        NewKind::ReviewComment { path, line, .. } => {
+            let location = match line {
+                Some(line) => format!("{path}#L{line}"),
+                None => path.clone(),
+            };
+            spans.push(raw("commented on "));
+            spans.push(span(location, t.secondary()));
+        }
+        NewKind::Commits { headlines } => {
+            let s = if headlines.len() == 1 { "" } else { "s" };
+            spans.push(raw(format!("pushed {} commit{s}", headlines.len())));
+        }
+        NewKind::ForcePushed => spans.push(raw("force-pushed the branch")),
+        NewKind::Closed => spans.push(raw(format!("closed this {noun}"))),
+        NewKind::Reopened => spans.push(raw(format!("reopened this {noun}"))),
+        NewKind::Merged => spans.push(raw(format!("merged this {noun}"))),
+        NewKind::ReviewRequested { reviewer } => {
+            spans.push(raw("requested review from "));
+            spans.push(who(reviewer));
+        }
+        NewKind::Assigned { assignee } => {
+            spans.push(raw("assigned "));
+            spans.push(who(assignee));
+        }
+        NewKind::Unassigned { assignee } => {
+            spans.push(raw("unassigned "));
+            spans.push(who(assignee));
+        }
+        NewKind::Labeled { label } => {
+            spans.push(raw("added "));
+            spans.extend(label_pill(label));
+        }
+        NewKind::Unlabeled { label } => {
+            spans.push(raw("removed "));
+            spans.extend(label_pill(label));
+        }
+        NewKind::Renamed { .. } => spans.push(raw("changed the title")),
+        NewKind::ReadyForReview => spans.push(raw(format!("marked this {noun} ready for review"))),
+        NewKind::ConvertedToDraft => spans.push(raw(format!("converted this {noun} to a draft"))),
+    }
+    spans.push(span(format!(" · {} ago", time_elapsed(item.at)), t.faint()));
+    Line::from(spans)
+}
+
+fn news_body(t: &Theme, item: &NewItem, w: usize) -> Block {
+    match &item.kind {
+        NewKind::Comment { body }
+        | NewKind::Review { body, .. }
+        | NewKind::ReviewComment { body, .. } => {
+            let body = markdown::clean_body(body);
+            let body = body.trim();
+            let mut out = if body.is_empty() {
+                vec![]
+            } else {
+                markdown::render(body, w)
+            };
+            while out.last().is_some_and(|l| l.width() == 0) {
+                out.pop();
+            }
+            out
+        }
+        NewKind::Commits { headlines } => {
+            let mut out: Block = headlines
+                .iter()
+                .rev()
+                .take(NEWS_COMMITS_LIMIT)
+                .map(|h| {
+                    let l = Line::from(vec![
+                        span(icons::VERTICAL_COMMIT, t.faint()),
+                        raw(" "),
+                        span(h.clone(), t.main_text()),
+                    ]);
+                    truncate_line(&l, w, icons::ELLIPSIS)
+                })
+                .collect();
+            let rest = headlines.len().saturating_sub(NEWS_COMMITS_LIMIT);
+            if rest > 0 {
+                out.push(Line::from(span(format!("and {rest} more"), t.faint())));
+            }
+            out
+        }
+        NewKind::Renamed { from, to } => {
+            let mut out = wrap_str(
+                from,
+                w.max(1),
+                t.faint().add_modifier(Modifier::CROSSED_OUT),
+            );
+            out.extend(wrap_str(to, w.max(1), t.main_text()));
+            out
+        }
+        _ => vec![],
+    }
 }
 
 /// Each PR tab that fits in `width`: its label, start column and width.
@@ -380,6 +553,13 @@ pub fn pr_view(t: &Theme, row: &PrRow, width: usize, st: &PrViewState) -> (Block
         pr.created_at,
     ));
     out.push(Line::default());
+    let w = width.saturating_sub(2 * CONTENT_PADDING);
+    if let Some(news) = st.news {
+        out.extend(indent(
+            news_block(t, news, "pull request", "in Activity", w),
+            CONTENT_PADDING,
+        ));
+    }
 
     let tab_spans: Vec<Span<'static>> = pr_tabs(width)
         .into_iter()
@@ -401,10 +581,9 @@ pub fn pr_view(t: &Theme, row: &PrRow, width: usize, st: &PrViewState) -> (Block
     )));
     out.push(Line::default());
 
-    let w = width.saturating_sub(2 * CONTENT_PADDING);
     let body = match st.tab {
         0 => pr_overview(t, row, w, st),
-        1 => pr_activity(t, row, w),
+        1 => pr_activity(t, row, w, st.news),
         2 => pr_commits(t, row, w),
         3 => {
             let mut b = checks_overview(t, row, w, &st.approve_workflows_key);
@@ -1059,7 +1238,7 @@ fn all_checks(t: &Theme, row: &PrRow, w: usize) -> Block {
     out
 }
 
-fn pr_activity(t: &Theme, row: &PrRow, w: usize) -> Block {
+fn pr_activity(t: &Theme, row: &PrRow, w: usize, news: Option<&News>) -> Block {
     let Some(e) = &row.details else {
         return vec![Line::from("Loading...")];
     };
@@ -1067,6 +1246,7 @@ fn pr_activity(t: &Theme, row: &PrRow, w: usize) -> Block {
         at: chrono::DateTime<chrono::Utc>,
         block: Block,
     }
+    let is_new = |at| news.is_some_and(|n| n.is_new(at));
     let mut acts: Vec<Activity> = vec![];
     let comment_header = |author: &str, at: chrono::DateTime<chrono::Utc>| -> Block {
         let content = Line::from(vec![
@@ -1077,13 +1257,13 @@ fn pr_activity(t: &Theme, row: &PrRow, w: usize) -> Block {
         boxed(
             vec![content],
             w.saturating_sub(2),
-            t.faint_border,
+            new_border(t, is_new(at)),
             border::ROUNDED,
         )
     };
     for th in &e.review_threads.nodes {
         for c in &th.comments.nodes {
-            let mut b = comment_header(Login::of(&c.author), c.updated_at);
+            let mut b = comment_header(Login::of(&c.author), c.created_at);
             let location = match th.line {
                 Some(line) => format!("{}#l{line}", th.path),
                 None => th.path.clone(),
@@ -1092,16 +1272,16 @@ fn pr_activity(t: &Theme, row: &PrRow, w: usize) -> Block {
             b.push(Line::default());
             b.extend(markdown::render(&markdown::clean_body(&c.body), w));
             acts.push(Activity {
-                at: c.updated_at,
+                at: c.created_at,
                 block: b,
             });
         }
     }
     for c in &e.comments.nodes {
-        let mut b = comment_header(Login::of(&c.author), c.updated_at);
+        let mut b = comment_header(Login::of(&c.author), c.created_at);
         b.extend(markdown::render(&markdown::clean_body(&c.body), w));
         acts.push(Activity {
-            at: c.updated_at,
+            at: c.created_at,
             block: b,
         });
     }
@@ -1113,21 +1293,20 @@ fn pr_activity(t: &Theme, row: &PrRow, w: usize) -> Block {
             ReviewState::ChangesRequested => glyph(t.failure_glyph()),
             ReviewState::Dismissed | ReviewState::Unknown => raw(""),
         };
-        let mut b = vec![Line::from(vec![
+        let at = r.submitted_at.unwrap_or(r.updated_at);
+        let mut header = vec![
             decision,
             raw(" "),
             span(Login::of(&r.author).to_string(), t.main_text()),
             raw(" "),
-            span(
-                format!("reviewed {}", time_elapsed(r.updated_at)),
-                t.faint(),
-            ),
-        ])];
+            span(format!("reviewed {}", time_elapsed(at)), t.faint()),
+        ];
+        if is_new(at) {
+            header.push(span(" • new", Style::default().fg(t.warning_text)));
+        }
+        let mut b = vec![Line::from(header)];
         b.extend(markdown::render(&r.body, w));
-        acts.push(Activity {
-            at: r.updated_at,
-            block: b,
-        });
+        acts.push(Activity { at, block: b });
     }
     if acts.is_empty() {
         return vec![Line::from(span(
@@ -1295,7 +1474,22 @@ pub fn editor_view(t: &Theme, ed: &Editor, w: usize) -> Block {
     boxed(lines, inner, t.primary_border, border::PLAIN)
 }
 
-pub fn issue_view(t: &Theme, issue: &Issue, width: usize, editor: Option<&Editor>) -> Block {
+/// The border of a comment, highlighted when it is new.
+fn new_border(t: &Theme, is_new: bool) -> Color {
+    if is_new {
+        t.warning_text
+    } else {
+        t.faint_border
+    }
+}
+
+pub fn issue_view(
+    t: &Theme,
+    issue: &Issue,
+    width: usize,
+    editor: Option<&Editor>,
+    news: Option<&News>,
+) -> Block {
     let w = width.saturating_sub(2 * CONTENT_PADDING);
     let content_w = width.saturating_sub(6);
     let mut b: Block = vec![];
@@ -1323,6 +1517,9 @@ pub fn issue_view(t: &Theme, issue: &Issue, width: usize, editor: Option<&Editor
         issue.created_at,
     ));
     b.push(Line::default());
+    if let Some(news) = news {
+        b.extend(news_block(t, news, "issue", "below", w));
+    }
     let labels = render_labels(&issue.labels.nodes, content_w, 0);
     if !labels.is_empty() {
         b.extend(labels);
@@ -1342,7 +1539,7 @@ pub fn issue_view(t: &Theme, issue: &Issue, width: usize, editor: Option<&Editor
     b.push(heading(t, format!("{} Comments", icons::DISCUSSION)));
     b.push(Line::default());
     let mut comments = issue.comments.nodes.clone();
-    comments.sort_by_key(|c| c.updated_at);
+    comments.sort_by_key(|c| c.created_at);
     let cw = content_w.saturating_sub(2);
     let mut cb: Block = vec![];
     if comments.is_empty() {
@@ -1356,10 +1553,10 @@ pub fn issue_view(t: &Theme, issue: &Issue, width: usize, editor: Option<&Editor
             vec![Line::from(vec![
                 span(Login::of(&c.author).to_string(), t.main_text()),
                 raw(" "),
-                span(time_elapsed(c.updated_at), t.faint()),
+                span(time_elapsed(c.created_at), t.faint()),
             ])],
             cw.saturating_sub(2),
-            t.faint_border,
+            new_border(t, news.is_some_and(|n| n.is_new(c.created_at))),
             border::ROUNDED,
         ));
         cb.extend(markdown::render(&markdown::clean_body(&c.body), cw));

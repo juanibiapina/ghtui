@@ -259,7 +259,6 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for CountedNodes<T> {
     }
 }
 
-#[cfg(test)]
 impl<T> Default for Nodes<T> {
     fn default() -> Self {
         Nodes { nodes: vec![] }
@@ -533,6 +532,7 @@ pub struct HistoryCommit {
 pub struct Comment {
     pub author: Option<Login>,
     pub body: String,
+    pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -554,6 +554,85 @@ pub struct Review {
     pub body: String,
     pub state: ReviewState,
     pub updated_at: DateTime<Utc>,
+    /// Absent while the review is pending.
+    pub submitted_at: Option<DateTime<Utc>>,
+}
+
+/// A timeline event's actor and time.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Event {
+    pub actor: Option<Login>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// The user, bot, mannequin or organization an assignment names.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Assignee {
+    pub login: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewRequestedEvent {
+    #[serde(flatten)]
+    pub event: Event,
+    pub requested_reviewer: Option<RequestedReviewer>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AssigneeEvent {
+    #[serde(flatten)]
+    pub event: Event,
+    pub assignee: Option<Assignee>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LabelEvent {
+    #[serde(flatten)]
+    pub event: Event,
+    pub label: Label,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct RenamedTitleEvent {
+    #[serde(flatten)]
+    pub event: Event,
+    pub previous_title: String,
+    pub current_title: String,
+}
+
+/// A node of a PR's or issue's timelineItems.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(tag = "__typename")]
+pub enum TimelineEvent {
+    #[serde(rename = "ClosedEvent")]
+    Closed(Event),
+    #[serde(rename = "ReopenedEvent")]
+    Reopened(Event),
+    #[serde(rename = "MergedEvent")]
+    Merged(Event),
+    #[serde(rename = "ReadyForReviewEvent")]
+    ReadyForReview(Event),
+    #[serde(rename = "ConvertToDraftEvent")]
+    ConvertedToDraft(Event),
+    #[serde(rename = "HeadRefForcePushedEvent")]
+    ForcePushed(Event),
+    #[serde(rename = "ReviewRequestedEvent")]
+    ReviewRequested(ReviewRequestedEvent),
+    #[serde(rename = "AssignedEvent")]
+    Assigned(AssigneeEvent),
+    #[serde(rename = "UnassignedEvent")]
+    Unassigned(AssigneeEvent),
+    #[serde(rename = "LabeledEvent")]
+    Labeled(LabelEvent),
+    #[serde(rename = "UnlabeledEvent")]
+    Unlabeled(LabelEvent),
+    #[serde(rename = "RenamedTitleEvent")]
+    Renamed(RenamedTitleEvent),
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -583,16 +662,23 @@ pub struct ReviewRequest {
     pub requested_reviewer: Option<RequestedReviewer>,
 }
 
-impl ReviewRequest {
-    /// The requested user's login or team's slug.
-    pub fn display_name(&self) -> Option<&str> {
-        match self.requested_reviewer.as_ref()? {
+impl RequestedReviewer {
+    /// The user's login or the team's slug.
+    pub fn name(&self) -> Option<&str> {
+        match self {
             RequestedReviewer::User { login }
             | RequestedReviewer::Bot { login }
             | RequestedReviewer::Mannequin { login } => Some(login),
             RequestedReviewer::Team { slug, .. } => Some(slug),
             RequestedReviewer::Unknown => None,
         }
+    }
+}
+
+impl ReviewRequest {
+    /// The requested user's login or team's slug.
+    pub fn display_name(&self) -> Option<&str> {
+        self.requested_reviewer.as_ref()?.name()
     }
     pub fn is_team(&self) -> bool {
         matches!(
@@ -657,6 +743,7 @@ pub struct PullRequestDetails {
     pub files: CountedNodes<ChangedFile>,
     pub merge_state_status: MergeStateStatus,
     pub is_in_merge_queue: bool,
+    pub timeline_items: Nodes<TimelineEvent>,
 }
 
 impl PullRequestDetails {
@@ -738,6 +825,9 @@ pub struct Issue {
     pub comments: CountedNodes<Comment>,
     pub reactions: Count,
     pub labels: Nodes<Label>,
+    /// Only fetched with an issue's details; list searches leave it empty.
+    #[serde(default)]
+    pub timeline_items: Nodes<TimelineEvent>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -827,7 +917,13 @@ mod tests {
         "reviews":{"totalCount":3,"nodes":[]},
         "suggestedReviewers":[],
         "files":{"totalCount":0,"nodes":[]},
-        "mergeStateStatus":"BLOCKED","isInMergeQueue":false
+        "mergeStateStatus":"BLOCKED","isInMergeQueue":false,
+        "timelineItems":{"nodes":[
+            {"__typename":"MergedEvent","actor":{"login":"m"},"createdAt":"2026-11-07T10:00:00Z"},
+            {"__typename":"ReviewRequestedEvent","actor":null,"createdAt":"2026-11-07T09:00:00Z",
+                "requestedReviewer":null},
+            {"__typename":"SomethingNewEvent"}
+        ]}
     }"#;
 
     fn details() -> PullRequestDetails {
@@ -866,6 +962,16 @@ mod tests {
             matches!(&nodes[0], CheckContext::CheckRun(r) if r.conclusion == Some(CheckState::Failure))
         );
         assert!(matches!(&nodes[1], CheckContext::StatusContext(s) if s.context == "ci/deploy"));
+    }
+
+    #[test]
+    fn timeline_events_decode_by_type() {
+        let nodes = details().timeline_items.nodes;
+        assert!(matches!(&nodes[0], TimelineEvent::Merged(e) if Login::of(&e.actor) == "m"));
+        assert!(
+            matches!(&nodes[1], TimelineEvent::ReviewRequested(e) if e.requested_reviewer.is_none())
+        );
+        assert!(matches!(nodes[2], TimelineEvent::Unknown));
     }
 
     #[test]

@@ -647,14 +647,66 @@ workflowRun {{ workflow {{ name }} }} }} }} ... on StatusContext {{ context stat
 checkSuites(last: 20) {{ totalCount nodes {{ status conclusion app {{ name }} workflowRun {{ workflow {{ name }} }} }} }} }} }} }} \
 allCommits: commits(last: 100) {{ nodes {{ commit {{ abbreviatedOid committedDate messageHeadline \
 author {{ name user {{ login }} }} statusCheckRollup {{ state contexts(last: 1) {{ {COUNTS_BY_STATE} }} }} }} }} }} \
-comments(last: 50, orderBy: {{ field: UPDATED_AT, direction: DESC }}) {{ totalCount nodes {{ author {{ login }} body updatedAt }} }} \
-reviewThreads(last: 50) {{ totalCount nodes {{ id isOutdated line path comments(first: 20) {{ totalCount nodes {{ author {{ login }} body updatedAt }} }} }} }} \
+comments(last: 50) {{ totalCount nodes {{ author {{ login }} body createdAt updatedAt }} }} \
+reviewThreads(last: 50) {{ totalCount nodes {{ id isOutdated line path comments(first: 20) {{ totalCount nodes {{ author {{ login }} body createdAt updatedAt }} }} }} }} \
 reviewRequests(last: 100) {{ totalCount nodes {{ asCodeOwner requestedReviewer {{ __typename ... on User {{ login }} \
 ... on Team {{ slug name }} ... on Bot {{ login }} ... on Mannequin {{ login }} }} }} }} \
-reviews(last: 100) {{ totalCount nodes {{ author {{ login }} body state updatedAt }} }} \
+reviews(last: 100) {{ totalCount nodes {{ author {{ login }} body state updatedAt submittedAt }} }} \
 suggestedReviewers {{ isAuthor isCommenter reviewer {{ login }} }} \
 files(first: 20) {{ totalCount nodes {{ additions deletions path changeType }} }} \
-mergeStateStatus isInMergeQueue"
+mergeStateStatus isInMergeQueue {}",
+        timeline_items(&[
+            "ClosedEvent",
+            "ReopenedEvent",
+            "MergedEvent",
+            "ReadyForReviewEvent",
+            "ConvertToDraftEvent",
+            "HeadRefForcePushedEvent",
+            "ReviewRequestedEvent",
+            "AssignedEvent",
+            "UnassignedEvent",
+            "LabeledEvent",
+            "UnlabeledEvent",
+            "RenamedTitleEvent",
+        ])
+    )
+}
+
+/// The newest 30 timeline events of the GraphQL `types`, each with the fields
+/// its `model::TimelineEvent` variant decodes.
+fn timeline_items(types: &[&str]) -> String {
+    let item_type = |ty: &str| {
+        let mut out = String::new();
+        for (i, c) in ty.chars().enumerate() {
+            if c.is_uppercase() && i > 0 {
+                out.push('_');
+            }
+            out.push(c.to_ascii_uppercase());
+        }
+        out
+    };
+    let fields = |ty: &str| match ty {
+        "ReviewRequestedEvent" => {
+            "requestedReviewer { __typename ... on User { login } ... on Team { slug name } \
+... on Bot { login } ... on Mannequin { login } }"
+        }
+        "AssignedEvent" | "UnassignedEvent" => {
+            "assignee { ... on User { login } ... on Bot { login } ... on Mannequin { login } \
+... on Organization { login } }"
+        }
+        "LabeledEvent" | "UnlabeledEvent" => "label { color name description }",
+        "RenamedTitleEvent" => "previousTitle currentTitle",
+        _ => "",
+    };
+    let item_types: Vec<String> = types.iter().map(|t| item_type(t)).collect();
+    let fragments: Vec<String> = types
+        .iter()
+        .map(|t| format!("... on {t} {{ actor {{ login }} createdAt {} }}", fields(t)))
+        .collect();
+    format!(
+        "timelineItems(last: 30, itemTypes: [{}]) {{ nodes {{ __typename {} }} }}",
+        item_types.join(", "),
+        fragments.join(" ")
     )
 }
 
@@ -662,7 +714,7 @@ fn issue_fields() -> String {
     format!(
         "id number title body state author {{ login }} authorAssociation updatedAt createdAt url \
 repository {{ {REPOSITORY_FIELDS} }} assignees(first: 3) {{ nodes {{ login }} }} \
-comments(last: 15) {{ totalCount nodes {{ author {{ login }} body updatedAt }} }} \
+comments(last: 15) {{ totalCount nodes {{ author {{ login }} body createdAt updatedAt }} }} \
 reactions(first: 1) {{ totalCount }} labels(first: 20) {{ nodes {{ color name description }} }}"
     )
 }
@@ -798,7 +850,20 @@ pub fn fetch_pull_requests_by_url(
 }
 
 pub fn fetch_issues_by_url(urls: &[String]) -> Result<Vec<(String, Result<Issue>)>> {
-    fetch_by_url("FetchIssues", "Issue", &issue_fields(), urls)
+    let fields = format!(
+        "{} {}",
+        issue_fields(),
+        timeline_items(&[
+            "ClosedEvent",
+            "ReopenedEvent",
+            "AssignedEvent",
+            "UnassignedEvent",
+            "LabeledEvent",
+            "UnlabeledEvent",
+            "RenamedTitleEvent",
+        ])
+    );
+    fetch_by_url("FetchIssues", "Issue", &fields, urls)
 }
 
 /// Rows by node ID, 10 per request. Missing nodes are left out.

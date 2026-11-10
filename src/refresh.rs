@@ -8,7 +8,8 @@ use std::hash::Hash;
 use chrono::{DateTime, Utc};
 
 use crate::github::Membership;
-use crate::model::{Issue, Login, PullRequestDetails, State};
+use crate::model::{Issue, Login, State};
+use crate::news::{self, Subject};
 use crate::section::{NotifRow, PrRow};
 
 /// A section row the list sync can match by node ID.
@@ -117,12 +118,6 @@ pub fn prefetch_order<T: Clone + Eq + Hash>(
     out
 }
 
-/// A notification subject's details.
-pub enum Subject<'a> {
-    Pr(&'a PullRequestDetails),
-    Issue(&'a Issue),
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct Extras {
     pub new_comments: i64,
@@ -133,40 +128,14 @@ pub struct Extras {
 
 /// The new-comment count, state and latest actor of a notification.
 pub fn notification_extras(row: &NotifRow, subject: Subject) -> Extras {
-    let read_at = row.n.last_read_at;
-    let after = |t: &DateTime<Utc>| read_at.map(|r| *t > r).unwrap_or(true);
-    let mut activity: Vec<(DateTime<Utc>, &str)> = vec![];
     let (state, is_draft, author) = match subject {
-        Subject::Pr(pr) => {
-            for c in &pr.comments.nodes {
-                activity.push((c.updated_at, Login::of(&c.author)));
-            }
-            for th in &pr.review_threads.nodes {
-                for c in &th.comments.nodes {
-                    activity.push((c.updated_at, Login::of(&c.author)));
-                }
-            }
-            for r in &pr.reviews.nodes {
-                activity.push((r.updated_at, Login::of(&r.author)));
-            }
-            (Some(pr.state), pr.is_draft, Login::of(&pr.author))
-        }
-        Subject::Issue(i) => {
-            for c in &i.comments.nodes {
-                activity.push((c.updated_at, Login::of(&c.author)));
-            }
-            (Some(i.state), false, Login::of(&i.author))
-        }
+        Subject::Pr(pr) => (Some(pr.state), pr.is_draft, Login::of(&pr.author)),
+        Subject::Issue(i) => (Some(i.state), false, Login::of(&i.author)),
     };
-    let new: Vec<&(DateTime<Utc>, &str)> = activity.iter().filter(|(t, _)| after(t)).collect();
-    let actor = new
-        .iter()
-        .max_by_key(|(t, _)| *t)
-        .map(|(_, a)| a.to_string())
-        .filter(|a| !a.is_empty())
-        .unwrap_or_else(|| author.to_string());
+    let news = news::since(subject, row.n.last_read_at);
+    let actor = news.latest_actor().unwrap_or(author).to_string();
     Extras {
-        new_comments: new.len() as i64,
+        new_comments: news.comment_count() as i64,
         state,
         is_draft,
         actor,
@@ -178,7 +147,10 @@ mod tests {
     use chrono::Duration;
 
     use super::*;
-    use crate::model::{Comment, CountedNodes, Notification, PageInfo, PullRequest, Review};
+    use crate::model::{
+        Comment, CountedNodes, Notification, PageInfo, PullRequest, PullRequestDetails, Review,
+        ReviewState,
+    };
 
     fn row(id: &str, at: DateTime<Utc>, title: &str) -> PrRow {
         PrRow {
@@ -269,6 +241,7 @@ mod tests {
                 login: login.into(),
             }),
             body: String::new(),
+            created_at: at,
             updated_at: at,
         }
     }
@@ -298,7 +271,8 @@ mod tests {
                     author: Some(Login {
                         login: "carol".into(),
                     }),
-                    updated_at: read + Duration::minutes(30),
+                    submitted_at: Some(read + Duration::minutes(30)),
+                    state: ReviewState::Approved,
                     ..Default::default()
                 }],
                 total_count: 1,

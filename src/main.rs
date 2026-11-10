@@ -17,6 +17,7 @@ mod markdown;
 mod model;
 mod mouse;
 mod msg;
+mod news;
 mod refresh;
 mod section;
 mod store;

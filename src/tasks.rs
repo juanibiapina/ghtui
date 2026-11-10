@@ -253,6 +253,7 @@ pub fn comment(app: &mut App, is_pr: bool, n: i64, repo: &str, body: &str, key: 
             login: app.user.clone(),
         }),
         body: body.to_string(),
+        created_at: Utc::now(),
         updated_at: Utc::now(),
     };
     let (start, done) = if is_pr {

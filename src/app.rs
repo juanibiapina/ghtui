@@ -20,6 +20,7 @@ use crate::keys::{Keys, NotificationSubject};
 use crate::model::*;
 use crate::mouse::{HitMap, Target};
 use crate::msg::*;
+use crate::news::{self, Subject};
 use crate::section::{
     self, Kind, NotifRow, PrRow, Section, SectionSpec, SelectedRow, issue_columns,
     notification_columns, pr_columns,
@@ -2716,6 +2717,7 @@ impl App {
             summary_more: self.summary_more,
             editor: self.pr_editor.as_ref(),
             approve_workflows_key: approve_key,
+            news: None,
         };
         match row {
             SelectedRow::Pr(pr) => {
@@ -2723,18 +2725,28 @@ impl App {
                 (lines, Some(tabs))
             }
             SelectedRow::Issue(i) => (
-                views::issue_view(t, &i, width, self.issue_editor.as_ref()),
+                views::issue_view(t, &i, width, self.issue_editor.as_ref(), None),
                 None,
             ),
             SelectedRow::Notification(n) => {
                 if self.subject_id == n.id() {
+                    let read = n.n.last_read_at;
                     if let Some(pr) = &self.subject_pr {
-                        let (lines, tabs) = views::pr_view(t, pr, width, &pr_state);
+                        let news = pr
+                            .details
+                            .as_ref()
+                            .map(|d| news::since(Subject::Pr(d), read));
+                        let st = views::PrViewState {
+                            news: news.as_ref(),
+                            ..pr_state
+                        };
+                        let (lines, tabs) = views::pr_view(t, pr, width, &st);
                         return (lines, Some(tabs));
                     }
                     if let Some(i) = &self.subject_issue {
+                        let news = news::since(Subject::Issue(i), read);
                         return (
-                            views::issue_view(t, i, width, self.issue_editor.as_ref()),
+                            views::issue_view(t, i, width, self.issue_editor.as_ref(), Some(&news)),
                             None,
                         );
                     }

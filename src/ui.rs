@@ -629,8 +629,8 @@ mod tests {
     use crate::input::{TextArea, TextInput};
     use crate::keys::Keys;
     use crate::model::{
-        Count, Label, Login, Nodes, Notification, PullRequest, Repository, ReviewDecision, State,
-        SubjectType,
+        Comment, Count, CountedNodes, Event, Issue, Label, Login, Nodes, Notification, PullRequest,
+        Repository, ReviewDecision, State, SubjectType, TimelineEvent,
     };
     use crate::section::{NotifRow, PrRow};
     use crate::views::{Editor, EditorMode};
@@ -961,6 +961,75 @@ mod tests {
         let s = &mut app.notifs[0];
         s.total_count = rows.len();
         s.notifs = rows;
+        s.last_fetch_at = Some(std::time::Instant::now());
+        s.last_updated =
+            chrono::TimeZone::with_ymd_and_hms(&chrono::Local, 2026, 1, 1, 12, 0, 0).unwrap();
+        insta::assert_snapshot!(screen(app));
+    }
+
+    #[test]
+    fn an_issue_notification_starts_with_whats_new() {
+        let mut app = app(140, 40, Config::default());
+        app.view = ViewType::Notifications;
+        let hours_ago = |h: i64| Utc::now() - Duration::hours(h);
+        let row = NotifRow::new(Notification {
+            id: "8".into(),
+            reason: "comment".into(),
+            updated_at: hours_ago(1),
+            last_read_at: Some(hours_ago(24)),
+            subject: crate::model::NotificationSubject {
+                title: "Crash on resize".into(),
+                url: Some("https://api.github.com/repos/juanibiapina/ghtui/issues/8".into()),
+                kind: SubjectType::Issue,
+                ..Default::default()
+            },
+            repository: crate::model::NotificationRepository {
+                name: "ghtui".into(),
+                full_name: "juanibiapina/ghtui".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        let comment = |who: &str, h: i64, body: &str| Comment {
+            author: Some(Login { login: who.into() }),
+            body: body.into(),
+            created_at: hours_ago(h),
+            updated_at: hours_ago(h),
+        };
+        app.subject_issue = Some(Issue {
+            number: 8,
+            title: "Crash on resize".into(),
+            body: "Resizing the terminal panics.".into(),
+            state: State::Closed,
+            author: Some(Login {
+                login: "reporter".into(),
+            }),
+            created_at: hours_ago(72),
+            repository: Repository {
+                name_with_owner: "juanibiapina/ghtui".into(),
+                ..Default::default()
+            },
+            comments: CountedNodes {
+                total_count: 2,
+                nodes: vec![
+                    comment("old", 48, "Can't reproduce."),
+                    comment("bob", 2, "Fixed in #9."),
+                ],
+            },
+            timeline_items: Nodes {
+                nodes: vec![TimelineEvent::Closed(Event {
+                    actor: Some(Login {
+                        login: "bob".into(),
+                    }),
+                    created_at: hours_ago(1),
+                })],
+            },
+            ..Default::default()
+        });
+        app.subject_id = "8".into();
+        let s = &mut app.notifs[0];
+        s.total_count = 1;
+        s.notifs = vec![row];
         s.last_fetch_at = Some(std::time::Instant::now());
         s.last_updated =
             chrono::TimeZone::with_ymd_and_hms(&chrono::Local, 2026, 1, 1, 12, 0, 0).unwrap();
