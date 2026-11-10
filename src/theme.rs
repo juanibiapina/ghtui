@@ -4,6 +4,7 @@ use ratatui::style::{Color, Modifier, Style};
 
 use crate::config::Config;
 use crate::icons;
+use crate::model::AuthorAssociation;
 
 #[derive(Clone, Debug)]
 pub struct Theme {
@@ -187,17 +188,20 @@ impl Theme {
             .add_modifier(Modifier::BOLD)
     }
 
-    pub fn author_role_icon(&self, role: &str) -> (String, Color) {
+    pub fn author_role_icon(&self, role: AuthorAssociation) -> (String, Color) {
+        use AuthorAssociation as A;
         match role {
-            "FIRST_TIMER" | "FIRST_TIME_CONTRIBUTOR" | "NONE" => (
+            A::FirstTimer | A::FirstTimeContributor | A::None => (
                 self.new_contributor_icon.clone(),
                 self.new_contributor_icon_color,
             ),
-            "COLLABORATOR" => (self.collaborator_icon.clone(), self.collaborator_icon_color),
-            "CONTRIBUTOR" => (self.contributor_icon.clone(), self.contributor_icon_color),
-            "MEMBER" => (self.member_icon.clone(), self.member_icon_color),
-            "OWNER" => (self.owner_icon.clone(), self.owner_icon_color),
-            _ => (self.unknown_role_icon.clone(), self.unknown_role_icon_color),
+            A::Collaborator => (self.collaborator_icon.clone(), self.collaborator_icon_color),
+            A::Contributor => (self.contributor_icon.clone(), self.contributor_icon_color),
+            A::Member => (self.member_icon.clone(), self.member_icon_color),
+            A::Owner => (self.owner_icon.clone(), self.owner_icon_color),
+            A::Mannequin | A::Unknown => {
+                (self.unknown_role_icon.clone(), self.unknown_role_icon_color)
+            }
         }
     }
 

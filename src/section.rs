@@ -58,17 +58,17 @@ impl Kind {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct PrRow {
     pub primary: PullRequest,
     pub details: Option<PullRequestDetails>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct NotifRow {
     pub n: Notification,
     pub new_comments: i64,
-    pub subject_state: String,
+    pub subject_state: Option<State>,
     pub is_draft: bool,
     pub actor: String,
     pub activity: String,
@@ -81,18 +81,30 @@ fn last_segment(url: &str) -> &str {
 
 impl NotifRow {
     pub fn new(n: Notification) -> Self {
-        let activity = activity_description(&n.reason, &n.subject.kind, "");
+        let activity = activity_description(&n.reason, n.subject.kind, "");
         NotifRow {
             n,
             activity,
-            ..Default::default()
+            new_comments: 0,
+            subject_state: None,
+            is_draft: false,
+            actor: String::new(),
+            resolved_url: String::new(),
         }
     }
     pub fn id(&self) -> &str {
         &self.n.id
     }
-    pub fn subject_type(&self) -> &str {
-        &self.n.subject.kind
+    pub fn subject_type(&self) -> SubjectType {
+        self.n.subject.kind
+    }
+    fn subject_number(&self) -> &str {
+        self.n
+            .subject
+            .url
+            .as_deref()
+            .map(last_segment)
+            .unwrap_or("")
     }
     pub fn title(&self) -> String {
         self.n
@@ -108,7 +120,9 @@ impl NotifRow {
     }
     pub fn number(&self) -> i64 {
         match self.subject_type() {
-            "PullRequest" | "Issue" => last_segment(&self.n.subject.url).parse().unwrap_or(0),
+            SubjectType::PullRequest | SubjectType::Issue => {
+                self.subject_number().parse().unwrap_or(0)
+            }
             _ => 0,
         }
     }
@@ -121,27 +135,27 @@ impl NotifRow {
     }
     pub fn url(&self) -> String {
         let base = self.base_url();
-        let num = last_segment(&self.n.subject.url);
+        let num = self.subject_number();
         match self.subject_type() {
-            "PullRequest" => format!("{base}/pull/{num}"),
-            "Issue" => format!("{base}/issues/{num}"),
-            "Discussion" if !num.is_empty() => format!("{base}/discussions/{num}"),
-            "Discussion" => format!("{base}/discussions"),
-            "Release" => format!("{base}/releases"),
-            "Commit" => format!("{base}/commits"),
-            "CheckSuite" if !self.resolved_url.is_empty() => self.resolved_url.clone(),
-            "CheckSuite" => format!("{base}/actions"),
+            SubjectType::PullRequest => format!("{base}/pull/{num}"),
+            SubjectType::Issue => format!("{base}/issues/{num}"),
+            SubjectType::Discussion if !num.is_empty() => format!("{base}/discussions/{num}"),
+            SubjectType::Discussion => format!("{base}/discussions"),
+            SubjectType::Release => format!("{base}/releases"),
+            SubjectType::Commit => format!("{base}/commits"),
+            SubjectType::CheckSuite if !self.resolved_url.is_empty() => self.resolved_url.clone(),
+            SubjectType::CheckSuite => format!("{base}/actions"),
             _ => base,
         }
     }
 }
 
-pub fn activity_description(reason: &str, subject_type: &str, actor: &str) -> String {
+pub fn activity_description(reason: &str, subject_type: SubjectType, actor: &str) -> String {
     let has = !actor.is_empty();
     match reason {
         "comment" if has => match subject_type {
-            "PullRequest" => format!("@{actor} commented on this pull request"),
-            "Issue" => format!("@{actor} commented on this issue"),
+            SubjectType::PullRequest => format!("@{actor} commented on this pull request"),
+            SubjectType::Issue => format!("@{actor} commented on this issue"),
             _ => format!("@{actor} commented"),
         },
         "comment" => "New comment".into(),
@@ -152,14 +166,14 @@ pub fn activity_description(reason: &str, subject_type: &str, actor: &str) -> St
         "author" => "Activity on your thread".into(),
         "assign" => "You were assigned".into(),
         "state_change" => match subject_type {
-            "PullRequest" => "Pull request state changed".into(),
-            "Issue" => "Issue state changed".into(),
+            SubjectType::PullRequest => "Pull request state changed".into(),
+            SubjectType::Issue => "Issue state changed".into(),
             _ => "State changed".into(),
         },
         "ci_activity" => "CI activity".into(),
         "subscribed" if has => match subject_type {
-            "PullRequest" => format!("@{actor} commented on this pull request"),
-            "Issue" => format!("@{actor} commented on this issue"),
+            SubjectType::PullRequest => format!("@{actor} commented on this pull request"),
+            SubjectType::Issue => format!("@{actor} commented on this issue"),
             _ => "Activity on subscribed thread".into(),
         },
         "subscribed" => "Activity on subscribed thread".into(),
@@ -967,14 +981,26 @@ fn single_line(spans: Vec<Span<'static>>) -> Block {
     vec![Line::from(spans)]
 }
 
-fn author_with_icon(login: &str, assoc: &str, t: &Theme, show: bool) -> Vec<Span<'static>> {
-    let mut v = vec![span(login.to_string(), t.primary())];
+fn author_with_icon(
+    author: &Option<Login>,
+    assoc: AuthorAssociation,
+    t: &Theme,
+    show: bool,
+) -> Vec<Span<'static>> {
+    let mut v = vec![span(Login::of(author).to_string(), t.primary())];
     if show {
         let (icon, color) = t.author_role_icon(assoc);
         v.push(span(" ", t.primary()));
         v.push(span(icon, Style::default().fg(color)));
     }
     v
+}
+
+fn head_repository_name(pr: &PullRequest) -> String {
+    pr.head_repository
+        .as_ref()
+        .map(|r| r.name.clone())
+        .unwrap_or_default()
 }
 
 fn time_cell(t: chrono::DateTime<chrono::Utc>, cfg: &Config) -> String {
@@ -989,13 +1015,13 @@ fn time_cell(t: chrono::DateTime<chrono::Utc>, cfg: &Config) -> String {
 fn issue_title(
     cfg: &Config,
     t: &Theme,
-    state: &str,
+    state: State,
     title: &str,
     number: i64,
 ) -> Vec<Span<'static>> {
     let mut v = vec![];
     if cfg.theme.ui.table.compact {
-        let fg = if state != "OPEN" {
+        let fg = if state != State::Open {
             t.faint_text
         } else {
             t.secondary_text
@@ -1010,13 +1036,13 @@ fn issue_title(
 }
 
 pub fn pr_state_icon(pr: &PullRequest, t: &Theme) -> Span<'static> {
-    let (icon, color) = match pr.state.as_str() {
-        "OPEN" if pr.is_in_merge_queue => (icons::MERGE_QUEUE, t.warning_text),
-        "OPEN" if pr.is_draft => (icons::DRAFT, t.faint_text),
-        "OPEN" => (icons::OPEN, theme::OPEN_PR),
-        "CLOSED" => (icons::CLOSED, theme::CLOSED_PR),
-        "MERGED" => (icons::MERGED, theme::MERGED_PR),
-        _ => ("-", t.faint_text),
+    let (icon, color) = match pr.state {
+        State::Open if pr.is_in_merge_queue => (icons::MERGE_QUEUE, t.warning_text),
+        State::Open if pr.is_draft => (icons::DRAFT, t.faint_text),
+        State::Open => (icons::OPEN, theme::OPEN_PR),
+        State::Closed => (icons::CLOSED, theme::CLOSED_PR),
+        State::Merged => (icons::MERGED, theme::MERGED_PR),
+        State::Unknown => ("-", t.faint_text),
     };
     span(icon, Style::default().fg(color))
 }
@@ -1048,9 +1074,9 @@ fn pr_row(
     let pr = &row.primary;
     let show_icon = cfg.show_author_icons;
 
-    let review = if pr.review_decision == "APPROVED" {
+    let review = if pr.review_decision == Some(ReviewDecision::Approved) {
         span(icons::APPROVED, Style::default().fg(t.success_text))
-    } else if pr.review_decision == "CHANGES_REQUESTED" {
+    } else if pr.review_decision == Some(ReviewDecision::ChangesRequested) {
         span(icons::CHANGES_REQUESTED, Style::default().fg(t.error_text))
     } else if pr.reviews.total_count > 0 {
         let (g, s) = t.comment_glyph();
@@ -1059,19 +1085,15 @@ fn pr_row(
         let (g, s) = t.waiting_glyph();
         span(g, s)
     };
-    let rollup = pr
-        .commits
-        .nodes
-        .first()
-        .map(|c| c.commit.status_check_rollup.state.as_str())
-        .unwrap_or("");
-    let ci = match rollup {
-        "SUCCESS" => span(icons::SUCCESS, Style::default().fg(t.success_text)),
-        "EXPECTED" | "PENDING" => {
+    let ci = match pr.rollup_state() {
+        Some(CheckState::Success) => span(icons::SUCCESS, Style::default().fg(t.success_text)),
+        Some(CheckState::Expected | CheckState::Pending) => {
             let (g, s) = t.waiting_glyph();
             span(g, s)
         }
-        "ERROR" | "FAILURE" => span(icons::FAILURE, Style::default().fg(t.error_text)),
+        Some(CheckState::Error | CheckState::Failure) => {
+            span(icons::FAILURE, Style::default().fg(t.error_text))
+        }
         _ => span(icons::EMPTY, Style::default().fg(t.faint_text)),
     };
     let comments = span(
@@ -1128,7 +1150,7 @@ fn pr_row(
             ),
             span("@", sec.add_modifier(Modifier::BOLD)),
         ];
-        for s in author_with_icon(&pr.author.login, &pr.author_association, t, show_icon) {
+        for s in author_with_icon(&pr.author, pr.author_association, t, show_icon) {
             top.push(Span::styled(
                 s.content,
                 s.style.add_modifier(Modifier::BOLD),
@@ -1164,11 +1186,11 @@ fn pr_row(
 
     vec![
         single_line(vec![pr_state_icon(pr, t)]),
-        single_line(vec![span(pr.head_repository.name.clone(), t.faint())]),
-        single_line(issue_title(cfg, t, &pr.state, &pr.title, pr.number)),
+        single_line(vec![span(head_repository_name(pr), t.faint())]),
+        single_line(issue_title(cfg, t, pr.state, &pr.title, pr.number)),
         single_line(author_with_icon(
-            &pr.author.login,
-            &pr.author_association,
+            &pr.author,
+            pr.author_association,
             t,
             show_icon,
         )),
@@ -1187,7 +1209,7 @@ fn pr_row(
 fn issue_row(issue: &Issue, rc: &RenderCtx) -> Vec<Block> {
     let t = rc.theme;
     let cfg = rc.cfg;
-    let status = if issue.state == "OPEN" {
+    let status = if issue.state == State::Open {
         span(icons::ISSUE_OPEN, Style::default().fg(theme::OPEN_ISSUE))
     } else {
         span(icons::ISSUE_CLOSED, t.primary())
@@ -1195,16 +1217,10 @@ fn issue_row(issue: &Issue, rc: &RenderCtx) -> Vec<Block> {
     vec![
         single_line(vec![status]),
         single_line(vec![span(issue.repository.name.clone(), t.primary())]),
-        single_line(issue_title(
-            cfg,
-            t,
-            &issue.state,
-            &issue.title,
-            issue.number,
-        )),
+        single_line(issue_title(cfg, t, issue.state, &issue.title, issue.number)),
         single_line(author_with_icon(
-            &issue.author.login,
-            &issue.author_association,
+            &issue.author,
+            issue.author_association,
             t,
             cfg.show_author_icons,
         )),
@@ -1231,15 +1247,15 @@ fn issue_row(issue: &Issue, rc: &RenderCtx) -> Vec<Block> {
     ]
 }
 
-fn reason_description(reason: &str, subject_type: &str) -> String {
+fn reason_description(reason: &str, subject_type: SubjectType) -> String {
     match reason {
         "review_requested" => "Review requested".into(),
         "subscribed" => "Activity on subscribed thread".into(),
         "mention" => "You were mentioned".into(),
         "author" => "Activity on your thread".into(),
         "comment" => match subject_type {
-            "PullRequest" => "New comment on pull request".into(),
-            "Issue" => "New comment on issue".into(),
+            SubjectType::PullRequest => "New comment on pull request".into(),
+            SubjectType::Issue => "New comment on issue".into(),
             _ => "New comment".into(),
         },
         "assign" => "You were assigned".into(),
@@ -1254,20 +1270,20 @@ fn notification_row(row: &NotifRow, rc: &RenderCtx) -> Vec<Block> {
     let cfg = rc.cfg;
     let fg = |c: Color| Style::default().fg(c);
     let (icon, style) = match row.subject_type() {
-        "PullRequest" => match row.subject_state.as_str() {
-            "MERGED" => (icons::MERGED.to_string(), fg(theme::MERGED_PR)),
-            "CLOSED" => (icons::CLOSED.to_string(), fg(theme::CLOSED_PR)),
+        SubjectType::PullRequest => match row.subject_state {
+            Some(State::Merged) => (icons::MERGED.to_string(), fg(theme::MERGED_PR)),
+            Some(State::Closed) => (icons::CLOSED.to_string(), fg(theme::CLOSED_PR)),
             _ if row.is_draft => (icons::DRAFT.to_string(), fg(t.faint_text)),
             _ => (icons::OPEN.to_string(), fg(theme::OPEN_PR)),
         },
-        "Issue" if row.subject_state == "CLOSED" => {
+        SubjectType::Issue if row.subject_state == Some(State::Closed) => {
             (icons::ISSUE_CLOSED.to_string(), fg(theme::CLOSED_PR))
         }
-        "Issue" => (icons::ISSUE_OPEN.to_string(), fg(theme::OPEN_ISSUE)),
-        "Discussion" => (icons::DISCUSSION.to_string(), fg(Color::Rgb(255, 255, 255))),
-        "Release" => (icons::RELEASE.to_string(), fg(Color::Rgb(0x58, 0xa6, 0xff))),
-        "Commit" => (icons::COMMIT_TYPE.to_string(), fg(t.secondary_text)),
-        "CheckSuite" => {
+        SubjectType::Issue => (icons::ISSUE_OPEN.to_string(), fg(theme::OPEN_ISSUE)),
+        SubjectType::Discussion => (icons::DISCUSSION.to_string(), fg(Color::Rgb(255, 255, 255))),
+        SubjectType::Release => (icons::RELEASE.to_string(), fg(Color::Rgb(0x58, 0xa6, 0xff))),
+        SubjectType::Commit => (icons::COMMIT_TYPE.to_string(), fg(t.secondary_text)),
+        SubjectType::CheckSuite => {
             let title = row.title().to_lowercase();
             if title.contains("failed") {
                 (icons::FAILURE.to_string(), fg(t.error_text))
@@ -1282,7 +1298,9 @@ fn notification_row(row: &NotifRow, rc: &RenderCtx) -> Vec<Block> {
                 (icons::WORKFLOW_RUN.to_string(), fg(t.warning_text))
             }
         }
-        "RepositoryVulnerabilityAlert" => (icons::SECURITY.to_string(), fg(t.error_text)),
+        SubjectType::RepositoryVulnerabilityAlert => {
+            (icons::SECURITY.to_string(), fg(t.error_text))
+        }
         _ => (icons::NOTIFICATION.to_string(), fg(t.secondary_text)),
     };
     let type_cell = vec![
@@ -1399,26 +1417,28 @@ fn branch_row(row: &BranchRow, rc: &RenderCtx, columns: &[Column], widths: &[usi
             Style::default().fg(t.success_text),
         )]),
         Some(p) => {
-            let (icon, color) = match p.state.as_str() {
-                "OPEN" if p.is_draft => (icons::DRAFT, t.faint_text),
-                "OPEN" => (icons::OPEN, theme::OPEN_PR),
-                "CLOSED" => (icons::CLOSED, theme::CLOSED_PR),
-                "MERGED" => (icons::MERGED, theme::MERGED_PR),
-                _ => ("-", t.faint_text),
+            let (icon, color) = match p.state {
+                State::Open if p.is_draft => (icons::DRAFT, t.faint_text),
+                State::Open => (icons::OPEN, theme::OPEN_PR),
+                State::Closed => (icons::CLOSED, theme::CLOSED_PR),
+                State::Merged => (icons::MERGED, theme::MERGED_PR),
+                State::Unknown => ("-", t.faint_text),
             };
             single_line(vec![span(icon, Style::default().fg(color))])
         }
     };
     let review = match pr {
         None => dash(),
-        Some(p) if p.review_decision == "APPROVED" => single_line(vec![span(
+        Some(p) if p.review_decision == Some(ReviewDecision::Approved) => single_line(vec![span(
             icons::APPROVED,
             Style::default().fg(t.success_text),
         )]),
-        Some(p) if p.review_decision == "CHANGES_REQUESTED" => single_line(vec![span(
-            icons::CHANGES_REQUESTED,
-            Style::default().fg(t.error_text),
-        )]),
+        Some(p) if p.review_decision == Some(ReviewDecision::ChangesRequested) => {
+            single_line(vec![span(
+                icons::CHANGES_REQUESTED,
+                Style::default().fg(t.error_text),
+            )])
+        }
         Some(_) => {
             let (g, s) = t.waiting_glyph();
             single_line(vec![span(g, s)])
@@ -1426,28 +1446,20 @@ fn branch_row(row: &BranchRow, rc: &RenderCtx, columns: &[Column], widths: &[usi
     };
     let ci = match pr {
         None => dash(),
-        Some(p) => {
-            let rollup = p
-                .commits
-                .nodes
-                .first()
-                .map(|c| c.commit.status_check_rollup.state.as_str())
-                .unwrap_or("UNKNOWN");
-            match rollup {
-                "SUCCESS" => single_line(vec![span(
-                    icons::SUCCESS,
-                    Style::default().fg(t.success_text),
-                )]),
-                "PENDING" => {
-                    let (g, s) = t.waiting_glyph();
-                    single_line(vec![span(g, s)])
-                }
-                _ => single_line(vec![span(
-                    icons::FAILURE,
-                    Style::default().fg(t.error_text),
-                )]),
+        Some(p) => match p.rollup_state() {
+            Some(CheckState::Success) => single_line(vec![span(
+                icons::SUCCESS,
+                Style::default().fg(t.success_text),
+            )]),
+            Some(CheckState::Pending) => {
+                let (g, s) = t.waiting_glyph();
+                single_line(vec![span(g, s)])
             }
-        }
+            _ => single_line(vec![span(
+                icons::FAILURE,
+                Style::default().fg(t.error_text),
+            )]),
+        },
     };
     let lines = match pr {
         None => dash(),
@@ -1518,9 +1530,9 @@ fn branch_row(row: &BranchRow, rc: &RenderCtx, columns: &[Column], widths: &[usi
     }
     let (repo, title, author) = match pr {
         Some(p) => (
-            single_line(vec![span(p.head_repository.name.clone(), t.faint())]),
-            single_line(issue_title(cfg, t, &p.state, &p.title, p.number)),
-            single_line(vec![span(p.author.login.clone(), t.primary())]),
+            single_line(vec![span(head_repository_name(p), t.faint())]),
+            single_line(issue_title(cfg, t, p.state, &p.title, p.number)),
+            single_line(vec![span(Login::of(&p.author).to_string(), t.primary())]),
         ),
         None => (
             single_line(vec![]),

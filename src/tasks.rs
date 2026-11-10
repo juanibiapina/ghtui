@@ -267,9 +267,9 @@ pub fn approve_workflows(app: &mut App, n: i64, repo: &str, key: SectionKey) {
 pub fn comment(app: &mut App, is_pr: bool, n: i64, repo: &str, body: &str, key: SectionKey) {
     let noun = if is_pr { "pr" } else { "issue" };
     let new_comment = Comment {
-        author: Login {
+        author: Some(Login {
             login: app.user.clone(),
-        },
+        }),
         body: body.to_string(),
         updated_at: Utc::now(),
     };
@@ -439,7 +439,7 @@ pub fn label(
                 .get(l.as_str())
                 .map(|c| c.to_string())
                 .unwrap_or_default(),
-            description: String::new(),
+            description: None,
         })
         .collect();
     let list = format!("[{}]", labels.join(" "));

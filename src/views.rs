@@ -179,14 +179,10 @@ fn heading(t: &Theme, text: String) -> Line<'static> {
 fn author_line(
     t: &Theme,
     login: &str,
-    assoc: &str,
+    assoc: AuthorAssociation,
     created: chrono::DateTime<chrono::Utc>,
 ) -> Line<'static> {
-    let assoc_label = if assoc.is_empty() {
-        "unknown role".to_string()
-    } else {
-        assoc.to_lowercase()
-    };
+    let assoc_label = assoc.label();
     let (icon, color) = t.author_role_icon(assoc);
     Line::from(vec![
         raw(" by "),
@@ -268,16 +264,16 @@ struct ChecksStats {
 
 fn add_check_counts(stats: &mut ChecksStats, counts: &[CountByState]) {
     for c in counts {
-        let s = c.state.as_str();
-        if is_status_waiting(s) {
+        let s = c.state;
+        if s.is_waiting() {
             stats.in_progress += c.count;
-        } else if is_conclusion_failure(s) {
+        } else if s.is_failure() {
             stats.failed += c.count;
-        } else if is_conclusion_skip(s) {
+        } else if s.is_skip() {
             stats.skipped += c.count;
-        } else if is_conclusion_neutral(s) {
+        } else if s.is_neutral() {
             stats.neutral += c.count;
-        } else if is_conclusion_success(s) {
+        } else if s.is_success() {
             stats.succeeded += c.count;
         }
     }
@@ -285,16 +281,20 @@ fn add_check_counts(stats: &mut ChecksStats, counts: &[CountByState]) {
 
 fn checks_stats(e: &PullRequestDetails) -> ChecksStats {
     let mut s = ChecksStats::default();
-    let Some(last) = e.commits.nodes.first() else {
+    let Some(last) = e.head() else {
         return s;
     };
-    let ctx = &last.commit.status_check_rollup.contexts;
-    add_check_counts(&mut s, &ctx.check_run_counts_by_state);
-    add_check_counts(&mut s, &ctx.status_context_counts_by_state);
-    for suite in &last.commit.check_suites.nodes {
-        if suite.conclusion == "ACTION_REQUIRED" {
+    if let Some(rollup) = &last.status_check_rollup {
+        add_check_counts(&mut s, &rollup.contexts.counts.check_run_counts_by_state);
+        add_check_counts(
+            &mut s,
+            &rollup.contexts.counts.status_context_counts_by_state,
+        );
+    }
+    for suite in &last.check_suites.nodes {
+        if suite.is_awaiting_approval() {
             s.awaiting_approval += 1;
-        } else if matches!(suite.status.as_str(), "QUEUED" | "PENDING" | "WAITING") {
+        } else if suite.is_pending() {
             s.in_progress += 1;
         }
     }
@@ -349,15 +349,15 @@ pub fn pr_view(t: &Theme, row: &PrRow, width: usize, st: &PrViewState) -> (Block
     out.extend(preview_title(t, width, &pr.title));
     out.push(Line::default());
 
-    let (state_text, pill_bg) = match pr.state.as_str() {
-        "OPEN" if pr.is_in_merge_queue => {
+    let (state_text, pill_bg) = match pr.state {
+        State::Open if pr.is_in_merge_queue => {
             (format!("{} Queued", icons::MERGE_QUEUE), theme::OPEN_PR)
         }
-        "OPEN" if pr.is_draft => (format!("{} Draft", icons::DRAFT), t.faint_text),
-        "OPEN" => (format!("{} Open", icons::OPEN), theme::OPEN_PR),
-        "CLOSED" => (format!("{} Closed", icons::CLOSED), theme::CLOSED_PR),
-        "MERGED" => (format!("{} Merged", icons::MERGED), theme::MERGED_PR),
-        _ => (String::new(), t.faint_text),
+        State::Open if pr.is_draft => (format!("{} Draft", icons::DRAFT), t.faint_text),
+        State::Open => (format!("{} Open", icons::OPEN), theme::OPEN_PR),
+        State::Closed => (format!("{} Closed", icons::CLOSED), theme::CLOSED_PR),
+        State::Merged => (format!("{} Merged", icons::MERGED), theme::MERGED_PR),
+        State::Unknown => (String::new(), t.faint_text),
     };
     let mut branches = vec![raw(" ")];
     branches.extend(pill(&state_text, pill_bg, t.inverted_text, None));
@@ -375,8 +375,8 @@ pub fn pr_view(t: &Theme, row: &PrRow, width: usize, st: &PrViewState) -> (Block
     out.push(Line::default());
     out.push(author_line(
         t,
-        &pr.author.login,
-        &pr.author_association,
+        Login::of(&pr.author),
+        pr.author_association,
         pr.created_at,
     ));
     out.push(Line::default());
@@ -467,29 +467,32 @@ fn requested_reviewers(t: &Theme, row: &PrRow, w: usize) -> Block {
     {
         return vec![];
     }
-    let mut states: Vec<(String, String)> = vec![];
+    let mut states: Vec<(String, ReviewState)> = vec![];
     for r in &e.reviews.nodes {
-        let login = r.author.login.clone();
+        let login = Login::of(&r.author).to_string();
         match states.iter_mut().find(|(l, _)| *l == login) {
             Some((_, s)) => {
-                if r.state == "COMMENTED" && (s == "APPROVED" || s == "CHANGES_REQUESTED") {
+                if r.state == ReviewState::Commented
+                    && matches!(s, ReviewState::Approved | ReviewState::ChangesRequested)
+                {
                     continue;
                 }
-                *s = r.state.clone();
+                *s = r.state;
             }
-            None => states.push((login, r.state.clone())),
+            None => states.push((login, r.state)),
         }
     }
     let faint = t.faint();
     let mut items: Vec<Vec<Span<'static>>> = vec![];
     let mut shown: Vec<String> = vec![];
     for req in &e.review_requests.nodes {
-        let name = req.display_name().to_string();
-        if name.is_empty() {
+        let Some(name) = req.display_name().map(str::to_string) else {
             continue;
-        }
+        };
         shown.push(name.clone());
-        let commented = states.iter().any(|(l, s)| *l == name && s == "COMMENTED");
+        let commented = states
+            .iter()
+            .any(|(l, s)| *l == name && *s == ReviewState::Commented);
         let icon = if commented {
             glyph(t.comment_glyph())
         } else {
@@ -513,16 +516,16 @@ fn requested_reviewers(t: &Theme, row: &PrRow, w: usize) -> Block {
     for (login, state) in &states {
         if shown.contains(login)
             || !matches!(
-                state.as_str(),
-                "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED"
+                state,
+                ReviewState::Approved | ReviewState::ChangesRequested | ReviewState::Commented
             )
         {
             continue;
         }
         shown.push(login.clone());
-        let icon = match state.as_str() {
-            "APPROVED" => span(icons::APPROVED, Style::default().fg(t.success_text)),
-            "CHANGES_REQUESTED" => {
+        let icon = match state {
+            ReviewState::Approved => span(icons::APPROVED, Style::default().fg(t.success_text)),
+            ReviewState::ChangesRequested => {
                 span(icons::CHANGES_REQUESTED, Style::default().fg(t.error_text))
             }
             _ => glyph(t.comment_glyph()),
@@ -659,7 +662,7 @@ fn changes_overview(t: &Theme, row: &PrRow, w: usize) -> Block {
 fn checks_overview(t: &Theme, row: &PrRow, w: usize, approve_key: &str) -> Block {
     let pr = &row.primary;
     let inner = w.saturating_sub(2);
-    if pr.state == "MERGED" {
+    if pr.state == State::Merged {
         let c = check_category(
             t,
             glyph(t.merged_glyph()),
@@ -670,7 +673,7 @@ fn checks_overview(t: &Theme, row: &PrRow, w: usize, approve_key: &str) -> Block
         );
         return boxed(c, inner, theme::MERGED_PR, border::ROUNDED);
     }
-    if pr.state == "CLOSED" {
+    if pr.state == State::Closed {
         let c = check_category(
             t,
             raw(""),
@@ -718,43 +721,41 @@ fn review_status(t: &Theme, row: &PrRow, w: usize) -> (Block, Status) {
         .as_ref()
         .map(|e| e.reviews.nodes.clone())
         .unwrap_or_default();
-    let count = |s: &str| reviews.iter().filter(|r| r.state == s).count() as i64;
+    let count = |s: ReviewState| reviews.iter().filter(|r| r.state == s).count() as i64;
     let (approving, changes, commented) = (
-        count("APPROVED"),
-        count("CHANGES_REQUESTED"),
-        count("COMMENTED"),
+        count(ReviewState::Approved),
+        count(ReviewState::ChangesRequested),
+        count(ReviewState::Commented),
     );
     let owners = num_code_owner_requests(row);
     let rules = &pr.repository.branch_protection_rules.nodes;
-    let (icon, title, subtitle, status) = match pr.review_decision.as_str() {
-        "APPROVED" => (
+    let (icon, title, subtitle, status) = match pr.review_decision {
+        Some(ReviewDecision::Approved) => (
             glyph(t.success_glyph()),
             "Changes approved",
             format!("{approving} approving reviews"),
             Status::Success,
         ),
-        "CHANGES_REQUESTED" => (
+        Some(ReviewDecision::ChangesRequested) => (
             glyph(t.failure_glyph()),
             "Changes requested",
             format!("{changes} requested changes"),
             Status::Failure,
         ),
-        "REVIEW_REQUIRED" => {
+        Some(ReviewDecision::ReviewRequired) => {
             let code_owner_required = rules
                 .first()
                 .map(|r| r.requires_code_owner_reviews)
                 .unwrap_or(false);
             let (sub, st) = if (code_owner_required && approving < 1) || approving < owners {
                 ("Code owner review required".to_string(), Status::Failure)
-            } else if let Some(r) = rules
+            } else if let Some(required) = rules
                 .first()
-                .filter(|r| approving < r.required_approving_review_count)
+                .and_then(|r| r.required_approving_review_count)
+                .filter(|required| approving < *required)
             {
                 (
-                    format!(
-                        "Need {} more approval",
-                        r.required_approving_review_count - approving
-                    ),
+                    format!("Need {} more approval", required - approving),
                     Status::Waiting,
                 )
             } else if commented > 0 {
@@ -874,50 +875,52 @@ fn checks_status(t: &Theme, row: &PrRow, w: usize, approve_key: &str) -> (Block,
 fn merge_status(t: &Theme, row: &PrRow, w: usize) -> (Block, Status) {
     let pr = &row.primary;
     let owners = num_code_owner_requests(row);
-    let (icon, title, subtitle, status) =
-        if pr.merge_state_status == "CLEAN" || pr.merge_state_status == "UNSTABLE" {
-            (
-                glyph(t.success_glyph()),
-                "No conflicts with base branch",
-                "Changes can be cleanly merged",
-                Status::Success,
-            )
-        } else if pr.is_draft {
-            (
-                glyph(t.draft_glyph()),
-                "This pull request is still a work in progress",
-                "Draft pull requests cannot be merged",
-                Status::Waiting,
-            )
-        } else if pr.merge_state_status == "BLOCKED" {
-            let sub = if owners > 0 {
-                "Waiting on code owner review"
-            } else {
-                ""
-            };
-            (
-                glyph(t.failure_glyph()),
-                "Merging is blocked",
-                sub,
-                Status::Failure,
-            )
-        } else if pr.mergeable == "CONFLICTING" {
-            (
-                glyph(t.failure_glyph()),
-                "This branch has conflicts that must be resolved",
-                "",
-                Status::Failure,
-            )
+    let (icon, title, subtitle, status) = if matches!(
+        pr.merge_state_status,
+        MergeStateStatus::Clean | MergeStateStatus::Unstable
+    ) {
+        (
+            glyph(t.success_glyph()),
+            "No conflicts with base branch",
+            "Changes can be cleanly merged",
+            Status::Success,
+        )
+    } else if pr.is_draft {
+        (
+            glyph(t.draft_glyph()),
+            "This pull request is still a work in progress",
+            "Draft pull requests cannot be merged",
+            Status::Waiting,
+        )
+    } else if pr.merge_state_status == MergeStateStatus::Blocked {
+        let sub = if owners > 0 {
+            "Waiting on code owner review"
         } else {
-            (raw(""), "", "", Status::Success)
+            ""
         };
+        (
+            glyph(t.failure_glyph()),
+            "Merging is blocked",
+            sub,
+            Status::Failure,
+        )
+    } else if pr.mergeable == MergeableState::Conflicting {
+        (
+            glyph(t.failure_glyph()),
+            "This branch has conflicts that must be resolved",
+            "",
+            Status::Failure,
+        )
+    } else {
+        (raw(""), "", "", Status::Success)
+    };
     (check_category(t, icon, title, subtitle, true, w), status)
 }
 
 fn all_checks(t: &Theme, row: &PrRow, w: usize) -> Block {
     let title = heading(t, format!("{} All Checks", icons::CHECKS));
     let mut out = vec![title, Line::default()];
-    let Some(last) = row.details.as_ref().and_then(|e| e.commits.nodes.first()) else {
+    let Some(last) = row.details.as_ref().and_then(|e| e.head()) else {
         out.push(Line::from("Loading..."));
         return out;
     };
@@ -926,21 +929,23 @@ fn all_checks(t: &Theme, row: &PrRow, w: usize) -> Block {
     let mut rest = vec![];
     let mut awaiting = vec![];
     let mut pending = vec![];
-    for suite in &last.commit.check_suites.nodes {
-        let mut name = suite.workflow_run.workflow.name.trim().to_string();
-        if name.is_empty() {
-            name = suite.app.name.trim().to_string();
-        }
-        if name.is_empty() {
-            name = "Workflow".into();
-        }
-        if suite.conclusion == "ACTION_REQUIRED" {
+    for suite in &last.check_suites.nodes {
+        let name = [
+            suite.workflow_run.as_ref().map(|r| r.workflow.name.trim()),
+            suite.app.as_ref().map(|a| a.name.trim()),
+        ]
+        .into_iter()
+        .flatten()
+        .find(|n| !n.is_empty())
+        .unwrap_or("Workflow")
+        .to_string();
+        if suite.is_awaiting_approval() {
             awaiting.push(Line::from(vec![
                 glyph(t.action_required_glyph()),
                 raw(" "),
                 raw(name),
             ]));
-        } else if matches!(suite.status.as_str(), "QUEUED" | "PENDING" | "WAITING") {
+        } else if suite.is_pending() {
             pending.push(Line::from(vec![
                 glyph(t.waiting_glyph()),
                 raw(" "),
@@ -949,44 +954,57 @@ fn all_checks(t: &Theme, row: &PrRow, w: usize) -> Block {
         }
     }
     let mut reported = vec![];
-    for node in &last.commit.status_check_rollup.contexts.nodes {
-        let (state_for_wait, conclusion, name, check_name) = if node.typename == "CheckRun" {
-            let parts: Vec<&str> = [
-                node.check_suite.creator.login.trim(),
-                node.check_suite.workflow_run.workflow.name.trim(),
-                node.name.trim(),
-            ]
-            .into_iter()
-            .filter(|s| !s.is_empty())
-            .collect();
-            (
-                node.status.clone(),
-                node.conclusion.clone(),
-                parts.join("/"),
-                node.name.clone(),
-            )
-        } else {
-            let ctx = node.context.trim();
-            let mut parts: Vec<&str> = vec![];
-            if !node.creator.login.trim().is_empty() {
-                parts.push(node.creator.login.trim());
+    let contexts = last
+        .status_check_rollup
+        .as_ref()
+        .map(|r| r.contexts.nodes.as_slice())
+        .unwrap_or_default();
+    for node in contexts {
+        let (state_for_wait, conclusion, name, check_name) = match node {
+            CheckContext::CheckRun(run) => {
+                let suite = &run.check_suite;
+                let parts: Vec<&str> = [
+                    suite.creator.as_ref().map(|c| c.login.trim()),
+                    suite.workflow_run.as_ref().map(|r| r.workflow.name.trim()),
+                    Some(run.name.trim()),
+                ]
+                .into_iter()
+                .flatten()
+                .filter(|s| !s.is_empty())
+                .collect();
+                (
+                    run.status,
+                    run.conclusion,
+                    parts.join("/"),
+                    run.name.clone(),
+                )
             }
-            if !ctx.is_empty() && ctx != "/" {
-                parts.push(ctx);
+            CheckContext::StatusContext(status) => {
+                let ctx = status.context.trim();
+                let mut parts: Vec<&str> = vec![];
+                if let Some(creator) = status.creator.as_ref().map(|c| c.login.trim())
+                    && !creator.is_empty()
+                {
+                    parts.push(creator);
+                }
+                if !ctx.is_empty() && ctx != "/" {
+                    parts.push(ctx);
+                }
+                (
+                    status.state,
+                    Some(status.state),
+                    parts.join("/"),
+                    status.context.clone(),
+                )
             }
-            (
-                node.state.clone(),
-                node.state.clone(),
-                parts.join("/"),
-                node.context.clone(),
-            )
+            CheckContext::Unknown => continue,
         };
         reported.push(check_name);
         let line =
             |g: (&'static str, Style)| Line::from(vec![glyph(g), raw(" "), raw(name.clone())]);
-        if is_status_waiting(&state_for_wait) {
+        if state_for_wait.is_waiting() {
             waiting.push(line(t.waiting_glyph()));
-        } else if is_conclusion_failure(&conclusion) {
+        } else if conclusion.is_some_and(CheckState::is_failure) {
             failures.push(line(t.failure_glyph()));
         } else {
             rest.push(line(t.success_glyph()));
@@ -1065,11 +1083,12 @@ fn pr_activity(t: &Theme, row: &PrRow, w: usize) -> Block {
     };
     for th in &e.review_threads.nodes {
         for c in &th.comments.nodes {
-            let mut b = comment_header(&c.author.login, c.updated_at);
-            b.push(Line::from(span(
-                format!("{}#l{}", th.path, th.line),
-                t.faint(),
-            )));
+            let mut b = comment_header(Login::of(&c.author), c.updated_at);
+            let location = match th.line {
+                Some(line) => format!("{}#l{line}", th.path),
+                None => th.path.clone(),
+            };
+            b.push(Line::from(span(location, t.faint())));
             b.push(Line::default());
             b.extend(markdown::render(&markdown::clean_body(&c.body), w));
             acts.push(Activity {
@@ -1079,7 +1098,7 @@ fn pr_activity(t: &Theme, row: &PrRow, w: usize) -> Block {
         }
     }
     for c in &e.comments.nodes {
-        let mut b = comment_header(&c.author.login, c.updated_at);
+        let mut b = comment_header(Login::of(&c.author), c.updated_at);
         b.extend(markdown::render(&markdown::clean_body(&c.body), w));
         acts.push(Activity {
             at: c.updated_at,
@@ -1087,17 +1106,17 @@ fn pr_activity(t: &Theme, row: &PrRow, w: usize) -> Block {
         });
     }
     for r in &e.reviews.nodes {
-        let decision = match r.state.as_str() {
-            "PENDING" => glyph(t.waiting_glyph()),
-            "COMMENTED" => span(icons::REVIEW_COMMENTED, t.faint()),
-            "APPROVED" => glyph(t.success_glyph()),
-            "CHANGES_REQUESTED" => glyph(t.failure_glyph()),
-            _ => raw(""),
+        let decision = match r.state {
+            ReviewState::Pending => glyph(t.waiting_glyph()),
+            ReviewState::Commented => span(icons::REVIEW_COMMENTED, t.faint()),
+            ReviewState::Approved => glyph(t.success_glyph()),
+            ReviewState::ChangesRequested => glyph(t.failure_glyph()),
+            ReviewState::Dismissed | ReviewState::Unknown => raw(""),
         };
         let mut b = vec![Line::from(vec![
             decision,
             raw(" "),
-            span(r.author.login.clone(), t.main_text()),
+            span(Login::of(&r.author).to_string(), t.main_text()),
             raw(" "),
             span(
                 format!("reviewed {}", time_elapsed(r.updated_at)),
@@ -1144,11 +1163,16 @@ fn pr_commits(t: &Theme, row: &PrRow, w: usize) -> Block {
     ];
     for (i, c) in commits.iter().enumerate() {
         let c = &c.commit;
-        let name = if c.author.user.login.is_empty() {
-            c.author.name.clone()
-        } else {
-            c.author.user.login.clone()
-        };
+        let name = c
+            .author
+            .as_ref()
+            .and_then(|a| {
+                a.user
+                    .as_ref()
+                    .map(|u| u.login.clone())
+                    .or_else(|| a.name.clone())
+            })
+            .unwrap_or_default();
         let right = c.abbreviated_oid.clone();
         let rw = str_width(&right);
         let left = Line::from(vec![
@@ -1172,14 +1196,16 @@ fn pr_commits(t: &Theme, row: &PrRow, w: usize) -> Block {
                 faint,
             ),
         ];
-        let ctx = &c.status_check_rollup.contexts;
-        if ctx.total_count > 0 {
+        if let Some(rollup) = &c.status_check_rollup
+            && rollup.contexts.total_count > 0
+        {
+            let ctx = &rollup.contexts;
             let mut s = ChecksStats::default();
             add_check_counts(&mut s, &ctx.check_run_counts_by_state);
             add_check_counts(&mut s, &ctx.status_context_counts_by_state);
-            let sign = match c.status_check_rollup.state.as_str() {
-                "ERROR" | "FAILURE" => glyph(t.failure_glyph()),
-                "SUCCESS" => glyph(t.success_glyph()),
+            let sign = match rollup.state {
+                CheckState::Error | CheckState::Failure => glyph(t.failure_glyph()),
+                CheckState::Success => glyph(t.success_glyph()),
                 _ => glyph(t.waiting_glyph()),
             };
             desc.extend([
@@ -1205,15 +1231,15 @@ fn changed_files(t: &Theme, row: &PrRow, w: usize) -> Block {
     };
     let mut out = vec![];
     for f in &e.files.nodes {
-        let icon = match f.change_type.as_str() {
-            "ADDED" => span(icons::FILE_ADDED, Style::default().fg(t.success_text)),
-            "DELETED" => span(icons::FILE_DELETED, Style::default().fg(t.error_text)),
-            "RENAMED" => span(icons::FILE_RENAMED, Style::default().fg(t.warning_text)),
-            "COPIED" => span(icons::FILE_COPIED, Style::default().fg(t.warning_text)),
-            "MODIFIED" | "CHANGED" => {
+        let icon = match f.change_type {
+            PatchStatus::Added => span(icons::FILE_ADDED, Style::default().fg(t.success_text)),
+            PatchStatus::Deleted => span(icons::FILE_DELETED, Style::default().fg(t.error_text)),
+            PatchStatus::Renamed => span(icons::FILE_RENAMED, Style::default().fg(t.warning_text)),
+            PatchStatus::Copied => span(icons::FILE_COPIED, Style::default().fg(t.warning_text)),
+            PatchStatus::Modified | PatchStatus::Changed => {
                 span(icons::FILE_MODIFIED, Style::default().fg(t.warning_text))
             }
-            _ => raw(""),
+            PatchStatus::Unknown => raw(""),
         };
         let prefix = vec![
             span(
@@ -1280,7 +1306,7 @@ pub fn issue_view(t: &Theme, issue: &Issue, width: usize, editor: Option<&Editor
     ));
     b.extend(preview_title(t, w, &issue.title));
     b.push(Line::default());
-    let (text, bg) = if issue.state == "OPEN" {
+    let (text, bg) = if issue.state == State::Open {
         (format!("{} Open", icons::ISSUE_OPEN), theme::OPEN_ISSUE)
     } else {
         (
@@ -1292,8 +1318,8 @@ pub fn issue_view(t: &Theme, issue: &Issue, width: usize, editor: Option<&Editor
     b.push(Line::default());
     b.push(author_line(
         t,
-        &issue.author.login,
-        &issue.author_association,
+        Login::of(&issue.author),
+        issue.author_association,
         issue.created_at,
     ));
     b.push(Line::default());
@@ -1328,7 +1354,7 @@ pub fn issue_view(t: &Theme, issue: &Issue, width: usize, editor: Option<&Editor
     for c in comments {
         cb.extend(boxed(
             vec![Line::from(vec![
-                span(c.author.login.clone(), t.main_text()),
+                span(Login::of(&c.author).to_string(), t.main_text()),
                 raw(" "),
                 span(time_elapsed(c.updated_at), t.faint()),
             ])],
@@ -1359,9 +1385,9 @@ pub fn notification_prompt(t: &Theme, row: &NotifRow) -> Block {
     let margin = "      ";
     let kind = row.subject_type();
     let (type_name, enter_action) = match kind {
-        "PullRequest" => ("PR".to_string(), "view"),
-        "Issue" => ("Issue".to_string(), "view"),
-        other => (other.to_string(), "open in browser"),
+        SubjectType::PullRequest => ("PR".to_string(), "view"),
+        SubjectType::Issue => ("Issue".to_string(), "view"),
+        other => (format!("{other:?}"), "open in browser"),
     };
     let normal = t.primary();
     let action = Style::default().fg(t.success_text);

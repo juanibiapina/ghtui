@@ -8,7 +8,7 @@ use std::hash::Hash;
 use chrono::{DateTime, Utc};
 
 use crate::github::Membership;
-use crate::model::{Issue, PullRequestDetails};
+use crate::model::{Issue, Login, PullRequestDetails, State};
 use crate::section::{NotifRow, PrRow};
 
 /// A section row the list sync can match by node ID.
@@ -126,7 +126,7 @@ pub enum Subject<'a> {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Extras {
     pub new_comments: i64,
-    pub state: String,
+    pub state: Option<State>,
     pub is_draft: bool,
     pub actor: String,
 }
@@ -139,23 +139,23 @@ pub fn notification_extras(row: &NotifRow, subject: Subject) -> Extras {
     let (state, is_draft, author) = match subject {
         Subject::Pr(pr) => {
             for c in &pr.comments.nodes {
-                activity.push((c.updated_at, &c.author.login));
+                activity.push((c.updated_at, Login::of(&c.author)));
             }
             for th in &pr.review_threads.nodes {
                 for c in &th.comments.nodes {
-                    activity.push((c.updated_at, &c.author.login));
+                    activity.push((c.updated_at, Login::of(&c.author)));
                 }
             }
             for r in &pr.reviews.nodes {
-                activity.push((r.updated_at, &r.author.login));
+                activity.push((r.updated_at, Login::of(&r.author)));
             }
-            (pr.state.clone(), pr.is_draft, pr.author.login.as_str())
+            (Some(pr.state), pr.is_draft, Login::of(&pr.author))
         }
         Subject::Issue(i) => {
             for c in &i.comments.nodes {
-                activity.push((c.updated_at, &c.author.login));
+                activity.push((c.updated_at, Login::of(&c.author)));
             }
-            (i.state.clone(), false, i.author.login.as_str())
+            (Some(i.state), false, Login::of(&i.author))
         }
     };
     let new: Vec<&(DateTime<Utc>, &str)> = activity.iter().filter(|(t, _)| after(t)).collect();
@@ -178,7 +178,7 @@ mod tests {
     use chrono::Duration;
 
     use super::*;
-    use crate::model::{Comment, Login, Nodes, Notification, PageInfo, PullRequest, Review};
+    use crate::model::{Comment, CountedNodes, Notification, PageInfo, PullRequest, Review};
 
     fn row(id: &str, at: DateTime<Utc>, title: &str) -> PrRow {
         PrRow {
@@ -265,9 +265,9 @@ mod tests {
 
     fn comment(login: &str, at: DateTime<Utc>) -> Comment {
         Comment {
-            author: Login {
+            author: Some(Login {
                 login: login.into(),
-            },
+            }),
             body: String::new(),
             updated_at: at,
         }
@@ -281,23 +281,23 @@ mod tests {
             ..Default::default()
         });
         let pr = PullRequestDetails {
-            state: "OPEN".into(),
+            state: State::Open,
             is_draft: true,
-            author: Login {
+            author: Some(Login {
                 login: "author".into(),
-            },
-            comments: Nodes {
+            }),
+            comments: CountedNodes {
                 nodes: vec![
                     comment("old", read - Duration::hours(1)),
                     comment("bob", read + Duration::minutes(5)),
                 ],
                 total_count: 2,
             },
-            reviews: Nodes {
+            reviews: CountedNodes {
                 nodes: vec![Review {
-                    author: Login {
+                    author: Some(Login {
                         login: "carol".into(),
-                    },
+                    }),
                     updated_at: read + Duration::minutes(30),
                     ..Default::default()
                 }],
@@ -310,7 +310,7 @@ mod tests {
             e,
             Extras {
                 new_comments: 2,
-                state: "OPEN".into(),
+                state: Some(State::Open),
                 is_draft: true,
                 actor: "carol".into(),
             }
@@ -324,11 +324,11 @@ mod tests {
             ..Default::default()
         });
         let issue = Issue {
-            state: "CLOSED".into(),
-            author: Login {
+            state: State::Closed,
+            author: Some(Login {
                 login: "author".into(),
-            },
-            comments: Nodes {
+            }),
+            comments: CountedNodes {
                 nodes: vec![comment("old", Utc::now() - Duration::days(1))],
                 total_count: 1,
             },
@@ -337,6 +337,6 @@ mod tests {
         let e = notification_extras(&row, Subject::Issue(&issue));
         assert_eq!(e.new_comments, 0);
         assert_eq!(e.actor, "author");
-        assert_eq!(e.state, "CLOSED");
+        assert_eq!(e.state, Some(State::Closed));
     }
 }

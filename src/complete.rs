@@ -288,7 +288,7 @@ impl Completer {
         let labels = || {
             self.labels.iter().map(|l| Suggestion {
                 value: l.name.clone(),
-                detail: l.description.trim().to_string(),
+                detail: l.description.as_deref().unwrap_or("").trim().to_string(),
             })
         };
         match self.kind {

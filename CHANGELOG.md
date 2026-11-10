@@ -40,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix the branches view never refreshing PRs, and finding no PRs for repositories cloned over SSH.
 - Fix the branches view clearing its branches every time you switch to it.
 - Fix returning to the terminal loading another page of the current section instead of refreshing it.
+- Fix PRs opened from a notification showing no comments, reviews or CI status.
+- Fix mention completions leaving out people's names.
+- Show deleted GitHub accounts as `ghost`, as GitHub does.
 
 ## [0.1.0] - 2026-11-06
 

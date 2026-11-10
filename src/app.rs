@@ -696,7 +696,10 @@ impl App {
 
     /// CheckSuite notifications link to the workflow run fetched here.
     fn fetch_check_suite_runs(&self, rows: &[NotifRow]) {
-        for r in rows.iter().filter(|r| r.subject_type() == "CheckSuite") {
+        for r in rows
+            .iter()
+            .filter(|r| r.subject_type() == SubjectType::CheckSuite)
+        {
             let id = r.id().to_string();
             let repo = r.repo().to_string();
             let at = r.n.updated_at;
@@ -753,7 +756,10 @@ impl App {
             if self.show_cached_subject(&n) {
                 return;
             }
-            if matches!(n.subject_type(), "PullRequest" | "Issue") {
+            if matches!(
+                n.subject_type(),
+                SubjectType::PullRequest | SubjectType::Issue
+            ) {
                 self.timers.push((
                     Instant::now() + Duration::from_millis(150),
                     Msg::NotifPreview {
@@ -1034,7 +1040,7 @@ impl App {
                     }
                     if let Some(i) = s.issues.iter_mut().find(|i| i.number == u.number) {
                         if let Some(c) = u.is_closed {
-                            i.state = if c { "CLOSED".into() } else { "OPEN".into() };
+                            i.state = if c { State::Closed } else { State::Open };
                         }
                         if let Some(l) = &u.labels {
                             i.labels.nodes = l.clone();
@@ -2463,8 +2469,8 @@ impl App {
                 }
                 match self.current_row() {
                     Some(SelectedRow::Notification(n)) => match n.subject_type() {
-                        "PullRequest" => custom(&kb.prs),
-                        "Issue" => custom(&kb.issues),
+                        SubjectType::PullRequest => custom(&kb.prs),
+                        SubjectType::Issue => custom(&kb.issues),
                         _ => false,
                     },
                     _ => false,
@@ -2497,7 +2503,7 @@ impl App {
                         (s("RepoName"), i.repository.name_with_owner.clone()),
                         (s("IssueNumber"), i.number.to_string()),
                         (s("IssueTitle"), i.title.clone()),
-                        (s("Author"), i.author.login.clone()),
+                        (s("Author"), Login::of(&i.author).to_string()),
                     ]);
                     self.run_custom_command(&b.command, vars);
                 }
@@ -2509,7 +2515,7 @@ impl App {
                         (s("PrNumber"), p.primary.number.to_string()),
                         (s("HeadRefName"), p.primary.head_ref_name.clone()),
                         (s("BaseRefName"), p.primary.base_ref_name.clone()),
-                        (s("Author"), p.primary.author.login.clone()),
+                        (s("Author"), Login::of(&p.primary.author).to_string()),
                     ]);
                     self.run_custom_command(&b.command, vars);
                 }
@@ -2524,7 +2530,7 @@ impl App {
                         vars.insert(s("RepoName"), pr.repository.name_with_owner.clone());
                         vars.insert(s("PrNumber"), pr.number.to_string());
                         vars.insert(s("BaseRefName"), pr.base_ref_name.clone());
-                        vars.insert(s("Author"), pr.author.login.clone());
+                        vars.insert(s("Author"), Login::of(&pr.author).to_string());
                     }
                     self.run_custom_command(&binding.command, vars);
                 }
@@ -2539,7 +2545,7 @@ impl App {
                     return;
                 }
                 match n.subject_type() {
-                    "PullRequest" => {
+                    SubjectType::PullRequest => {
                         if let Some(b) = find(&kb.prs) {
                             let mut vars = HashMap::from([
                                 (s("RepoName"), n.repo().to_string()),
@@ -2548,19 +2554,19 @@ impl App {
                             if let Some(pr) = &self.subject_pr {
                                 vars.insert(s("HeadRefName"), pr.primary.head_ref_name.clone());
                                 vars.insert(s("BaseRefName"), pr.primary.base_ref_name.clone());
-                                vars.insert(s("Author"), pr.primary.author.login.clone());
+                                vars.insert(s("Author"), Login::of(&pr.primary.author).to_string());
                             }
                             self.run_custom_command(&b.command, vars);
                         }
                     }
-                    "Issue" => {
+                    SubjectType::Issue => {
                         if let Some(b) = find(&kb.issues) {
                             let mut vars = HashMap::from([
                                 (s("RepoName"), n.repo().to_string()),
                                 (s("IssueNumber"), n.number().to_string()),
                             ]);
                             if let Some(i) = &self.subject_issue {
-                                vars.insert(s("Author"), i.author.login.clone());
+                                vars.insert(s("Author"), Login::of(&i.author).to_string());
                             }
                             self.run_custom_command(&b.command, vars);
                         }
@@ -2714,13 +2720,7 @@ impl App {
         let n = pr.primary.number;
         let repo = pr.primary.repository.name_with_owner.clone();
         let title = pr.primary.title.clone();
-        let rollup = pr
-            .primary
-            .commits
-            .nodes
-            .first()
-            .map(|c| c.commit.status_check_rollup.state.clone())
-            .unwrap_or_default();
+        let rollup = pr.primary.rollup_state();
         let tid = format!("pr_watch_{n}");
         self.start_task(
             &tid,
@@ -2741,9 +2741,9 @@ impl App {
                 ],
                 None,
             );
-            let status = match rollup.as_str() {
-                "SUCCESS" => "✅ Checks have passed",
-                "FAILURE" => "❌ Checks have failed",
+            let status = match rollup {
+                Some(CheckState::Success) => "✅ Checks have passed",
+                Some(CheckState::Failure) => "❌ Checks have failed",
                 _ => &format!("{} Checks are pending", crate::icons::PENDING_CHECKS),
             };
             tasks::desktop_notify(
@@ -2797,7 +2797,10 @@ impl App {
                         );
                     }
                 }
-                if matches!(n.subject_type(), "PullRequest" | "Issue") {
+                if matches!(
+                    n.subject_type(),
+                    SubjectType::PullRequest | SubjectType::Issue
+                ) {
                     (views::notification_loading(t, &n, width), None)
                 } else {
                     (views::notification_prompt(t, &n), None)
@@ -3216,7 +3219,7 @@ fn apply_update_pr(s: &mut Section, u: &UpdatePr) {
     if let Some(row) = s.prs.iter_mut().find(|p| p.primary.number == u.number) {
         let pr = &mut row.primary;
         if let Some(c) = u.is_closed {
-            pr.state = if c { "CLOSED".into() } else { "OPEN".into() };
+            pr.state = if c { State::Closed } else { State::Open };
         }
         if let (Some(c), Some(e)) = (&u.new_comment, row.details.as_mut()) {
             e.comments.nodes.push(c.clone());
@@ -3240,8 +3243,8 @@ fn apply_update_pr(s: &mut Section, u: &UpdatePr) {
             pr.is_draft = false;
         }
         if u.is_merged == Some(true) {
-            pr.state = "MERGED".into();
-            pr.mergeable.clear();
+            pr.state = State::Merged;
+            pr.mergeable = MergeableState::Unknown;
         }
     }
     s.is_loading = false;

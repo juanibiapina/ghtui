@@ -16,7 +16,7 @@ use crate::model::{Issue, Notification, PullRequest, PullRequestDetails};
 use crate::store::Entry;
 
 /// Bump to discard files written by an incompatible version.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 pub const MAX_DETAILS: usize = 300;
 pub const MAX_CONDITIONAL: usize = 50;
 
@@ -237,7 +237,7 @@ mod tests {
         serde_json::from_str(
             r#"{"id":"PR_1","number":7,"title":"Add sync","author":{"login":"juan"},
             "authorAssociation":"OWNER","updatedAt":"2026-11-07T10:00:00Z","createdAt":"2026-11-01T10:00:00Z",
-            "url":"https://github.com/juanibiapina/ghtui/pull/7","state":"OPEN","mergeable":null,
+            "url":"https://github.com/juanibiapina/ghtui/pull/7","state":"OPEN","mergeable":"UNKNOWN",
             "reviewDecision":null,"additions":3,"deletions":1,"headRefName":"sync","baseRefName":"main",
             "headRepository":{"name":"ghtui"},"headRef":null,
             "repository":{"name":"ghtui","owner":{"login":"juanibiapina"},"nameWithOwner":"juanibiapina/ghtui","isArchived":false,"branchProtectionRules":{"nodes":[]}},
@@ -304,11 +304,18 @@ mod tests {
         assert_eq!(s.prs[0].id, "PR_1");
         assert_eq!(s.prs[0].repository.name_with_owner, "juanibiapina/ghtui");
         assert_eq!(
-            s.prs[0].commits.nodes[0].commit.status_check_rollup.state,
-            "SUCCESS"
+            s.prs[0].rollup_state(),
+            Some(crate::model::CheckState::Success)
         );
-        assert_eq!(s.notifications[0].subject.kind, "Issue");
-        assert!(s.notifications[0].subscription.ends_with("/subscription"));
+        assert_eq!(
+            s.notifications[0].subject.kind,
+            crate::model::SubjectType::Issue
+        );
+        assert!(
+            s.notifications[0]
+                .subscription_url
+                .ends_with("/subscription")
+        );
         assert_eq!(lists.login.unwrap().value, "juan");
         assert_eq!(cache.load_details().prs.len(), 1);
     }

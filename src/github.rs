@@ -648,8 +648,8 @@ checkSuites(last: 20) {{ totalCount nodes {{ status conclusion app {{ name }} wo
 allCommits: commits(last: 100) {{ nodes {{ commit {{ abbreviatedOid committedDate messageHeadline \
 author {{ name user {{ login }} }} statusCheckRollup {{ state contexts(last: 1) {{ {COUNTS_BY_STATE} }} }} }} }} }} \
 comments(last: 50, orderBy: {{ field: UPDATED_AT, direction: DESC }}) {{ totalCount nodes {{ author {{ login }} body updatedAt }} }} \
-reviewThreads(last: 50) {{ nodes {{ id isOutdated line path comments(first: 20) {{ totalCount nodes {{ author {{ login }} body updatedAt }} }} }} }} \
-reviewRequests(last: 100) {{ totalCount nodes {{ asCodeOwner requestedReviewer {{ ... on User {{ login }} \
+reviewThreads(last: 50) {{ totalCount nodes {{ id isOutdated line path comments(first: 20) {{ totalCount nodes {{ author {{ login }} body updatedAt }} }} }} }} \
+reviewRequests(last: 100) {{ totalCount nodes {{ asCodeOwner requestedReviewer {{ __typename ... on User {{ login }} \
 ... on Team {{ slug name }} ... on Bot {{ login }} ... on Mannequin {{ login }} }} }} }} \
 reviews(last: 100) {{ totalCount nodes {{ author {{ login }} body state updatedAt }} }} \
 suggestedReviewers {{ isAuthor isCommenter reviewer {{ login }} }} \
@@ -702,7 +702,7 @@ nodes {{ ... on {kind} {{ {fields} }} }} issueCount pageInfo {{ hasNextPage star
     let vars = json!({
         "query": query,
         "limit": limit,
-        "endCursor": page.map(|p| p.end_cursor.clone()),
+        "endCursor": page.and_then(|p| p.end_cursor.clone()),
     });
     // Nodes that aren't of `kind` decode as empty objects; tolerate them.
     let data: SearchData<Value> = client()?.graphql(&doc, vars)?;
@@ -857,7 +857,7 @@ impl SyncQuery {
 }
 
 /// What a section's search contains now: row IDs and update times, in order.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Membership {
     pub total_count: usize,
     pub page_info: PageInfo,
@@ -867,8 +867,7 @@ pub struct Membership {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SyncNode {
-    #[serde(default)]
-    id: String,
+    id: Option<String>,
     updated_at: Option<DateTime<Utc>>,
 }
 
@@ -943,8 +942,7 @@ fn sync_chunk(
                     .nodes
                     .into_iter()
                     .flatten()
-                    .filter(|n| !n.id.is_empty())
-                    .filter_map(|n| Some((n.id, n.updated_at?)))
+                    .filter_map(|n| Some((n.id?, n.updated_at?)))
                     .collect(),
             })
         })
@@ -961,76 +959,42 @@ pub fn sync_sections(queries: &[SyncQuery]) -> Result<Vec<Result<Membership, Str
 }
 
 /// What GitHub reports for a PR now: enough to tell whether cached details changed.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PrVersion {
     pub id: String,
     pub url: String,
     pub updated_at: DateTime<Utc>,
-    pub head_oid: String,
-    pub rollup_state: String,
-    pub check_counts: Vec<(String, i64)>,
-}
-
-/// Check run and status context counts by state, merged and sorted.
-pub fn check_counts(runs: &[CountByState], contexts: &[CountByState]) -> Vec<(String, i64)> {
-    let mut v: Vec<(String, i64)> = runs
-        .iter()
-        .chain(contexts)
-        .map(|c| (c.state.clone(), c.count))
-        .collect();
-    v.sort();
-    v
+    pub head_oid: Option<String>,
+    pub rollup_state: Option<CheckState>,
+    pub check_counts: Vec<CountByState>,
 }
 
 /// True when the cached detail no longer matches what GitHub reports.
 pub fn is_outdated(detail: &PullRequestDetails, v: &PrVersion) -> bool {
-    let head = detail.commits.nodes.last().map(|c| &c.commit);
-    let oid = head.map(|c| c.oid.as_str()).unwrap_or_default();
-    let rollup = head
-        .map(|c| c.status_check_rollup.state.as_str())
-        .unwrap_or_default();
-    let counts = head
-        .map(|c| {
-            let ctx = &c.status_check_rollup.contexts;
-            check_counts(
-                &ctx.check_run_counts_by_state,
-                &ctx.status_context_counts_by_state,
-            )
-        })
-        .unwrap_or_default();
+    let head = detail.head();
+    let rollup = head.and_then(|c| c.status_check_rollup.as_ref());
     detail.updated_at != v.updated_at
-        || oid != v.head_oid
-        || rollup != v.rollup_state
-        || counts != v.check_counts
+        || head.map(|c| &c.oid) != v.head_oid.as_ref()
+        || rollup.map(|r| r.state) != v.rollup_state
+        || rollup
+            .map(|r| r.contexts.counts.by_state())
+            .unwrap_or_default()
+            != v.check_counts
 }
 
-#[derive(Deserialize, Default)]
-#[serde(default, rename_all = "camelCase")]
-struct CheckRollup {
-    state: String,
-    contexts: CheckRollupContexts,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(default, rename_all = "camelCase")]
-struct CheckRollupContexts {
-    check_run_counts_by_state: Vec<CountByState>,
-    status_context_counts_by_state: Vec<CountByState>,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CheckCommit {
     oid: String,
-    status_check_rollup: Option<CheckRollup>,
+    status_check_rollup: Option<StatusCheckCounts>,
 }
 
-#[derive(Deserialize, Default)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CheckNode {
     id: String,
     url: String,
-    updated_at: Option<DateTime<Utc>>,
+    updated_at: DateTime<Utc>,
     commits: Nodes<CommitNode<CheckCommit>>,
 }
 
@@ -1038,7 +1002,8 @@ struct CheckNode {
 pub fn check_pull_requests(ids: &[String]) -> Result<Vec<PrVersion>> {
     let doc = "query CheckPullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { id url updatedAt \
 commits(last: 1) { nodes { commit { oid statusCheckRollup { state contexts(last: 1) { \
-checkRunCountsByState { state count } statusContextCountsByState { state count } } } } } } } } }";
+totalCount checkRunCount checkRunCountsByState { state count } \
+statusContextCount statusContextCountsByState { state count } } } } } } } } }";
     let mut out = vec![];
     for chunk in ids.chunks(100) {
         let mut partial = client()?.graphql_partial(doc, json!({ "ids": chunk }))?;
@@ -1047,27 +1012,15 @@ checkRunCountsByState { state count } statusContextCountsByState { state count }
             let Ok(n) = serde_json::from_value::<CheckNode>(node) else {
                 continue;
             };
-            let Some(updated_at) = n.updated_at else {
-                continue;
-            };
-            let head = n
-                .commits
-                .nodes
-                .into_iter()
-                .last()
-                .map(|c| c.commit)
-                .unwrap_or_default();
-            let rollup = head.status_check_rollup.unwrap_or_default();
+            let head = n.commits.nodes.into_iter().last().map(|c| c.commit);
+            let rollup = head.as_ref().and_then(|c| c.status_check_rollup.as_ref());
             out.push(PrVersion {
                 id: n.id,
                 url: n.url,
-                updated_at,
-                head_oid: head.oid,
-                rollup_state: rollup.state,
-                check_counts: check_counts(
-                    &rollup.contexts.check_run_counts_by_state,
-                    &rollup.contexts.status_context_counts_by_state,
-                ),
+                updated_at: n.updated_at,
+                rollup_state: rollup.map(|r| r.state),
+                check_counts: rollup.map(|r| r.contexts.by_state()).unwrap_or_default(),
+                head_oid: head.map(|c| c.oid),
             });
         }
     }
@@ -1108,12 +1061,10 @@ pub fn current_login() -> Result<String> {
     Ok(v.viewer.login)
 }
 
-#[derive(Deserialize, Default)]
-#[serde(default)]
+#[derive(Deserialize)]
 struct User {
     login: String,
-    #[serde(deserialize_with = "crate::model::null_as_default")]
-    name: String,
+    name: Option<String>,
 }
 
 /// Mentionable users as (login, name), cached per repo.
@@ -1134,7 +1085,7 @@ pub fn fetch_repo_users(owner: &str, name: &str) -> Result<Vec<(String, String)>
     }
     let d: Data = client()?.graphql(
         "query GetMentionableUsers($owner: String!, $name: String!, $limit: Int!) { \
-repository(owner: $owner, name: $name) { mentionableUsers(first: $limit) { nodes { login } } } }",
+repository(owner: $owner, name: $name) { mentionableUsers(first: $limit) { nodes { login name } } } }",
         json!({ "owner": owner, "name": name, "limit": 100 }),
     )?;
     let users: Vec<(String, String)> = d
@@ -1143,8 +1094,7 @@ repository(owner: $owner, name: $name) { mentionableUsers(first: $limit) { nodes
             r.mentionable_users
                 .nodes
                 .into_iter()
-                .filter(|u| !u.login.is_empty())
-                .map(|u| (u.login, u.name))
+                .map(|u| (u.login, u.name.unwrap_or_default()))
                 .collect()
         })
         .unwrap_or_default();
@@ -1197,7 +1147,9 @@ pub fn fetch_notifications(
 ) -> Result<NotificationsPage> {
     let c = client()?;
     let filter = "&is_done=false&all=true";
-    let page_no: usize = page.and_then(|p| p.end_cursor.parse().ok()).unwrap_or(1);
+    let page_no: usize = page
+        .and_then(|p| p.end_cursor.as_deref()?.parse().ok())
+        .unwrap_or(1);
     let mut all: Vec<Notification> = vec![];
     if repo_filters.is_empty() {
         all = c.rest_get(&format!(
@@ -1217,8 +1169,8 @@ pub fn fetch_notifications(
         notifications: all,
         page_info: PageInfo {
             has_next_page: has_next,
-            start_cursor: String::new(),
-            end_cursor: (page_no + 1).to_string(),
+            start_cursor: None,
+            end_cursor: Some((page_no + 1).to_string()),
         },
     })
 }

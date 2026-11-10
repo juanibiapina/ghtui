@@ -628,7 +628,10 @@ mod tests {
     use crate::config::Config;
     use crate::input::{TextArea, TextInput};
     use crate::keys::Keys;
-    use crate::model::{Count, Label, Login, Nodes, Notification, PullRequest, Repository};
+    use crate::model::{
+        Count, Label, Login, Nodes, Notification, PullRequest, Repository, ReviewDecision, State,
+        SubjectType,
+    };
     use crate::section::{NotifRow, PrRow};
     use crate::views::{Editor, EditorMode};
 
@@ -642,14 +645,14 @@ mod tests {
             primary: PullRequest {
                 number,
                 title: title.into(),
-                author: Login {
+                author: Some(Login {
                     login: author.into(),
-                },
+                }),
                 updated_at: Utc::now() - Duration::days(days),
                 created_at: Utc::now() - Duration::days(days + 2),
                 url: format!("https://github.com/juanibiapina/ghtui/pull/{number}"),
-                state: "OPEN".into(),
-                review_decision: "REVIEW_REQUIRED".into(),
+                state: State::Open,
+                review_decision: Some(ReviewDecision::ReviewRequired),
                 additions: 120 * number,
                 deletions: 7 * number,
                 head_ref_name: format!("feature-{number}"),
@@ -660,9 +663,8 @@ mod tests {
                     nodes: vec![Label {
                         color: "a2eeef".into(),
                         name: "enhancement".into(),
-                        description: String::new(),
+                        description: None,
                     }],
-                    total_count: 1,
                 },
                 ..Default::default()
             },
@@ -926,15 +928,17 @@ mod tests {
     fn notifications() {
         let mut app = app(140, 24, Config::default());
         app.view = ViewType::Notifications;
-        let n = |id: &str, title: &str, kind: &str, reason: &str| {
+        let n = |id: &str, title: &str, kind: SubjectType, reason: &str| {
             NotifRow::new(Notification {
                 id: id.into(),
                 reason: reason.into(),
                 updated_at: Utc::now() - Duration::hours(5),
                 subject: crate::model::NotificationSubject {
                     title: title.into(),
-                    url: format!("https://api.github.com/repos/juanibiapina/ghtui/pulls/{id}"),
-                    kind: kind.into(),
+                    url: Some(format!(
+                        "https://api.github.com/repos/juanibiapina/ghtui/pulls/{id}"
+                    )),
+                    kind,
                     ..Default::default()
                 },
                 repository: crate::model::NotificationRepository {
@@ -949,10 +953,10 @@ mod tests {
             n(
                 "7",
                 "Draw tables with ratatui",
-                "PullRequest",
+                SubjectType::PullRequest,
                 "review_requested",
             ),
-            n("8", "Crash on resize", "Issue", "mention"),
+            n("8", "Crash on resize", SubjectType::Issue, "mention"),
         ];
         let s = &mut app.notifs[0];
         s.total_count = rows.len();

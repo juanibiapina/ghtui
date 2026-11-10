@@ -162,17 +162,12 @@ pub(super) fn fill_details(rows: &mut [PrRow], store: &DetailStore<PullRequestDe
     }
 }
 
-fn set_rollup(pr: &mut PullRequest, state: &str) {
-    match pr.commits.nodes.last_mut() {
-        Some(c) => c.commit.status_check_rollup.state = state.to_string(),
-        None => pr.commits.nodes.push(CommitNode {
-            commit: CommitWithRollup {
-                status_check_rollup: RollupState {
-                    state: state.to_string(),
-                },
-            },
-        }),
-    }
+fn set_rollup(pr: &mut PullRequest, state: Option<CheckState>) {
+    pr.commits.nodes = vec![CommitNode {
+        commit: CommitWithRollup {
+            status_check_rollup: state.map(|state| RollupState { state }),
+        },
+    }];
 }
 
 /// One section's part of a list sync.
@@ -732,7 +727,7 @@ impl App {
                 .notifs
                 .iter()
                 .flat_map(|s| s.notifs.iter())
-                .filter(|n| n.subject_type() == "PullRequest")
+                .filter(|n| n.subject_type() == SubjectType::PullRequest)
                 .filter_map(|n| self.live.pr_store.peek(&n.url(), |e| e.value.id.clone()))
                 .collect(),
             ViewType::Issues => vec![],
@@ -785,7 +780,7 @@ impl App {
         for v in &versions {
             for s in self.prs.iter_mut().chain(self.repo.iter_mut()) {
                 for row in s.prs.iter_mut().filter(|r| r.primary.id == v.id) {
-                    set_rollup(&mut row.primary, &v.rollup_state);
+                    set_rollup(&mut row.primary, v.rollup_state);
                     if let Some(e) = self.live.pr_store.get(&row.primary.url)
                         && github::is_outdated(&e.value, v)
                     {
@@ -875,7 +870,7 @@ impl App {
     pub(super) fn show_cached_subject(&mut self, n: &NotifRow) -> bool {
         let url = n.url();
         match n.subject_type() {
-            "PullRequest" => {
+            SubjectType::PullRequest => {
                 let Some(e) = self.live.pr_store.get(&url) else {
                     return false;
                 };
@@ -883,7 +878,7 @@ impl App {
                 self.schedule_check_selected(url);
                 true
             }
-            "Issue" => {
+            SubjectType::Issue => {
                 let Some(e) = self.live.issue_store.get(&url) else {
                     return false;
                 };
@@ -899,7 +894,7 @@ impl App {
             self.pr_tab = 0;
         }
         self.subject_pr = Some(PrRow {
-            primary: pr.to_pull_request(),
+            primary: PullRequest::from(&pr),
             details: Some(pr),
         });
         self.subject_issue = None;
@@ -917,8 +912,8 @@ impl App {
     pub(super) fn fetch_subject_now(&mut self, n: &NotifRow) {
         self.live.subject_wanted = Some(n.id().to_string());
         match n.subject_type() {
-            "PullRequest" => self.live.pr_store.fetch_now(&n.url()),
-            "Issue" => self.live.issue_store.fetch_now(&n.url()),
+            SubjectType::PullRequest => self.live.pr_store.fetch_now(&n.url()),
+            SubjectType::Issue => self.live.issue_store.fetch_now(&n.url()),
             _ => {}
         }
     }
@@ -996,7 +991,7 @@ impl App {
                     continue;
                 }
                 let (extras, fetched_at) = match n.subject_type() {
-                    "PullRequest" => match prs.peek(&u, |e| {
+                    SubjectType::PullRequest => match prs.peek(&u, |e| {
                         (
                             refresh::notification_extras(n, Subject::Pr(&e.value)),
                             e.fetched_at,
@@ -1005,7 +1000,7 @@ impl App {
                         Some(x) => x,
                         None => continue,
                     },
-                    "Issue" => match issues.peek(&u, |e| {
+                    SubjectType::Issue => match issues.peek(&u, |e| {
                         (
                             refresh::notification_extras(n, Subject::Issue(&e.value)),
                             e.fetched_at,
@@ -1017,7 +1012,7 @@ impl App {
                     _ => continue,
                 };
                 if url.is_none() && n.n.updated_at > fetched_at {
-                    if n.subject_type() == "PullRequest" {
+                    if n.subject_type() == SubjectType::PullRequest {
                         prs.mark_stale(&u);
                     } else {
                         issues.mark_stale(&u);
@@ -1028,7 +1023,7 @@ impl App {
                 n.is_draft = extras.is_draft;
                 n.activity = crate::section::activity_description(
                     &n.n.reason,
-                    &n.n.subject.kind,
+                    n.n.subject.kind,
                     &extras.actor,
                 );
                 n.actor = extras.actor;
@@ -1075,8 +1070,8 @@ impl App {
                     .notifs
                     .iter()
                     .map(|n| match n.subject_type() {
-                        "PullRequest" => Some((true, n.url())),
-                        "Issue" => Some((false, n.url())),
+                        SubjectType::PullRequest => Some((true, n.url())),
+                        SubjectType::Issue => Some((false, n.url())),
                         _ => None,
                     })
                     .collect(),
