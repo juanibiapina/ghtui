@@ -1,4 +1,4 @@
-//! Theme colors: the dark variants of the adaptive defaults, plus fixed colors.
+//! Theme colors: the defaults, overrides from the config, and fixed colors.
 
 use ratatui::style::{Color, Modifier, Style};
 

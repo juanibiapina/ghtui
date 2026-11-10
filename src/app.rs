@@ -2561,12 +2561,8 @@ impl App {
             cmd: util::shell_command(&cmd),
             on_done: Box::new(move |res| match res {
                 Ok(st) if st.success() => vec![],
-                Ok(st) => vec![Msg::Error(format!(
-                    "Whoops, got an error: {st}\nWhile running: {shown}"
-                ))],
-                Err(e) => vec![Msg::Error(format!(
-                    "Whoops, got an error: {e}\nWhile running: {shown}"
-                ))],
+                Ok(st) => vec![Msg::Error(format!("command failed: {shown}: {st}"))],
+                Err(e) => vec![Msg::Error(format!("command failed: {shown}: {e}"))],
             }),
         });
     }

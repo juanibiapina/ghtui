@@ -7,7 +7,7 @@ use ratatui::text::Line;
 
 use crate::highlight;
 use crate::icons;
-use crate::text::{Block, ansi_wrap_with, cells_to_line, str_width};
+use crate::text::{Block, cells_to_line, str_width, wrap_cells_with};
 use crate::theme::parse_color;
 
 type Cell = (char, Style);
@@ -1169,7 +1169,7 @@ fn join_wrapped(cells: &[Cell], width: usize, breakpoints: &str) -> Vec<Cell> {
     if width < 1 {
         return cells.to_vec();
     }
-    let lines = ansi_wrap_with(cells, width, breakpoints);
+    let lines = wrap_cells_with(cells, width, breakpoints);
     let mut out = vec![];
     for (i, l) in lines.into_iter().enumerate() {
         if i > 0 {

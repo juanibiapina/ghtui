@@ -67,7 +67,7 @@ struct Args {
     version: (),
 }
 
-/// go-gh repository.Current: $GH_REPO, else the git remotes (upstream, github, origin first).
+/// The current repository as gh finds it: $GH_REPO, else the git remotes (upstream, github, origin first).
 fn current_gh_repo() -> Option<(String, String)> {
     if let Ok(r) = std::env::var("GH_REPO") {
         let parts: Vec<&str> = r.trim_end_matches('/').split('/').collect();

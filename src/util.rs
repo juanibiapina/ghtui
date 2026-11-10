@@ -86,7 +86,7 @@ pub fn expand_home(path: &str) -> String {
     path.to_string()
 }
 
-/// Opens a URL the way go-gh's browser package does: $GH_BROWSER, $BROWSER, then the OS opener.
+/// Opens a URL as gh does: $GH_BROWSER, $BROWSER, then the OS opener.
 pub fn open_browser(url: &str) -> anyhow::Result<()> {
     let launcher = std::env::var("GH_BROWSER")
         .ok()

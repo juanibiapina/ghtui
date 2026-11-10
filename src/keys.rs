@@ -1,5 +1,5 @@
 //! Keybindings: default bindings, help text and rebinding from config. Keys are
-//! matched by bubbletea-style names ("ctrl+d", "alt+d", "enter", "space", "J").
+//! matched by name ("ctrl+d", "alt+d", "enter", "space", "J").
 
 use anyhow::{Result, bail};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -401,7 +401,7 @@ fn notification_binding<'a>(keys: &'a mut NotificationKeys, name: &str) -> Resul
     })
 }
 
-/// Converts a crossterm key event into bubbletea's key string form.
+/// The name of a crossterm key event, as keybindings write it.
 pub fn key_string(ev: &KeyEvent) -> String {
     let m = ev.modifiers;
     let base = match ev.code {
@@ -487,7 +487,7 @@ mod tests {
     }
 
     #[test]
-    fn key_names_match_bubbletea() {
+    fn key_events_get_their_config_names() {
         use ratatui::crossterm::event::KeyEventKind;
         let ev = |code, mods| KeyEvent {
             code,

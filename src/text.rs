@@ -1,5 +1,5 @@
 //! Styled-text helpers: width, joining, truncation, alignment and word wrap,
-//! with lipgloss semantics.
+//! on styled cells.
 
 use ratatui::layout::Alignment;
 use ratatui::style::Style;
@@ -103,16 +103,15 @@ pub fn concat(lines: Vec<Line<'static>>) -> Line<'static> {
     Line::from(spans)
 }
 
-/// Port of charmbracelet/x/ansi `wrap` (what lipgloss.Wrap and Style.Width use):
-/// breaks on spaces and hyphens, hard-wraps words longer than the limit, and
-/// keeps a line's trailing spaces unless they overflow.
-pub fn ansi_wrap(cells: &[(char, Style)], limit: usize) -> Vec<Vec<(char, Style)>> {
-    ansi_wrap_with(cells, limit, "")
+/// Wraps cells to `limit` columns: breaks on spaces and hyphens, hard-wraps words
+/// longer than the limit, and keeps a line's trailing spaces unless they overflow.
+pub fn wrap_cells(cells: &[(char, Style)], limit: usize) -> Vec<Vec<(char, Style)>> {
+    wrap_cells_with(cells, limit, "")
 }
 
-/// `ansi_wrap` with extra ASCII breakpoint characters (glamour uses " ,.;-+|").
+/// `wrap_cells` with extra ASCII breakpoint characters, such as " ,.;-+|".
 #[allow(unused_assignments)] // The macros reset state that later steps don't reread.
-pub fn ansi_wrap_with(
+pub fn wrap_cells_with(
     cells: &[(char, Style)],
     limit: usize,
     breakpoints: &str,
@@ -257,9 +256,9 @@ pub fn cells_to_line(cells: &[(char, Style)]) -> Line<'static> {
     Line::from(spans)
 }
 
-/// Word-wraps styled spans to `width` with `ansi_wrap`.
+/// Word-wraps styled spans to `width` with `wrap_cells`.
 pub fn wrap_spans(spans: &[Span<'static>], width: usize) -> Block {
-    ansi_wrap(&spans_to_cells(spans), width.max(1))
+    wrap_cells(&spans_to_cells(spans), width.max(1))
         .iter()
         .map(|l| cells_to_line(l))
         .collect()

@@ -1,5 +1,5 @@
 //! `--debug` logging to ./debug.log:
-//! kitchen-time stamps, level, caller, and $LOG_LEVEL (debug by default).
+//! time, level, caller, and $LOG_LEVEL (debug by default).
 
 use std::fs::File;
 use std::io::Write;
@@ -48,12 +48,12 @@ pub fn write(level: Level, caller: &str, msg: &str) {
         return;
     }
     let tag = match level {
-        Level::Debug => "DEBU",
+        Level::Debug => "DEBUG",
         Level::Info => "INFO",
         Level::Warn => "WARN",
-        Level::Error => "ERRO",
+        Level::Error => "ERROR",
     };
-    let time = chrono::Local::now().format("%-I:%M%p");
+    let time = chrono::Local::now().format("%H:%M:%S%.3f");
     let _ = writeln!(sink.file, "{time} {tag} <{caller}> {msg}");
 }
 

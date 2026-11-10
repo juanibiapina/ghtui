@@ -1,6 +1,6 @@
 //! GitHub API access: GraphQL search and
 //! resource queries for PRs and issues, REST for notifications, and the gh CLI
-//! for label lists. Authentication follows go-gh: $GH_TOKEN / $GITHUB_TOKEN,
+//! for label lists. Authentication follows gh: $GH_TOKEN / $GITHUB_TOKEN,
 //! otherwise `gh auth token`.
 //!
 //! Requests run in a lane. Background requests stop while GitHub rate limits
