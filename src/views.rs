@@ -43,7 +43,7 @@ pub struct Editor {
     /// Comment and approve ask before throwing away the text.
     pub confirm_discard: bool,
     pub discarding: bool,
-    pub cmp: Option<crate::complete::Completer>,
+    pub completer: Option<crate::complete::Completer>,
 }
 
 fn glyph((g, s): (&'static str, Style)) -> Span<'static> {

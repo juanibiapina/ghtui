@@ -496,15 +496,19 @@ impl App {
     }
 
     pub fn is_animating(&self) -> bool {
-        let cmp_loading =
+        let completions_loading =
             |c: Option<&Completer>| c.map(|c| c.fetch == FetchState::Loading).unwrap_or(false);
         self.tasks.values().any(|t| t.state == TaskState::Running)
             || self
                 .sections()
                 .iter()
-                .any(|s| s.is_loading || cmp_loading(s.search_cmp.as_ref()))
-            || cmp_loading(self.pr_editor.as_ref().and_then(|e| e.cmp.as_ref()))
-            || cmp_loading(self.issue_editor.as_ref().and_then(|e| e.cmp.as_ref()))
+                .any(|s| s.is_loading || completions_loading(s.search_completer.as_ref()))
+            || completions_loading(self.pr_editor.as_ref().and_then(|e| e.completer.as_ref()))
+            || completions_loading(
+                self.issue_editor
+                    .as_ref()
+                    .and_then(|e| e.completer.as_ref()),
+            )
     }
 
     /// Housekeeping run on every tick: spinner, clearing tasks, timers, refetch interval.
@@ -824,16 +828,16 @@ impl App {
                 err,
             } => {
                 let text_pos: Option<(String, (usize, usize))> = match target {
-                    CmpTarget::Search(k) => self
+                    CompletionTarget::Search(k) => self
                         .sections_for(k.view)
                         .get(k.id)
                         .and_then(|s| s.search.as_ref())
                         .map(|i| (i.value(), crate::input::Editable::cursor_pos(i))),
-                    CmpTarget::PrEditor => self
+                    CompletionTarget::PrEditor => self
                         .pr_editor
                         .as_ref()
                         .map(|e| (e.area.value(), crate::input::Editable::cursor_pos(&e.area))),
-                    CmpTarget::IssueEditor => self
+                    CompletionTarget::IssueEditor => self
                         .issue_editor
                         .as_ref()
                         .map(|e| (e.area.value(), crate::input::Editable::cursor_pos(&e.area))),
@@ -855,13 +859,13 @@ impl App {
                 if failed {
                     self.timers.push((
                         Instant::now() + Duration::from_secs(2),
-                        Msg::CmpClearStatus(target),
+                        Msg::CompletionClearStatus(target),
                     ));
                 } else if let Some(c) = self.completer_mut(target) {
                     c.fetch = FetchState::Idle;
                 }
             }
-            Msg::CmpClearStatus(target) => {
+            Msg::CompletionClearStatus(target) => {
                 if let Some(c) = self.completer_mut(target)
                     && matches!(c.fetch, FetchState::Error(_) | FetchState::Success)
                 {
@@ -1496,15 +1500,15 @@ impl App {
     }
 
     fn accept_suggestion(&mut self, i: usize) -> bool {
-        let target = if self.section().is_some_and(|s| s.search_cmp.is_some()) {
-            CmpTarget::Search(SectionKey {
+        let target = if self.section().is_some_and(|s| s.search_completer.is_some()) {
+            CompletionTarget::Search(SectionKey {
                 view: self.view,
                 id: self.curr,
             })
         } else if self.pr_editor.is_some() {
-            CmpTarget::PrEditor
+            CompletionTarget::PrEditor
         } else {
-            CmpTarget::IssueEditor
+            CompletionTarget::IssueEditor
         };
         let Some(c) = self.completer_mut(target).filter(|c| c.visible) else {
             return false;
@@ -1644,11 +1648,11 @@ impl App {
         match key {
             "ctrl+c" | "esc" => {
                 s.search = None;
-                s.search_cmp = None;
+                s.search_completer = None;
             }
             "enter" if s.kind == Kind::Branch => {
                 // The branch search filters locally.
-                s.search_cmp = None;
+                s.search_completer = None;
                 let v = s.search.take().map(|i| i.value()).unwrap_or_default();
                 s.search_value = v.clone();
                 s.search_bar.set_value(&v);
@@ -1657,7 +1661,7 @@ impl App {
                 self.on_viewed_row_changed();
             }
             "enter" => {
-                s.search_cmp = None;
+                s.search_completer = None;
                 let v = s.search.take().map(|i| i.value()).unwrap_or_default();
                 s.search_value = v.clone();
                 s.search_bar.set_value(&v);
@@ -1667,13 +1671,13 @@ impl App {
                 self.on_viewed_row_changed();
             }
             "ctrl+f" => {
-                if let Some(c) = s.search_cmp.as_ref()
+                if let Some(c) = s.search_completer.as_ref()
                     && let Some((o, n)) = c.repo.clone()
                 {
                     github::clear_suggestion_cache(&format!("{o}/{n}"));
                     let kind = c.kind;
                     self.load_suggestions(
-                        CmpTarget::Search(SectionKey { view, id }),
+                        CompletionTarget::Search(SectionKey { view, id }),
                         kind,
                         Some((o, n)),
                         true,
@@ -1681,7 +1685,7 @@ impl App {
                 }
             }
             _ => {
-                if let (Some(i), Some(c)) = (s.search.as_mut(), s.search_cmp.as_mut()) {
+                if let (Some(i), Some(c)) = (s.search.as_mut(), s.search_completer.as_mut()) {
                     c.handle_key(key, i);
                 } else if let Some(i) = s.search.as_mut() {
                     i.handle_key(key);
@@ -1701,14 +1705,14 @@ impl App {
             Some((p.next()?.to_string(), p.next()?.to_string()))
         });
         let input = TextInput::new(&value);
-        let mut cmp = Completer::new(SourceKind::Search, repo.clone(), false);
-        cmp.filter(&value, (value.chars().count(), 0));
-        cmp.show_completions(&value, (value.chars().count(), 0));
+        let mut completer = Completer::new(SourceKind::Search, repo.clone(), false);
+        completer.filter(&value, (value.chars().count(), 0));
+        completer.show_completions(&value, (value.chars().count(), 0));
         s.search = Some(input);
-        s.search_cmp = Some(cmp);
+        s.search_completer = Some(completer);
         if repo.is_some() {
             self.load_suggestions(
-                CmpTarget::Search(SectionKey { view, id }),
+                CompletionTarget::Search(SectionKey { view, id }),
                 SourceKind::Search,
                 repo,
                 true,
@@ -1716,17 +1720,21 @@ impl App {
         }
     }
 
-    fn completer_mut(&mut self, target: CmpTarget) -> Option<&mut Completer> {
+    fn completer_mut(&mut self, target: CompletionTarget) -> Option<&mut Completer> {
         match target {
-            CmpTarget::Search(k) => self.sections_for(k.view).get_mut(k.id)?.search_cmp.as_mut(),
-            CmpTarget::PrEditor => self.pr_editor.as_mut()?.cmp.as_mut(),
-            CmpTarget::IssueEditor => self.issue_editor.as_mut()?.cmp.as_mut(),
+            CompletionTarget::Search(k) => self
+                .sections_for(k.view)
+                .get_mut(k.id)?
+                .search_completer
+                .as_mut(),
+            CompletionTarget::PrEditor => self.pr_editor.as_mut()?.completer.as_mut(),
+            CompletionTarget::IssueEditor => self.issue_editor.as_mut()?.completer.as_mut(),
         }
     }
 
     fn load_suggestions(
         &mut self,
-        target: CmpTarget,
+        target: CompletionTarget,
         kind: SourceKind,
         repo: Option<(String, String)>,
         show_loading: bool,
@@ -1827,11 +1835,11 @@ impl App {
             }
             "ctrl+f" => {
                 let target = if is_pr {
-                    CmpTarget::PrEditor
+                    CompletionTarget::PrEditor
                 } else {
-                    CmpTarget::IssueEditor
+                    CompletionTarget::IssueEditor
                 };
-                if let Some(c) = ed.as_ref().and_then(|e| e.cmp.as_ref()) {
+                if let Some(c) = ed.as_ref().and_then(|e| e.completer.as_ref()) {
                     let (kind, repo) = (c.kind, c.repo.clone());
                     if let Some((o, n)) = &repo {
                         github::clear_suggestion_cache(&format!("{o}/{n}"));
@@ -1851,7 +1859,7 @@ impl App {
                         return;
                     }
                 }
-                match e.cmp.as_mut() {
+                match e.completer.as_mut() {
                     Some(c) => {
                         c.handle_key(key, &mut e.area);
                     }
@@ -1991,7 +1999,7 @@ impl App {
                 )
             }
         };
-        let cmp = match mode {
+        let completer = match mode {
             EditorMode::Comment | EditorMode::Approve => Some(Completer::new(
                 SourceKind::Mention { with_at: true },
                 repo.clone(),
@@ -2011,20 +2019,20 @@ impl App {
             area: TextArea::new(&initial),
             confirm_discard: matches!(mode, EditorMode::Comment | EditorMode::Approve),
             discarding: false,
-            cmp,
+            completer,
         };
-        let kind = ed.cmp.as_ref().map(|c| c.kind);
+        let kind = ed.completer.as_ref().map(|c| c.kind);
         if matches!(mode, EditorMode::Assign | EditorMode::Label) {
             let text = ed.area.value();
             let pos = crate::input::Editable::cursor_pos(&ed.area);
-            if let Some(c) = ed.cmp.as_mut() {
+            if let Some(c) = ed.completer.as_mut() {
                 c.show_completions(&text, pos);
             }
         }
         let target = if is_pr {
-            CmpTarget::PrEditor
+            CompletionTarget::PrEditor
         } else {
-            CmpTarget::IssueEditor
+            CompletionTarget::IssueEditor
         };
         if is_pr {
             self.pr_tab = 0;

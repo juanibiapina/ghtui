@@ -576,7 +576,7 @@ pub fn draw(f: &mut Frame, app: &App) -> HitMap {
 
     // Autocomplete popups are layers over the content.
     let sections = areas.sections;
-    if let Some(c) = app.section().and_then(|s| s.search_cmp.as_ref()) {
+    if let Some(c) = app.section().and_then(|s| s.search_completer.as_ref()) {
         let below_search = Rect::new(
             sections.x + 1,
             sections.y + 2,
@@ -588,7 +588,7 @@ pub fn draw(f: &mut Frame, app: &App) -> HitMap {
     }
     let editor = app.pr_editor.as_ref().or(app.issue_editor.as_ref());
     if let (Some(p), Some(ed)) = (areas.preview, editor)
-        && let Some(c) = ed.cmp.as_ref().filter(|c| c.visible)
+        && let Some(c) = ed.completer.as_ref().filter(|c| c.visible)
     {
         let text = ed.area.value();
         let lines = text.split('\n').count();
@@ -897,7 +897,7 @@ mod tests {
         ];
         c.visible = true;
         c.fetch = FetchState::Success;
-        s.search_cmp = Some(c);
+        s.search_completer = Some(c);
         insta::assert_snapshot!(screen(app));
     }
 
@@ -917,7 +917,7 @@ mod tests {
             area: TextArea::new("Looks good, thanks @oct"),
             confirm_discard: true,
             discarding: false,
-            cmp: Some(c),
+            completer: Some(c),
         });
         insta::assert_snapshot!(screen(app));
     }

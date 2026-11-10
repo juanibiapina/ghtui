@@ -284,8 +284,8 @@ pub struct Keybindings {
     pub branches: Vec<Keybinding>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub notifications: Vec<Keybinding>,
-    #[serde(rename = "completions", skip_serializing_if = "Vec::is_empty")]
-    pub cmp: Vec<Keybinding>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub completions: Vec<Keybinding>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

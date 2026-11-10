@@ -78,7 +78,7 @@ pub enum Payload {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CmpTarget {
+pub enum CompletionTarget {
     Search(SectionKey),
     PrEditor,
     IssueEditor,
@@ -86,12 +86,12 @@ pub enum CmpTarget {
 
 pub enum Msg {
     Suggestions {
-        target: CmpTarget,
+        target: CompletionTarget,
         users: Option<Vec<(String, String)>>,
         labels: Option<Vec<Label>>,
         err: Option<String>,
     },
-    CmpClearStatus(CmpTarget),
+    CompletionClearStatus(CompletionTarget),
     TaskFinished {
         task_id: String,
         section: Option<SectionKey>,
