@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Show whether a PR can be merged at the top of its Overview tab, above the description.
+
 ### Fixed
 
 - Fix PR previews showing checks in progress after they finished, in repositories with apps that create check suites without running checks.

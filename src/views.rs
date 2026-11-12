@@ -222,17 +222,9 @@ fn boxed(lines: Block, inner_w: usize, border: Color, set: border::Set) -> Block
     out
 }
 
-/// A padded block with an optional bottom divider.
-fn check_category(
-    t: &Theme,
-    icon: Span<'static>,
-    title: &str,
-    subtitle: &str,
-    is_last: bool,
-    w: usize,
-) -> Block {
-    let mut out: Block = vec![Line::default()];
-    out.push(Line::from(vec![
+/// A title line with its wrapped subtitle.
+fn check_category(t: &Theme, icon: Span<'static>, title: &str, subtitle: &str, w: usize) -> Block {
+    let mut out: Block = vec![Line::from(vec![
         raw(" "),
         icon,
         raw(" "),
@@ -240,18 +232,11 @@ fn check_category(
             title.to_string(),
             Style::default().add_modifier(Modifier::BOLD),
         ),
-    ]));
+    ])];
     if !subtitle.is_empty() {
         for l in wrap_str(subtitle, w.saturating_sub(4).max(1), t.faint()) {
             out.push(concat(vec![Line::from(raw("   ")), l]));
         }
-    }
-    out.push(Line::default());
-    if !is_last {
-        out.push(Line::from(span(
-            "─".repeat(w),
-            Style::default().fg(t.faint_border),
-        )));
     }
     out
 }
@@ -600,7 +585,8 @@ pub fn pr_view(t: &Theme, row: &PrRow, width: usize, st: &PrViewState) -> (Block
 }
 
 fn pr_overview(t: &Theme, row: &PrRow, w: usize, st: &PrViewState) -> Block {
-    let mut b: Block = vec![];
+    let mut b = checks_overview(t, row, w, &st.approve_workflows_key);
+    b.push(Line::default());
     let reviewers = requested_reviewers(t, row, w);
     if !reviewers.is_empty() {
         b.extend(reviewers);
@@ -618,10 +604,6 @@ fn pr_overview(t: &Theme, row: &PrRow, w: usize, st: &PrViewState) -> Block {
     b.push(heading(t, format!("{} Changes", icons::FILES)));
     b.push(Line::default());
     b.extend(changes_overview(t, row, w));
-    b.push(Line::default());
-    b.push(heading(t, format!("{} Checks", icons::CHECKS)));
-    b.push(Line::default());
-    b.extend(checks_overview(t, row, w, &st.approve_workflows_key));
     if let Some(ed) = st.editor {
         b.extend(editor_view(t, ed, w));
     }
@@ -848,7 +830,6 @@ fn checks_overview(t: &Theme, row: &PrRow, w: usize, approve_key: &str) -> Block
             glyph(t.merged_glyph()),
             "Pull request successfully merged and closed",
             "The branch has been merged",
-            true,
             inner,
         );
         return boxed(c, inner, theme::MERGED_PR, border::ROUNDED);
@@ -859,7 +840,6 @@ fn checks_overview(t: &Theme, row: &PrRow, w: usize, approve_key: &str) -> Block
             raw(""),
             "Closed with unmerged commits",
             "This pull request is closed",
-            true,
             inner,
         );
         return boxed(c, inner, t.faint_border, border::ROUNDED);
@@ -874,10 +854,12 @@ fn checks_overview(t: &Theme, row: &PrRow, w: usize, approve_key: &str) -> Block
     } else {
         t.faint_border
     };
-    let mut parts = vec![];
-    parts.extend(review);
-    parts.extend(checks);
-    parts.extend(merge);
+    let divider = Line::from(span("─".repeat(inner), Style::default().fg(t.faint_border)));
+    let parts: Block = [review, checks, merge]
+        .into_iter()
+        .filter(|b| !b.is_empty())
+        .collect::<Vec<_>>()
+        .join(&divider);
     boxed(parts, inner, border, border::ROUNDED)
 }
 
@@ -955,7 +937,7 @@ fn review_status(t: &Theme, row: &PrRow, w: usize) -> (Block, Status) {
             Status::NonRequested,
         ),
     };
-    (check_category(t, icon, title, &subtitle, false, w), status)
+    (check_category(t, icon, title, &subtitle, w), status)
 }
 
 fn checks_bar(t: &Theme, s: &ChecksStats, w: usize) -> Line<'static> {
@@ -990,7 +972,7 @@ fn checks_bar(t: &Theme, s: &ChecksStats, w: usize) -> Line<'static> {
 fn checks_status(t: &Theme, row: &PrRow, w: usize, approve_key: &str) -> (Block, Status) {
     let Some(e) = &row.details else {
         return (
-            check_category(t, glyph(t.waiting_glyph()), "Loading...", "", false, w),
+            check_category(t, glyph(t.waiting_glyph()), "Loading...", "", w),
             Status::Waiting,
         );
     };
@@ -1044,11 +1026,11 @@ fn checks_status(t: &Theme, row: &PrRow, w: usize, approve_key: &str) -> (Block,
     if s.succeeded > 0 {
         stats.push(format!("{} successful", s.succeeded));
     }
-    let mut block = check_category(t, icon, title, &stats.join(", "), false, w);
-    // Insert the bar under the subtitle (before the trailing blank + divider).
-    let bar = concat(vec![Line::from(raw("   ")), checks_bar(t, &s, w + 2)]);
-    let at = block.len().saturating_sub(2);
-    block.insert(at, bar);
+    let mut block = check_category(t, icon, title, &stats.join(", "), w);
+    block.push(concat(vec![
+        Line::from(raw("   ")),
+        checks_bar(t, &s, w + 2),
+    ]));
     (block, status)
 }
 
@@ -1092,9 +1074,9 @@ fn merge_status(t: &Theme, row: &PrRow, w: usize) -> (Block, Status) {
             Status::Failure,
         )
     } else {
-        (raw(""), "", "", Status::Success)
+        return (vec![], Status::Success);
     };
-    (check_category(t, icon, title, subtitle, true, w), status)
+    (check_category(t, icon, title, subtitle, w), status)
 }
 
 fn all_checks(t: &Theme, row: &PrRow, w: usize) -> Block {
