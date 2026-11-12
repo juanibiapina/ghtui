@@ -6,7 +6,7 @@ use std::process::Command;
 use anyhow::Result;
 use chrono::Utc;
 
-use crate::app::{App, ExecRequest, NotificationFilters};
+use crate::app::{App, NotificationFilters};
 use crate::bookmarks;
 use crate::github;
 use crate::model::*;
@@ -135,34 +135,33 @@ pub fn simple_issue(app: &mut App, verb: &str, n: i64, repo: &str, key: SectionK
     run_gh_task(app, args, start, done, key, payload);
 }
 
-/// Merging runs interactively, so the TUI is suspended while it runs.
+/// Merges with the viewer's default merge method for the repository, keeping the branch.
 pub fn merge(app: &mut App, n: i64, repo: &str, key: SectionKey) {
     let id = app.start_task(
         &format!("Merging PR #{n}"),
         &format!("PR #{n} has been merged"),
     );
-    let mut cmd = Command::new("gh");
-    cmd.args(["pr", "merge", &n.to_string(), "-R", repo]);
-    app.exec = Some(ExecRequest {
-        cmd,
-        on_done: Box::new(move |res| {
-            let merged = matches!(&res, Ok(st) if st.success());
-            let err = match res {
-                Err(e) => Some(e.to_string()),
-                Ok(st) if !st.success() => Some(st.to_string()),
-                _ => None,
-            };
-            vec![Msg::TaskFinished {
-                task: id,
-                section: Some(key),
-                result: err.map_or(Ok(()), Err),
-                payload: Some(Payload::UpdatePr(UpdatePr {
-                    number: n,
-                    is_merged: Some(merged),
-                    ..Default::default()
-                })),
-            }]
-        }),
+    let repo = repo.to_string();
+    app.pool.spawn(move || {
+        let result = github::default_merge_method(&repo)
+            .map_err(|e| format!("failed to get merge method: {e}"))
+            .and_then(|method| {
+                run_gh(
+                    &["pr", "merge", &n.to_string(), "-R", &repo, method.flag()],
+                    None,
+                )
+                .map(|_| ())
+            });
+        Some(Msg::TaskFinished {
+            task: id,
+            section: Some(key),
+            payload: Some(Payload::UpdatePr(UpdatePr {
+                number: n,
+                is_merged: Some(result.is_ok()),
+                ..Default::default()
+            })),
+            result,
+        })
     });
 }
 

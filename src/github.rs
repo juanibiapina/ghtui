@@ -1377,6 +1377,30 @@ pub fn fetch_commit(repo: &str, sha: &str) -> Result<CommitDetails> {
 const DISCUSSION_FIELDS: &str = "number title url body author { login } createdAt \
 category { name } isAnswered comments(last: 50) { totalCount nodes { author { login } body createdAt updatedAt } }";
 
+/// The merge method the viewer last used in `repo`, or GitHub's fallback.
+pub fn default_merge_method(repo: &str) -> Result<MergeMethod> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Repo {
+        viewer_default_merge_method: MergeMethod,
+    }
+    #[derive(Deserialize)]
+    struct Data {
+        repository: Option<Repo>,
+    }
+    let (owner, name) = repo
+        .split_once('/')
+        .ok_or_else(|| anyhow!("not a repository: {repo}"))?;
+    let data: Data = client()?.graphql(
+        "query DefaultMergeMethod($owner: String!, $name: String!) { \
+repository(owner: $owner, name: $name) { viewerDefaultMergeMethod } }",
+        json!({ "owner": owner, "name": name }),
+    )?;
+    data.repository
+        .map(|r| r.viewer_default_merge_method)
+        .ok_or_else(|| anyhow!("repository not found: {repo}"))
+}
+
 pub fn fetch_discussion(repo: &str, number: i64) -> Result<Discussion> {
     #[derive(Deserialize)]
     struct Repo {

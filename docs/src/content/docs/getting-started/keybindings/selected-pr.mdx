@@ -83,8 +83,9 @@ By default `ghtui` only displays the first 5 lines.
 
 ## `m` - Merge PR
 
-Press <kbd>m</kbd> to merge the PR. When you do, the dashboard uses the `gh pr merge` command to
-merge the PR.
+Press <kbd>m</kbd> to merge the PR. After you confirm, the dashboard merges it in the background with
+`gh pr merge`, using your default merge method for the repository on GitHub. It asks no further
+questions and keeps the branch.
 
 ## `u` - Update PR
 
