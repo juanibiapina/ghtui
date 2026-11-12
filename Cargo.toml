@@ -1,6 +1,6 @@
 [package]
 name = "ghtui"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "A rich terminal UI for GitHub that doesn't break your flow"
 authors = ["Juan Ibiapina <juanibiapina@gmail.com>"]

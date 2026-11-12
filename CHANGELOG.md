@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-12
+
 ### Added
 
 - Add the `quitOnEsc` setting to quit with `esc`.
@@ -70,5 +72,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Browse local branches and their PRs in the branches view, enabled with `FF_REPO_VIEW`.
 - Install with Homebrew or a shell installer.
 
-[Unreleased]: https://github.com/juanibiapina/ghtui/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/juanibiapina/ghtui/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/juanibiapina/ghtui/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/juanibiapina/ghtui/releases/tag/v0.1.0
