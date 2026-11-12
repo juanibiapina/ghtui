@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix PR previews showing checks in progress after they finished, in repositories with apps that create check suites without running checks.
+
 ## [0.2.0] - 2026-11-12
 
 ### Added

@@ -494,10 +494,11 @@ impl CheckSuiteNode {
         self.conclusion == Some(CheckState::ActionRequired)
     }
     pub fn is_pending(&self) -> bool {
-        matches!(
-            self.status,
-            CheckState::Queued | CheckState::Pending | CheckState::Waiting
-        )
+        self.workflow_run.is_some()
+            && matches!(
+                self.status,
+                CheckState::Queued | CheckState::Pending | CheckState::Waiting
+            )
     }
 }
 
@@ -1176,6 +1177,24 @@ mod tests {
             matches!(&nodes[0], CheckContext::CheckRun(r) if r.conclusion == Some(CheckState::Failure))
         );
         assert!(matches!(&nodes[1], CheckContext::StatusContext(s) if s.context == "ci/deploy"));
+    }
+
+    #[test]
+    fn only_queued_workflow_runs_are_pending() {
+        let suites: CountedNodes<CheckSuiteNode> = serde_json::from_str(
+            r#"{"totalCount":2,"nodes":[
+                {"status":"QUEUED","conclusion":null,"app":{"name":"Vercel"},"workflowRun":null},
+                {"status":"QUEUED","conclusion":null,"app":{"name":"GitHub Actions"},
+                    "workflowRun":{"workflow":{"name":"CI"}}}
+            ]}"#,
+        )
+        .unwrap();
+        let pending: Vec<bool> = suites
+            .nodes
+            .iter()
+            .map(CheckSuiteNode::is_pending)
+            .collect();
+        assert_eq!(pending, [false, true]);
     }
 
     #[test]
