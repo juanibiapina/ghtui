@@ -21,6 +21,8 @@ pub enum Target {
     HelpPopup,
     Backdrop,
     Suggestion(usize),
+    ConfirmPopup,
+    ConfirmButton(crate::confirm::Choice),
 }
 
 impl Target {

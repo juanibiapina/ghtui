@@ -4,6 +4,7 @@ mod app;
 mod bookmarks;
 mod complete;
 mod config;
+mod confirm;
 mod disk_cache;
 mod git;
 mod github;

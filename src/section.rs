@@ -701,32 +701,9 @@ impl Section {
 
     pub fn prompt_text(&self) -> Option<String> {
         let (action, _) = self.prompt.as_ref()?;
-        let what = match self.kind {
-            Kind::Pr => "PR",
-            Kind::Issue => "issue",
-            Kind::Notification | Kind::Branch => "",
-        };
-        Some(match (self.kind, action.as_str()) {
-            (Kind::Pr | Kind::Issue, "close") => {
-                format!("Are you sure you want to close this {what}? (y/N) ")
-            }
-            (Kind::Pr | Kind::Issue, "reopen") => {
-                format!("Are you sure you want to reopen this {what}? (y/N) ")
-            }
-            (Kind::Pr, "ready") => "Are you sure you want to mark this PR as ready? (y/N) ".into(),
-            (Kind::Pr, "merge") => "Are you sure you want to merge this PR? (y/N) ".into(),
-            (Kind::Pr, "update") => "Are you sure you want to update this PR? (y/N) ".into(),
-            (Kind::Pr, "approveWorkflows") => {
-                "Are you sure you want to approve all workflows? (y/N) ".into()
-            }
-            (Kind::Branch, "delete") => {
-                "Are you sure you want to delete this branch? (y/N) ".into()
-            }
-            (Kind::Branch, "new") => "Enter branch name: ".into(),
-            (Kind::Branch, "create_pr") => "Enter PR title: ".into(),
-            (Kind::Notification, "done_all") => {
-                "Are you sure you want to mark all as done? (y/N) ".into()
-            }
+        Some(match action.as_str() {
+            "new" => "Enter branch name: ".into(),
+            "create_pr" => "Enter PR title: ".into(),
             _ => String::new(),
         })
     }

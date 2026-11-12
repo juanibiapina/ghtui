@@ -46,7 +46,6 @@ pub struct Editor {
     pub area: TextArea,
     /// Comment and approve ask before throwing away the text.
     pub confirm_discard: bool,
-    pub discarding: bool,
     pub completer: Option<crate::complete::Completer>,
 }
 
@@ -1460,11 +1459,7 @@ fn file_list(t: &Theme, files: &[FileChange], w: usize) -> Block {
 /// The prompt, text area and a short help line, in a bordered box.
 pub fn editor_view(t: &Theme, ed: &Editor, w: usize) -> Block {
     let inner = w.saturating_sub(2);
-    let prompt = if ed.discarding {
-        span("Discard comment? (y/N)", Style::default().fg(t.error_text))
-    } else {
-        span(ed.prompt.clone(), t.secondary())
-    };
+    let prompt = span(ed.prompt.clone(), t.secondary());
     let mut lines: Block = vec![Line::from(prompt), Line::default()];
     lines.extend(ed.area.view(inner, 6, t.primary(), t.faint()));
     lines.push(Line::from(vec![

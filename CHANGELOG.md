@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Show whether a PR can be merged at the top of its Overview tab, above the description.
 - Merge a PR with your default merge method after confirming, without leaving the dashboard.
+- Ask for confirmation in a dialog that names the PR, issue or branch. Press `y` to confirm without `enter`, or click a button.
 
 ### Fixed
 

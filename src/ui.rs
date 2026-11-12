@@ -403,14 +403,8 @@ fn render_footer(app: &App, area: Rect, buf: &mut Buffer, hits: &mut HitMap) {
         )
         .render(area, buf);
     }
-    if app.confirm_quit_shown {
-        return Line::from("Really quit? (Press y/enter to confirm, any other key to cancel)")
-            .render(area, buf);
-    }
     let pager_style = Style::default().bg(t.selected_background).fg(t.faint_text);
-    let left_text = if let Some(p) = &app.notif_prompt {
-        Some(p.clone())
-    } else if let Some(s) = app.section() {
+    let left_text = if let Some(s) = app.section() {
         match s.prompt_text() {
             Some(p) => {
                 let input = s
@@ -430,11 +424,7 @@ fn render_footer(app: &App, area: Rect, buf: &mut Buffer, hits: &mut HitMap) {
     };
     let branch_pager = app
         .section()
-        .filter(|s| {
-            s.kind == crate::section::Kind::Branch
-                && s.prompt.is_none()
-                && app.notif_prompt.is_none()
-        })
+        .filter(|s| s.kind == crate::section::Kind::Branch && s.prompt.is_none())
         .map(|s| crate::section::branch_pager(s, t));
     let left = match left_text {
         _ if branch_pager.is_some() => branch_pager.unwrap(),
@@ -613,6 +603,9 @@ pub fn draw(f: &mut Frame, app: &App) -> HitMap {
         hits.push(area, Target::Backdrop);
         hits.push(help.popup(area), Target::HelpPopup);
     }
+    if let Some(c) = &app.confirm {
+        c.render(area, buf, t, &mut hits);
+    }
     hits
 }
 
@@ -674,7 +667,7 @@ mod tests {
     }
 
     fn app(width: u16, height: u16, cfg: Config) -> App {
-        let (pool, _rx) = crate::msg::Pool::new(1);
+        let (pool, _rx) = crate::msg::Pool::new(0);
         let mut app = App::new(
             cfg,
             Keys::default(),
@@ -824,12 +817,80 @@ mod tests {
     }
 
     #[test]
-    fn clicks_do_nothing_while_a_confirmation_is_open() {
+    fn clicking_outside_a_confirmation_cancels_it() {
         let mut app = right_preview(160, 30);
-        app.confirm_quit_shown = true;
+        app.cfg.confirm_quit = true;
+        app.handle_key("q");
         let (buf, _) = frame(&mut app);
-        assert!(!click(&mut app, find(&buf, "Fix the footer")));
+        assert!(click(&mut app, find(&buf, "Fix the footer")));
+        assert!(app.confirm.is_none());
+        assert!(!app.quit);
         assert_eq!(app.section().unwrap().cursor, 0);
+    }
+
+    fn merge_dialog() -> App {
+        let mut app = right_preview(160, 30);
+        app.handle_key("m");
+        app
+    }
+
+    fn started(app: &App) -> Vec<String> {
+        app.tasks.values().map(|t| t.start_text.clone()).collect()
+    }
+
+    #[test]
+    fn merge_asks_in_a_dialog() {
+        insta::assert_snapshot!(screen(merge_dialog()));
+    }
+
+    #[test]
+    fn a_confirmation_runs_its_action_only_on_yes() {
+        let mut app = merge_dialog();
+        app.handle_key("n");
+        assert!(app.confirm.is_none());
+        app.handle_key("m");
+        app.handle_key("tab");
+        app.handle_key("enter");
+        assert!(app.confirm.is_none());
+        assert!(started(&app).is_empty());
+        app.handle_key("m");
+        app.handle_key("enter");
+        assert_eq!(started(&app), ["Merging PR #1"]);
+    }
+
+    #[test]
+    fn a_confirmation_acts_on_the_row_selected_when_it_opened() {
+        let mut app = merge_dialog();
+        app.prs[0].prs.remove(0);
+        app.handle_key("y");
+        assert_eq!(started(&app), ["Merging PR #1"]);
+    }
+
+    #[test]
+    fn clicking_a_dialog_button_answers_it() {
+        let mut app = merge_dialog();
+        let (buf, _) = frame(&mut app);
+        assert!(click(&mut app, find(&buf, "[ Cancel ]")));
+        assert!(app.confirm.is_none());
+        assert!(started(&app).is_empty());
+        app.handle_key("m");
+        let (buf, _) = frame(&mut app);
+        assert!(click(&mut app, find(&buf, "[ Merge ]")));
+        assert_eq!(started(&app), ["Merging PR #1"]);
+    }
+
+    #[test]
+    fn closing_a_comment_editor_asks_before_discarding_the_text() {
+        let mut app = right_preview(160, 30);
+        app.handle_key("c");
+        app.handle_key("h");
+        app.handle_key("i");
+        app.handle_key("esc");
+        app.handle_key("n");
+        assert_eq!(app.pr_editor.as_ref().unwrap().area.value(), "hi");
+        app.handle_key("esc");
+        app.handle_key("y");
+        assert!(app.pr_editor.is_none());
     }
 
     #[test]
@@ -919,7 +980,6 @@ mod tests {
             prompt: "Leave a comment…".into(),
             area: TextArea::new("Looks good, thanks @oct"),
             confirm_discard: true,
-            discarding: false,
             completer: Some(c),
         });
         insta::assert_snapshot!(screen(app));

@@ -13,6 +13,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use crate::bookmarks;
 use crate::complete::{Completer, FetchState, SourceKind};
 use crate::config::{Config, IssuesSectionConfig, PreviewPosition, PrsSectionConfig, ViewType};
+use crate::confirm::{Action as ConfirmAction, Answer, Confirm};
 use crate::github;
 use crate::help::Help;
 use crate::input::{TextArea, TextInput};
@@ -119,7 +120,7 @@ pub struct App {
     pub preview_tabs_line: Option<usize>,
     pub position_override: Option<Position>,
     pub help: Option<Help>,
-    pub confirm_quit_shown: bool,
+    pub confirm: Option<Confirm>,
     pub error: Option<String>,
     pub tasks: HashMap<TaskId, Task>,
     next_task: u64,
@@ -136,8 +137,6 @@ pub struct App {
     pub subject_pr: Option<PrRow>,
     pub subject_issue: Option<Issue>,
     pub subject_details: Option<SubjectDetails>,
-    pub pending_notif_action: Option<String>,
-    pub notif_prompt: Option<String>,
     pub section_mode: bool,
     pub width: usize,
     pub height: usize,
@@ -194,7 +193,7 @@ impl App {
             preview_tabs_line: None,
             position_override: None,
             help: None,
-            confirm_quit_shown: false,
+            confirm: None,
             error: None,
             tasks: HashMap::new(),
             next_task: 0,
@@ -211,8 +210,6 @@ impl App {
             subject_pr: None,
             subject_issue: None,
             subject_details: None,
-            pending_notif_action: None,
-            notif_prompt: None,
             section_mode: false,
             width,
             height,
@@ -736,7 +733,7 @@ impl App {
 
     fn request_quit(&mut self) {
         if self.cfg.confirm_quit {
-            self.confirm_quit_shown = true;
+            self.ask(ConfirmAction::Quit);
         } else {
             self.quit = true;
         }
@@ -1122,6 +1119,10 @@ impl App {
         self.error = None;
         self.invalidate_preview();
 
+        if let Some(c) = self.confirm.take() {
+            self.answer_confirmation(c.handle_key(key));
+            return;
+        }
         if self.section().map(|s| s.search.is_some()).unwrap_or(false) {
             self.handle_search_key(key);
             return;
@@ -1136,21 +1137,6 @@ impl App {
         }
         if self.issue_editor.is_some() {
             self.handle_editor_key(key, false);
-            return;
-        }
-        if self.confirm_quit_shown {
-            if key == "y" || key == "enter" {
-                self.quit = true;
-            } else {
-                self.confirm_quit_shown = false;
-            }
-            return;
-        }
-        if let Some(action) = self.pending_notif_action.take() {
-            self.notif_prompt = None;
-            if key == "y" || key == "Y" {
-                self.execute_notification_action(&action);
-            }
             return;
         }
         if let Some(help) = self.help.as_mut() {
@@ -1382,8 +1368,7 @@ impl App {
             .is_some_and(|s| s.search.is_some() || s.prompt.is_some())
             || self.pr_editor.is_some()
             || self.issue_editor.is_some()
-            || self.confirm_quit_shown
-            || self.pending_notif_action.is_some()
+            || self.confirm.is_some()
             || self.section_mode
     }
 
@@ -1435,6 +1420,9 @@ impl App {
 
     fn handle_click(&mut self, ev: &MouseEvent, hits: &HitMap) -> bool {
         let target = hits.at(ev.column, ev.row);
+        if let Some(c) = self.confirm.take() {
+            return self.answer_confirmation(c.click(target));
+        }
         if let Some(Target::Suggestion(i)) = target {
             return self.accept_suggestion(i);
         }
@@ -1465,10 +1453,7 @@ impl App {
 
     fn accept_suggestion(&mut self, i: usize) -> bool {
         let target = if self.section().is_some_and(|s| s.search_completer.is_some()) {
-            CompletionTarget::Search(SectionKey {
-                view: self.view,
-                id: self.curr,
-            })
+            CompletionTarget::Search(self.section_key())
         } else if self.pr_editor.is_some() {
             CompletionTarget::PrEditor
         } else {
@@ -1720,37 +1705,16 @@ impl App {
     }
 
     fn handle_prompt_key(&mut self, key: &str) {
-        let (view, id) = (self.view, self.curr);
         let s = self.section_mut().unwrap();
         match key {
             "ctrl+c" | "esc" => s.prompt = None,
-            "enter" if s.kind == Kind::Branch => {
+            "enter" => {
                 let (action, input) = s.prompt.take().unwrap();
                 let v = input.value();
                 match action.as_str() {
                     "new" => self.new_branch(&v),
                     "create_pr" => self.create_branch_pr(&v),
-                    "delete" if v == "y" || v == "Y" => self.delete_branch(),
                     _ => {}
-                }
-            }
-            "enter" => {
-                let (action, input) = s.prompt.take().unwrap();
-                let v = input.value();
-                if v == "y" || v == "Y" {
-                    let row = s.current();
-                    let notifs: Vec<String> = s.notifs.iter().map(|n| n.id().to_string()).collect();
-                    let key = SectionKey { view, id };
-                    match row {
-                        Some(SelectedRow::Pr(pr)) => self.pr_action(&action, &pr, key),
-                        Some(SelectedRow::Issue(i)) => {
-                            self.issue_action(&action, i.number, &i.repository.name_with_owner, key)
-                        }
-                        _ => {}
-                    }
-                    if action == "done_all" {
-                        self.mark_all_done(notifs, key);
-                    }
                 }
             }
             _ => {
@@ -1769,9 +1733,10 @@ impl App {
         };
         match key {
             "esc" | "ctrl+c" => {
-                let e = ed.as_mut().unwrap();
-                if e.confirm_discard && !e.discarding {
-                    e.discarding = true;
+                let e = ed.as_ref().unwrap();
+                if e.confirm_discard {
+                    let review = e.mode == EditorMode::Approve;
+                    self.ask(ConfirmAction::DiscardEditor { is_pr, review });
                 } else {
                     *ed = None;
                 }
@@ -1796,16 +1761,6 @@ impl App {
             }
             _ => {
                 let e = ed.as_mut().unwrap();
-                if e.discarding {
-                    if key == "y" || key == "Y" {
-                        *ed = None;
-                        return;
-                    }
-                    e.discarding = false;
-                    if key == "n" || key == "N" {
-                        return;
-                    }
-                }
                 match e.completer.as_mut() {
                     Some(c) => {
                         c.handle_key(key, &mut e.area);
@@ -1837,10 +1792,7 @@ impl App {
 
     fn submit_editor(&mut self, ed: Editor, is_pr: bool) {
         let value = ed.area.value();
-        let key = SectionKey {
-            view: self.view,
-            id: self.curr,
-        };
+        let key = self.section_key();
         let Some(row) = self.editor_target(is_pr) else {
             return;
         };
@@ -1968,7 +1920,6 @@ impl App {
             prompt,
             area: TextArea::new(&initial),
             confirm_discard: matches!(mode, EditorMode::Comment | EditorMode::Approve),
-            discarding: false,
             completer,
         };
         let kind = ed.completer.as_ref().map(|c| c.kind);
@@ -1997,12 +1948,70 @@ impl App {
         self.scroll_preview_bottom();
     }
 
-    fn prompt_confirmation(&mut self, action: &str) {
-        if self.current_row().is_none() {
-            return;
+    fn section_key(&self) -> SectionKey {
+        SectionKey {
+            view: self.view,
+            id: self.curr,
         }
-        if let Some(s) = self.section_mut() {
-            s.prompt = Some((action.to_string(), TextInput::new("")));
+    }
+
+    /// Asks about `action` on the selected PR or issue.
+    fn prompt_confirmation(&mut self, action: &'static str) {
+        let key = self.section_key();
+        match self.current_row() {
+            Some(SelectedRow::Pr(pr)) => self.ask(ConfirmAction::Pr { action, pr, key }),
+            Some(SelectedRow::Issue(issue)) => {
+                self.ask(ConfirmAction::Issue { action, issue, key })
+            }
+            _ => {}
+        }
+    }
+
+    fn ask(&mut self, action: ConfirmAction) {
+        self.confirm = Some(Confirm::new(action));
+    }
+
+    /// The PR action that `key` asks to confirm.
+    fn pr_confirm_action(&self, key: &str) -> Option<&'static str> {
+        let p = &self.keys.pr;
+        [
+            (&p.close, "close"),
+            (&p.ready, "ready"),
+            (&p.reopen, "reopen"),
+            (&p.merge, "merge"),
+            (&p.update, "update"),
+            (&p.approve_workflows, "approveWorkflows"),
+        ]
+        .into_iter()
+        .find(|(b, _)| b.matches(key))
+        .map(|(_, action)| action)
+    }
+
+    /// Opens or keeps the dialog, or runs the confirmed action. Returns true when
+    /// the dialog closed.
+    fn answer_confirmation(&mut self, answer: Answer) -> bool {
+        match answer {
+            Answer::Open(c) => {
+                self.confirm = Some(c);
+                return false;
+            }
+            Answer::Confirmed(action) => self.run_confirmed(action),
+            Answer::Cancelled => {}
+        }
+        true
+    }
+
+    fn run_confirmed(&mut self, action: ConfirmAction) {
+        match action {
+            ConfirmAction::Quit => self.quit = true,
+            ConfirmAction::Pr { action, pr, key } => self.pr_action(action, &pr, key),
+            ConfirmAction::Issue { action, issue, key } => {
+                self.issue_action(action, issue.number, &issue.repository.name_with_owner, key)
+            }
+            ConfirmAction::DeleteBranch { name } => self.delete_branch(name),
+            ConfirmAction::MarkAllDone { ids, key } => self.mark_all_done(ids, key),
+            ConfirmAction::DiscardEditor { is_pr: true, .. } => self.pr_editor = None,
+            ConfirmAction::DiscardEditor { is_pr: false, .. } => self.issue_editor = None,
         }
     }
 
@@ -2033,19 +2042,9 @@ impl App {
                 return true;
             }
         }
-        let confirms = [
-            (&p.close, "close"),
-            (&p.ready, "ready"),
-            (&p.reopen, "reopen"),
-            (&p.merge, "merge"),
-            (&p.update, "update"),
-            (&p.approve_workflows, "approveWorkflows"),
-        ];
-        for (b, action) in confirms {
-            if b.matches(key) {
-                self.prompt_confirmation(action);
-                return true;
-            }
+        if let Some(action) = self.pr_confirm_action(key) {
+            self.prompt_confirmation(action);
+            return true;
         }
         if p.view_issues.matches(key) {
             self.switch_selected_view();
@@ -2132,27 +2131,11 @@ impl App {
                 self.checkout_pr(pr.primary.number, &pr.primary.repository.name_with_owner);
                 return true;
             }
-            let confirms = [
-                (&p.close, "close"),
-                (&p.ready, "ready"),
-                (&p.reopen, "reopen"),
-                (&p.merge, "merge"),
-                (&p.update, "update"),
-                (&p.approve_workflows, "approveWorkflows"),
-            ];
-            for (b, action) in confirms {
-                if b.matches(key) {
-                    let n = self.subject_pr.as_ref().unwrap().primary.number;
-                    let display = match action {
-                        "ready" => "mark as ready",
-                        "approveWorkflows" => "approve all workflows for",
-                        a => a,
-                    };
-                    self.pending_notif_action = Some(format!("pr_{action}"));
-                    self.notif_prompt =
-                        Some(format!("Are you sure you want to {display} PR #{n}? (y/N)"));
-                    return true;
-                }
+            if let Some(action) = self.pr_confirm_action(key) {
+                let pr = Box::new(self.subject_pr.clone().unwrap());
+                let key = self.section_key();
+                self.ask(ConfirmAction::Pr { action, pr, key });
+                return true;
             }
             if p.summary_view_more.matches(key) {
                 self.summary_more = true;
@@ -2193,11 +2176,9 @@ impl App {
             }
             for (b, action) in [(&i.close, "close"), (&i.reopen, "reopen")] {
                 if b.matches(key) {
-                    let n = self.subject_issue.as_ref().unwrap().number;
-                    self.pending_notif_action = Some(format!("issue_{action}"));
-                    self.notif_prompt = Some(format!(
-                        "Are you sure you want to {action} Issue #{n}? (y/N)"
-                    ));
+                    let issue = Box::new(self.subject_issue.clone().unwrap());
+                    let key = self.section_key();
+                    self.ask(ConfirmAction::Issue { action, issue, key });
                     return true;
                 }
             }
@@ -2208,8 +2189,10 @@ impl App {
             return false;
         }
         if k.notif.mark_all_as_done.matches(key) {
-            if let Some(s) = self.section_mut() {
-                s.prompt = Some(("done_all".into(), TextInput::new("")));
+            if let Some(s) = self.section() {
+                let ids = s.notifs.iter().map(|n| n.id().to_string()).collect();
+                let key = self.section_key();
+                self.ask(ConfirmAction::MarkAllDone { ids, key });
             }
             return true;
         }
@@ -2218,22 +2201,6 @@ impl App {
             return true;
         }
         false
-    }
-
-    fn execute_notification_action(&mut self, action: &str) {
-        let key = SectionKey {
-            view: self.view,
-            id: self.curr,
-        };
-        if let Some(a) = action.strip_prefix("pr_") {
-            if let Some(pr) = self.subject_pr.clone() {
-                self.pr_action(a, &pr, key);
-            }
-        } else if let Some(a) = action.strip_prefix("issue_")
-            && let Some(i) = self.subject_issue.clone()
-        {
-            self.issue_action(a, i.number, &i.repository.name_with_owner, key);
-        }
     }
 
     fn pr_action(&mut self, action: &str, pr: &PrRow, key: SectionKey) {
@@ -2974,11 +2941,13 @@ impl App {
             }
             return false;
         }
-        for (b, action) in [
-            (&br.delete, "delete"),
-            (&br.new, "new"),
-            (&br.create_pr, "create_pr"),
-        ] {
+        if br.delete.matches(key) {
+            if let Some(b) = self.current_branch() {
+                self.ask(ConfirmAction::DeleteBranch { name: b.b.name });
+            }
+            return true;
+        }
+        for (b, action) in [(&br.new, "new"), (&br.create_pr, "create_pr")] {
             if b.matches(key) {
                 if let Some(s) = self.section_mut() {
                     s.prompt = Some((action.to_string(), TextInput::new("")));
@@ -3042,11 +3011,7 @@ impl App {
         }
     }
 
-    fn delete_branch(&mut self) {
-        let Some(b) = self.current_branch() else {
-            return;
-        };
-        let name = b.b.name.clone();
+    fn delete_branch(&mut self, name: String) {
         let n = name.clone();
         self.repo_task(
             &format!("Deleting branch {name}"),
@@ -3377,7 +3342,7 @@ mod tests {
         let mut app = esc_inbox(true, true);
         app.handle_key("esc");
         assert!(!app.quit);
-        assert!(app.confirm_quit_shown);
+        assert!(app.confirm.is_some());
     }
 
     #[test]
